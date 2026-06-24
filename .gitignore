@@ -1,0 +1,20 @@
+# 依存パッケージ（npm install で再取得可能）
+node_modules/
+
+# 一時生成物・作業用ファイル
+temp_format_unpacked/
+_tmp_kotei/
+
+# エディタ／ツールのローカル設定
+.claude/
+.agents/
+skills-lock.json
+
+# リポジトリ対象外（公開範囲の選択により除外）
+# ・社内システム構成を含みうる成果物サンプル（現行版・退避版とも除外）
+システム相関図*.html
+# ・開発用スクリーンショット
+screenshots/
+# ・操作マニュアル（バイナリ・別管理）
+*.docx
+*.pdf

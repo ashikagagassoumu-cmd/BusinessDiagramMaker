@@ -1,0 +1,2267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ビジネスダイアグラムメーカー v2.03</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;display:flex;flex-direction:column;height:100vh;overflow:hidden;user-select:none}
+
+#app-title-bar{background:#0f172a;color:#f1f5f9;padding:6px 16px;font-size:18px;font-weight:800;letter-spacing:.5px;flex-shrink:0;display:flex;align-items:center;gap:12px;position:relative}
+#app-title-bar .diagram-type-label{font-size:12px;font-weight:400;color:#94a3b8;background:#1e293b;padding:2px 10px;border-radius:10px;cursor:pointer;transition:background .15s,color .15s}
+#app-title-bar .diagram-type-label:hover{background:#334155;color:#e2e8f0}
+#dtype-menu{position:absolute;top:100%;left:0;background:#1e293b;border:1px solid #475569;border-radius:8px;padding:4px 0;min-width:240px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:9999}
+#dtype-menu .dm-item{padding:8px 16px;color:#cbd5e1;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .1s}
+#dtype-menu .dm-item:hover{background:#334155;color:#f1f5f9}
+#dtype-menu .dm-item.active{color:#60a5fa;font-weight:600}
+#dtype-menu .dm-item .dm-check{width:16px;text-align:center;font-size:11px}
+#toolbar{background:#1e293b;color:#f1f5f9;padding:0 12px;height:46px;display:flex;align-items:center;gap:6px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.tbtn.save{background:#0f4c81;border-color:#1d6aa5;color:#bfdbfe;}
+.tbtn.save:hover{background:#1d6aa5;color:#fff}
+
+#app-header{padding:12px 12px 10px;border-bottom:2px solid #e2e8f0;background:#fff;flex-shrink:0}
+#app-title{font-size:15px;font-weight:800;color:#1e293b;letter-spacing:.2px;margin-bottom:8px;line-height:1.2}
+#diagram-name{width:100%;padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:12px;color:#374151;outline:none;background:#f8fafc}
+#diagram-name:focus{border-color:#3b82f6;background:#fff;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+.tbtn{background:transparent;border:1px solid transparent;color:#94a3b8;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;white-space:nowrap;transition:all .12s}
+.tbtn:hover{background:#334155;color:#f1f5f9}
+.tbtn.on{background:#2563eb;color:#fff;border-color:#3b82f6}
+.tbtn.red:hover{background:#dc2626;color:#fff}
+.sep{width:1px;height:26px;background:#334155;margin:0 3px;flex-shrink:0}
+
+#main{display:flex;flex:1;overflow:hidden}
+
+#sidebar{width:190px;background:#fff;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;flex-shrink:0}
+.ph{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.6px;padding:9px 12px 6px;background:#f8fafc;border-bottom:1px solid #f1f5f9}
+
+#palette{padding:8px}
+.ps{display:flex;align-items:center;gap:7px;padding:6px 8px;margin-bottom:3px;border:1px solid #e2e8f0;border-radius:5px;cursor:pointer;font-size:12px;color:#374151;background:#f9fafb;transition:all .12s}
+.ps:hover{background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
+.ps.on{background:#dbeafe;border-color:#3b82f6;color:#1d4ed8}
+
+#lane-sec{flex:1;display:flex;flex-direction:column;overflow:hidden;border-top:1px solid #e2e8f0}
+#lane-list{flex:1;overflow-y:auto;padding:6px 8px}
+.lr{display:flex;align-items:center;gap:4px;padding:4px 5px;margin-bottom:3px;border:1px solid #e2e8f0;border-radius:4px;background:#f9fafb}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:1px solid #94a3b8}
+.lname{flex:1;border:none;background:transparent;font-size:12px;color:#374151;outline:none;min-width:0}
+.lname:focus{color:#1d4ed8}
+.ldel{background:none;border:none;cursor:pointer;color:#cbd5e1;font-size:11px;padding:1px 3px;border-radius:2px;line-height:1}
+.ldel:hover{background:#fee2e2;color:#dc2626}
+#add-lane-row{padding:5px 8px;border-top:1px solid #f1f5f9}
+#add-lane-btn{width:100%;padding:5px;background:none;border:1.5px dashed #cbd5e1;border-radius:4px;cursor:pointer;color:#64748b;font-size:12px;transition:all .12s}
+#add-lane-btn:hover{border-color:#3b82f6;color:#3b82f6;background:#eff6ff}
+
+#canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
+#diagram-svg{display:block;cursor:default;transform-origin:0 0}
+#diagram-svg.cx *,#diagram-svg.cx{cursor:crosshair!important}
+
+#hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#e2e8f0;padding:5px 14px;border-radius:20px;font-size:11px;pointer-events:none;white-space:nowrap;z-index:100;display:none}
+#lane-choice{position:fixed;z-index:1000;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:10px 12px;display:flex;flex-direction:column;gap:5px;min-width:120px}
+#lane-choice .lc-title{font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px}
+#lane-choice button{padding:5px 10px;border-radius:4px;border:1.5px solid #e2e8f0;cursor:pointer;font-size:12px;color:#1e293b;text-align:left;transition:all .1s}
+#lane-choice .lc-cancel{background:#f1f5f9;color:#64748b;font-size:11px;border-color:#e2e8f0}
+
+/* 名前をつけて保存 モーダル */
+#save-modal{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center}
+#save-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.4)}
+#save-modal-box{position:relative;background:#fff;border-radius:10px;padding:24px 28px;min-width:320px;box-shadow:0 8px 40px rgba(0,0,0,.22)}
+#save-modal-title{font-size:15px;font-weight:700;color:#1e293b;margin-bottom:14px}
+#save-modal-label{font-size:12px;font-weight:600;color:#475569}
+#save-filename-input{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;margin-top:5px;margin-bottom:5px;box-sizing:border-box}
+#save-filename-input:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+#save-modal-hint{font-size:11px;color:#94a3b8;margin-bottom:18px}
+#save-modal-footer{display:flex;gap:8px;justify-content:flex-end}
+#save-modal-footer button{padding:7px 18px;border-radius:6px;font-size:13px;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#374151;transition:all .12s}
+#save-modal-footer button:hover{background:#f1f5f9}
+#save-modal-footer .btn-primary{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:600}
+#save-modal-footer .btn-primary:hover{background:#1d4ed8}
+
+/* 新規作成ダイアログ */
+#new-modal{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
+#new-modal-box{background:#fff;border-radius:14px;padding:32px 36px;max-width:580px;width:90%;box-shadow:0 12px 48px rgba(0,0,0,.28)}
+#new-modal-title{font-size:20px;font-weight:800;color:#0f172a;margin-bottom:6px}
+#new-modal-sub{font-size:13px;color:#64748b;margin-bottom:22px}
+.dtypes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dtype-card{border:2px solid #e2e8f0;border-radius:10px;padding:16px 14px;cursor:pointer;transition:all .15s;background:#fff}
+.dtype-card:hover{border-color:#93c5fd;background:#eff6ff;transform:translateY(-2px);box-shadow:0 4px 12px rgba(59,130,246,.12)}
+.dtype-card .dt-icon{font-size:28px;margin-bottom:8px}
+.dtype-card .dt-name{font-size:14px;font-weight:700;color:#1e293b;margin-bottom:4px}
+.dtype-card .dt-desc{font-size:11px;color:#64748b;line-height:1.4}
+</style>
+</head>
+<body>
+
+<div id="app-title-bar">
+  ビジネスダイアグラムメーカー v2.03
+  <span class="diagram-type-label" id="dtype-label" onclick="toggleDTypeMenu(event)"></span>
+  <div id="dtype-menu" style="display:none"></div>
+</div>
+<div id="toolbar">
+  <button class="tbtn on" id="btn-select" onclick="setMode('select')">▶ 選択</button>
+  <button class="tbtn" id="btn-connect" onclick="setMode('connect')">→ 接続</button>
+  <div class="sep"></div>
+  <button class="tbtn" onclick="undo()">↩ 元に戻す</button>
+  <button class="tbtn" onclick="redo()">↪ やり直す</button>
+  <div class="sep"></div>
+  <button class="tbtn red" onclick="delSel()">✕ 削除</button>
+  <div class="sep"></div>
+  <button class="tbtn" id="btn-orient" onclick="toggleOrientation()" title="縦/横レイアウト切替">縦・横</button>
+  <div class="sep"></div>
+  <button class="tbtn save" onclick="openSaveAsDialog()">💾 名前をつけて保存</button>
+  <button class="tbtn" onclick="expPNG()">↓ PNG</button>
+  <button class="tbtn" onclick="expSVG()">↓ SVG</button>
+  <div class="sep"></div>
+  <button class="tbtn" onclick="zoomOut()">－</button>
+  <span id="zoom-label" style="font-size:11px;color:#94a3b8;min-width:34px;text-align:center">100%</span>
+  <button class="tbtn" onclick="zoomIn()">＋</button>
+  <button class="tbtn" onclick="fitView()">⊡ 全体</button>
+  <div style="flex:1"></div>
+  <span style="font-size:11px;color:#475569">Dblクリック:テキスト編集 / 右クリック:削除</span>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="app-header">
+      <input id="diagram-name" type="text" placeholder="図の名称を入力" oninput="S_diagramName=this.value"/>
+    </div>
+    <div class="ph">シェイプ</div>
+    <div id="palette"></div>
+    <div id="lane-sec">
+      <div class="ph">レーン</div>
+      <div id="lane-list"></div>
+      <div id="add-lane-row"><button id="add-lane-btn" onclick="addLane()">＋ レーンを追加</button></div>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <svg id="diagram-svg" onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)">
+      <defs>
+        <marker id="arr"  markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#475569"/></marker>
+        <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#2563eb"/></marker>
+        <marker id="arrP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#3b82f6"/></marker>
+      </defs>
+      <g id="g-lanes"></g>
+      <g id="g-grid"></g>
+      <g id="g-guides"></g>
+      <g id="g-edges"></g>
+      <g id="g-nodes"></g>
+      <g id="g-dividers"></g>
+      <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
+    </svg>
+  </div>
+</div>
+<div id="hint"></div>
+
+<!-- 名前をつけて保存 モーダルダイアログ -->
+<div id="save-modal" style="display:none">
+  <div id="save-modal-bg" onclick="closeSaveDialog()"></div>
+  <div id="save-modal-box">
+    <div id="save-modal-title">名前をつけて保存</div>
+    <div id="save-modal-label">ファイル名</div>
+    <input id="save-filename-input" type="text" placeholder="ダイアグラム"
+           onkeydown="if(event.key==='Enter')confirmSaveAs();else if(event.key==='Escape')closeSaveDialog()"/>
+    <div id="save-modal-hint">.html が自動的に付きます</div>
+    <div id="save-modal-footer">
+      <button onclick="closeSaveDialog()">キャンセル</button>
+      <button class="btn-primary" onclick="confirmSaveAs()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新規作成 図種選択ダイアログ -->
+<div id="new-modal" style="display:none">
+  <div id="new-modal-box">
+    <div id="new-modal-title">新しい図を作成</div>
+    <div id="new-modal-sub">作成する図の種類を選択してください</div>
+    <div class="dtypes">
+      <div class="dtype-card" onclick="selectDiagramType('swimlane')">
+        <div class="dt-icon">🏊</div>
+        <div class="dt-name">スイムレーン図</div>
+        <div class="dt-desc">レーン（担当者/部門）ごとに業務フローを整理する図</div>
+      </div>
+      <div class="dtype-card" onclick="selectDiagramType('flowchart')">
+        <div class="dt-icon">🔀</div>
+        <div class="dt-name">フローチャート</div>
+        <div class="dt-desc">処理手順・分岐を自由配置で表現する汎用フロー図</div>
+      </div>
+      <div class="dtype-card" onclick="selectDiagramType('bpmn')">
+        <div class="dt-icon">⚙️</div>
+        <div class="dt-name">プロセスフロー (BPMN)</div>
+        <div class="dt-desc">イベント・ゲートウェイを含む業務プロセスモデル図</div>
+      </div>
+      <div class="dtype-card" onclick="selectDiagramType('statechart')">
+        <div class="dt-icon">🔄</div>
+        <div class="dt-name">状態遷移図</div>
+        <div class="dt-desc">状態と遷移条件でシステムの振る舞いを表現する図</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const NS='http://www.w3.org/2000/svg';
+const LANE_W=220, GRID_STEP=66, NOTE_TITLE_H=37, MIN_CANVAS=800;
+
+// ── 図種定義 ──
+const DIAGRAM_TYPES={
+  swimlane:{
+    name:'スイムレーン図',
+    useLanes:true,
+    defaultLanes:3,
+    palette:['rect','note','crosslane','diamond','terminal','doc'],
+    palLabels:{rect:'プロセス',note:'プロセス(説明有)',crosslane:'複数レーンプロセス',diamond:'判断',terminal:'開始/終了',doc:'書類'},
+    shapeTexts:{note:'プロセス'},
+  },
+  flowchart:{
+    name:'フローチャート',
+    useLanes:false,
+    defaultLanes:0,
+    palette:['rect','note','crosslane','diamond','terminal','parallelogram','doc'],
+    palLabels:{rect:'プロセス',note:'プロセス(説明有)',crosslane:'マルチプロセス',diamond:'判断',terminal:'開始/終了',parallelogram:'データ',doc:'書類'},
+    shapeTexts:{note:'プロセス',crosslane:'マルチプロセス'},
+  },
+  bpmn:{
+    name:'プロセスフロー (BPMN)',
+    useLanes:true,
+    defaultLanes:3,
+    palette:['rect','note','crosslane','gateway_xor','gateway_par','event','doc'],
+    palLabels:{rect:'タスク',note:'サブプロセス',crosslane:'複数レーンタスク',gateway_xor:'排他ゲートウェイ',gateway_par:'並行ゲートウェイ',event:'イベント',doc:'書類'},
+  },
+  statechart:{
+    name:'状態遷移図',
+    useLanes:false,
+    defaultLanes:0,
+    palette:['state','state_detail','crosslane','initial','final','diamond'],
+    palLabels:{state:'状態',state_detail:'状態(詳細)',crosslane:'マルチプロセス',initial:'開始',final:'終了',diamond:'分岐'},
+    shapeTexts:{state_detail:'状態',crosslane:'マルチプロセス'},
+  },
+};
+
+// ── シェイプデフォルト ──
+const SD={
+  rect:     {w:120,h:37, text:'プロセス',   fill:'#dbeafe',stroke:'#3b82f6'},
+  diamond:  {w:120,h:49, text:'判断',        fill:'#fef9c3',stroke:'#ca8a04'},
+  terminal: {w:110,h:31, text:'開始/終了',   fill:'#dcfce7',stroke:'#16a34a'},
+  doc:      {w:60,h:40, text:'書類',          fill:'#fce7f3',stroke:'#be185d'},
+  note:     {w:140,h:65, text:'プロセス',    fill:'#dbeafe',stroke:'#3b82f6'},
+  parallelogram:{w:120,h:37, text:'データ', fill:'#e0e7ff',stroke:'#6366f1'},
+  event:        {w:40,h:40, text:'開始',   fill:'#dcfce7',stroke:'#16a34a'},
+  gateway_xor:  {w:50,h:50, text:'',       fill:'#fef9c3',stroke:'#ca8a04'},
+  gateway_par:  {w:50,h:50, text:'',       fill:'#fef9c3',stroke:'#ca8a04'},
+  state:        {w:130,h:45, text:'状態名', fill:'#e0f2fe',stroke:'#0284c7'},
+  state_detail: {w:140,h:65, text:'状態名', fill:'#e0f2fe',stroke:'#0284c7'},
+  initial:      {w:30,h:30, text:'',        fill:'#1e293b',stroke:'#1e293b'},
+  final:        {w:30,h:30, text:'',        fill:'#1e293b',stroke:'#1e293b'},
+  crosslane:{w:440,h:37, text:'複数レーンプロセス', fill:'#dbeafe',stroke:'#3b82f6'},
+};
+const LC=[
+  {bg:'#eff6ff',hd:'#bfdbfe'},{bg:'#f0fdf4',hd:'#bbf7d0'},
+  {bg:'#fefce8',hd:'#fde68a'},{bg:'#fdf4ff',hd:'#e9d5ff'},
+  {bg:'#fff1f2',hd:'#fecdd3'},{bg:'#f0fdfa',hd:'#99f6e4'},
+  {bg:'#fff7ed',hd:'#fed7aa'},
+];
+// レーンなし時の仮想レーン
+const VIRTUAL_LANE={id:'__virtual__',name:'',bg:'#f8fafc',hd:'#e2e8f0',w:800};
+
+let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0};
+let activePal=null;
+let nodeClickTimer=null;
+let edgeClickTimer=null;
+let S_didDrag=false;
+let _laneChoiceRemoveClose=null;
+let S_diagramName='';
+
+// ── 座標系抽象化（主軸/交差軸） ──
+// vertical:  主軸=Y(下向き), 交差軸=X(右向き), レーン=縦列
+// horizontal: 主軸=X(右向き), 交差軸=Y(下向き), レーン=横行
+function isV(){return S.orientation==='vertical'}
+// ヘッダーサイズ（レーン使用時のみ）
+function headerSize(){return usesLanes()?44:0}
+// 物理座標 → 論理座標
+function toLogical(x,y){return isV()?{main:y,cross:x}:{main:x,cross:y}}
+// 論理座標 → 物理座標
+function toPhysical(main,cross){return isV()?{x:cross,y:main}:{x:main,y:cross}}
+// 物理サイズ → 論理サイズ
+function toLogicalSize(w,h){return isV()?{mainLen:h,crossLen:w}:{mainLen:w,crossLen:h}}
+// 論理サイズ → 物理サイズ
+function toPhysicalSize(mainLen,crossLen){return isV()?{w:crossLen,h:mainLen}:{w:mainLen,h:crossLen}}
+
+// ── ユーティリティ ──
+function usesLanes(){return DIAGRAM_TYPES[S.diagramType]?.useLanes!==false}
+function getDT(){return DIAGRAM_TYPES[S.diagramType]||DIAGRAM_TYPES.swimlane}
+
+function wrapText(text,maxW,fontSize){
+  const lines=[];
+  (text||'').split('\n').forEach(line=>{
+    if(!line){lines.push('');return;}
+    let cur='',curW=0;
+    for(const ch of line){
+      const cw=ch.charCodeAt(0)>255?fontSize:fontSize*0.6;
+      if(curW+cw>maxW&&cur){lines.push(cur);cur=ch;curW=cw;}
+      else{cur+=ch;curW+=cw;}
+    }
+    if(cur)lines.push(cur);
+  });
+  return lines;
+}
+function uid(){return 'e'+(++S.uid)}
+
+// ── 図種選択 ──
+function showNewModal(){document.getElementById('new-modal').style.display='flex'}
+function hideNewModal(){document.getElementById('new-modal').style.display='none'}
+function selectDiagramType(type){
+  S.diagramType=type;
+  S.orientation='vertical';
+  hideNewModal();
+  applyDiagramType();
+  const dt=getDT();
+  for(let i=0;i<dt.defaultLanes;i++) addLane();
+  snap(); render();
+  hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+}
+function toggleDTypeMenu(ev){
+  ev.stopPropagation();
+  const menu=document.getElementById('dtype-menu');
+  if(menu.style.display!=='none'){menu.style.display='none';return;}
+  // メニュー構築
+  menu.innerHTML='';
+  const types=['swimlane','flowchart','bpmn','statechart'];
+  types.forEach(t=>{
+    const dt=DIAGRAM_TYPES[t];
+    const div=document.createElement('div');
+    div.className='dm-item'+(t===S.diagramType?' active':'');
+    div.innerHTML='<span class="dm-check">'+(t===S.diagramType?'✓':'')+'</span>'+dt.name;
+    div.addEventListener('click',()=>{
+      menu.style.display='none';
+      if(t!==S.diagramType) changeDiagramType(t);
+    });
+    menu.appendChild(div);
+  });
+  // ラベルの下に表示
+  const lbl=document.getElementById('dtype-label');
+  const r=lbl.getBoundingClientRect();
+  const bar=document.getElementById('app-title-bar').getBoundingClientRect();
+  menu.style.left=(r.left-bar.left)+'px';
+  menu.style.top=(r.bottom-bar.top+4)+'px';
+  menu.style.display='block';
+  // 外側クリックで閉じる
+  const close=()=>{menu.style.display='none';document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
+}
+function changeDiagramType(newType){
+  if(newType===S.diagramType) return;
+  const oldUsesLanes=usesLanes();
+  S.diagramType=newType;
+  const newUsesLanes_=usesLanes();
+  // レーンあり→レーンなし: レーンを削除、crosslaneシェイプを通常矩形化
+  if(oldUsesLanes&&!newUsesLanes_){
+    S.nodes.forEach(n=>{
+      if(n.type==='crosslane'){
+        // crosslane → crosslane のまま（レーンなしでも描画可能）
+        // ただしレーン区切り線は表示されない
+      }
+    });
+    S.lanes=[];
+    lanePanel();
+  }
+  // レーンなし→レーンあり: デフォルトレーンを追加
+  if(!oldUsesLanes&&newUsesLanes_){
+    const dt=getDT();
+    for(let i=0;i<dt.defaultLanes;i++){
+      const idx=S.lanes.length;
+      S.lanes.push({id:uid(),name:'レーン'+(idx+1),...LC[idx%LC.length],w:LANE_W});
+    }
+    lanePanel();
+  }
+  applyDiagramType();
+  snap(); render();
+}
+function applyDiagramType(){
+  const dt=getDT();
+  // タイトルバーラベル
+  document.getElementById('dtype-label').textContent=dt.name;
+  // レーンUI表示/非表示
+  document.getElementById('lane-sec').style.display=usesLanes()?'':'none';
+  // 縦横ボタン — レーンなし図種でも使用可能
+  updateOrientBtn();
+  // パレット構築
+  buildPalette();
+}
+
+function buildPalette(){
+  const dt=getDT();
+  const pal=document.getElementById('palette');
+  pal.innerHTML='';
+  dt.palette.forEach(type=>{
+    const div=document.createElement('div');
+    div.className='ps';
+    div.id='ps-'+type;
+    div.setAttribute('onmousedown','palDragStart(event,"'+type+'")');
+    div.setAttribute('onclick','palClick("'+type+'")');
+    // アイコンSVG
+    const icons={
+      rect:'<svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="2" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/></svg>',
+      note:'<svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="2" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/><line x1="1" y1="9" x2="21" y2="9" stroke="#3b82f6" stroke-width=".8" opacity=".7"/></svg>',
+      crosslane:'<svg width="22" height="15"><rect x="1" y="1" width="20" height="13" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/><line x1="11" y1="1" x2="11" y2="14" stroke="#3b82f6" stroke-width=".8" stroke-dasharray="2,2"/></svg>',
+      diamond:'<svg width="22" height="15"><polygon points="11,1 21,7.5 11,14 1,7.5" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/></svg>',
+      terminal:'<svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="6.5" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/></svg>',
+      doc:'<svg width="22" height="15"><path d="M1,1h20v9q-10,5-20,0z" fill="#fce7f3" stroke="#be185d" stroke-width="1.5"/></svg>',
+      parallelogram:'<svg width="22" height="15"><polygon points="5,1 21,1 17,14 1,14" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/></svg>',
+      gateway_xor:'<svg width="22" height="15"><polygon points="11,1 21,7.5 11,14 1,7.5" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/><text x="11" y="8.5" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="bold" fill="#ca8a04">✕</text></svg>',
+      gateway_par:'<svg width="22" height="15"><polygon points="11,1 21,7.5 11,14 1,7.5" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/><text x="11" y="8.5" text-anchor="middle" dominant-baseline="middle" font-size="11" font-weight="bold" fill="#ca8a04">＋</text></svg>',
+      event:'<svg width="22" height="15"><circle cx="11" cy="7.5" r="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/></svg>',
+      state:'<svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/></svg>',
+      state_detail:'<svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/><line x1="1" y1="9" x2="21" y2="9" stroke="#0284c7" stroke-width=".8" opacity=".7"/></svg>',
+      initial:'<svg width="22" height="15"><circle cx="11" cy="7.5" r="6" fill="#1e293b" stroke="#1e293b" stroke-width="1"/></svg>',
+      final:'<svg width="22" height="15"><circle cx="11" cy="7.5" r="6" fill="none" stroke="#1e293b" stroke-width="1.5"/><circle cx="11" cy="7.5" r="3.5" fill="#1e293b"/></svg>',
+    };
+    const label=dt.palLabels[type]||SD[type]?.text||type;
+    div.innerHTML=(icons[type]||'')+label;
+    pal.appendChild(div);
+  });
+}
+
+// ── 縦横切替 ──
+function toggleOrientation(){
+  S.orientation=isV()?'horizontal':'vertical';
+  // 全ノードのx/y・w/hを入れ替え（シェイプ全体が90度回転）
+  S.nodes.forEach(n=>{
+    if(n.type==='crosslane')return; // crosslaneはnormalizeCrosslaneGeometry()で再計算
+    const ox=n.x, oy=n.y, ow=n.w, oh=n.h;
+    n.x=oy; n.y=ox; n.w=oh; n.h=ow;
+  });
+  updateOrientBtn();
+  snap(); render();
+}
+function updateOrientBtn(){
+  const btn=document.getElementById('btn-orient');
+  if(btn) btn.textContent=isV()?'縦・横':'横・縦';
+}
+
+// ── Init ──
+function init(){
+  // 常に選択モードで起動
+  S.mode='select'; S.conn=null; activePal=null;
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('on'));
+  document.getElementById('btn-select')?.classList.add('on');
+  document.getElementById('diagram-svg').setAttribute('class','');
+  document.getElementById('prev-edge').style.display='none';
+
+  let st=null;
+  if(window.__SWIMLANE_STATE__)st=window.__SWIMLANE_STATE__;
+  if(!st){const a=document.body.dataset.state;if(a){try{st=JSON.parse(decodeURIComponent(a));}catch(e){}}}
+  if(!st&&window.__SAVED_STATE__)st=window.__SAVED_STATE__;
+  if(st){
+    // 保存データから復元
+    S.diagramType=st.diagramType||'swimlane';
+    S.orientation=st.orientation||'vertical';
+    S.lanes=st.lanes; S.nodes=st.nodes; S.edges=st.edges;
+    if(st.uid!=null)S.uid=st.uid;
+    S_diagramName=st.diagramName||'';
+    const ni=document.getElementById('diagram-name');
+    if(ni)ni.value=S_diagramName;
+    applyDiagramType();
+    lanePanel(); snap(); render();
+    hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+    return;
+  }
+  // 新規: 図種選択ダイアログを表示
+  document.getElementById('dtype-label').textContent='';
+  showNewModal();
+}
+
+// ── Canvas size ──
+let SVG_W=800, SVG_H=1200;
+function calcCanvasSize(){
+  const hdr=headerSize();
+  if(usesLanes()){
+    if(isV()){
+      // 縦レーン: 幅=レーン合計、高さ=動的
+      SVG_W=totalLaneSpan();
+      let maxMain=0;
+      S.nodes.forEach(n=>{maxMain=Math.max(maxMain,n.y+n.h);});
+      SVG_H=Math.max(MIN_CANVAS,Math.ceil((maxMain+200)/GRID_STEP)*GRID_STEP);
+    } else {
+      // 横レーン: 幅=動的、高さ=レーン合計
+      SVG_H=totalLaneSpan();
+      let maxMain=0;
+      S.nodes.forEach(n=>{maxMain=Math.max(maxMain,n.x+n.w);});
+      SVG_W=Math.max(MIN_CANVAS,Math.ceil((maxMain+200)/GRID_STEP)*GRID_STEP);
+    }
+  } else {
+    // レーンなし: 両方向とも動的
+    let maxX=0,maxY=0;
+    S.nodes.forEach(n=>{maxX=Math.max(maxX,n.x+n.w);maxY=Math.max(maxY,n.y+n.h);});
+    SVG_W=Math.max(MIN_CANVAS,Math.ceil((maxX+200)/GRID_STEP)*GRID_STEP);
+    SVG_H=Math.max(MIN_CANVAS,Math.ceil((maxY+200)/GRID_STEP)*GRID_STEP);
+  }
+}
+
+// ── Lanes ──
+function totalLaneSpan(){return S.lanes.reduce((s,l)=>s+l.w,0)}
+function totalW(){
+  if(!usesLanes())return SVG_W;
+  return isV()?totalLaneSpan():SVG_W;
+}
+function totalH(){
+  if(!usesLanes())return SVG_H;
+  return isV()?SVG_H:totalLaneSpan();
+}
+
+function addLane(name){
+  const i=S.lanes.length;
+  S.lanes.push({id:uid(),name:name||('レーン'+(i+1)),...LC[i%LC.length],w:LANE_W});
+  lanePanel(); render();
+}
+function removeLane(id){
+  if(S.lanes.length<=1)return;
+  S.lanes=S.lanes.filter(l=>l.id!==id);
+  const lids=new Set(S.lanes.map(l=>l.id));
+  S.nodes=S.nodes.filter(n=>{
+    if(n.type==='crosslane') return lids.has(n.fromLid)&&lids.has(n.toLid)&&n.fromLid!==n.toLid;
+    return n.lid!==id;
+  });
+  const nids=new Set(S.nodes.map(n=>n.id));
+  S.edges=S.edges.filter(e=>nids.has(e.from)&&nids.has(e.to));
+  snap(); lanePanel(); render();
+}
+function connNid(){return S.conn?(typeof S.conn==='object'?S.conn.nid:S.conn):null;}
+function connFromLid(){return S.conn&&typeof S.conn==='object'?S.conn.fromLid:null;}
+function renameLane(id,v){const l=S.lanes.find(l=>l.id===id);if(l){l.name=v;render()}}
+
+// レーンの交差軸上の開始位置（レーン使用時のみ）
+function laneX(id){
+  let x=0;
+  for(const l of S.lanes){if(l.id===id)return x;x+=l.w}
+  return 0;
+}
+// 交差軸座標からレーンを特定
+function laneAt(crossPos){
+  if(!usesLanes())return VIRTUAL_LANE;
+  let c=0;
+  for(const l of S.lanes){if(crossPos>=c&&crossPos<c+l.w)return l;c+=l.w}
+  return crossPos<0?S.lanes[0]:S.lanes[S.lanes.length-1];
+}
+// svgPt を方向に応じて交差軸座標に変換
+function crossOf(pt){return isV()?pt.x:pt.y}
+function mainOf(pt){return isV()?pt.y:pt.x}
+
+// ── Nodes ──
+function snapCrossInLane(lane,crossPos){
+  if(!usesLanes()){
+    // レーンなし: キャンバス幅の1/4, 1/2, 3/4にスナップ
+    const cw=isV()?SVG_W:SVG_H;
+    const snaps=[cw*.25,cw*.5,cw*.75];
+    const threshold=40;
+    let best=crossPos,bestDist=threshold;
+    for(const s of snaps){const d=Math.abs(crossPos-s);if(d<bestDist){bestDist=d;best=s;}}
+    return best;
+  }
+  const lx=laneX(lane.id);
+  const snaps=[lx+lane.w*.25,lx+lane.w*.5,lx+lane.w*.75];
+  const threshold=40;
+  let best=crossPos,bestDist=threshold;
+  for(const s of snaps){const d=Math.abs(crossPos-s);if(d<bestDist){bestDist=d;best=s;}}
+  return best;
+}
+function snapMainToShapes(mainPos,excludeId){
+  const threshold=15;
+  let bestM=null,bestDist=threshold;
+  S.nodes.forEach(n=>{
+    if(n.id===excludeId)return;
+    const nMain=isV()?(n.y+n.h/2):(n.x+n.w/2);
+    const d=Math.abs(mainPos-nMain);
+    if(d<bestDist){bestDist=d;bestM=nMain;}
+  });
+  const hdr=headerSize();
+  const canvasMain=isV()?SVG_H:SVG_W;
+  for(let gm=hdr+GRID_STEP;gm<canvasMain;gm+=GRID_STEP){
+    const d=Math.abs(mainPos-gm);
+    if(d<bestDist){bestDist=d;bestM=gm;}
+  }
+  return bestM;
+}
+function getSpannedLanes(n){
+  const fi=S.lanes.findIndex(l=>l.id===n.fromLid);
+  const ti=S.lanes.findIndex(l=>l.id===n.toLid);
+  return(fi>=0&&ti>=0)?S.lanes.slice(Math.min(fi,ti),Math.max(fi,ti)+1):[];
+}
+function addCrosslaneNode(fromLid,toLid,mainPos){
+  const h=SD.crosslane.h;
+  const snapM=snapMainToShapes(mainPos,null);
+  const cm=snapM!==null?snapM:mainPos;
+  const hdr=headerSize();
+  const canvasMain=isV()?SVG_H:SVG_W;
+  const my=Math.max(hdr+4,Math.min(canvasMain-h-4,cm-h/2));
+  const fromX=laneX(fromLid);
+  const toLane=S.lanes.find(l=>l.id===toLid);
+  const totalSpan=(toLane?laneX(toLid)+toLane.w:fromX+LANE_W)-fromX;
+  const crossW=Math.round(totalSpan*0.75);
+  const crossX=Math.round((totalSpan-crossW)/2);
+  // crosslane は常に物理座標で保存（vertical前提で保存し、renderで展開）
+  const pos=toPhysical(my,fromX+crossX);
+  const sz=toPhysicalSize(h,crossW);
+  const mainY=isV()?my:pos.y;
+  const n={id:uid(),type:'crosslane',fromLid,toLid,mainPos:mainY,y:mainY,h,
+           crossX,crossW,text:'複数レーンプロセス',x:0,w:0,lid:fromLid};
+  S.nodes.push(n); S.sel=[n.id]; clearGuides(); snap(); render(); return n;
+}
+function placeShape(type,px,py){
+  if(type==='crosslane'){
+    const crossPos=isV()?px:py;
+    const mainPos=isV()?py:px;
+    const lane=laneAt(crossPos);
+    const li=S.lanes.findIndex(l=>l.id===lane.id);
+    const ti=li<S.lanes.length-1?li+1:(li>0?li-1:li);
+    const fromLid=li<=ti?lane.id:S.lanes[ti].id;
+    const toLid=li<=ti?S.lanes[ti].id:lane.id;
+    addCrosslaneNode(fromLid,toLid,mainPos);
+  } else if(type==='event'){
+    showEventChoice(px,py,(variant,label)=>{
+      addNode(type,px,py,{variant,text:label});
+    });
+  } else {
+    addNode(type,px,py);
+  }
+}
+// ── イベントバリエーション色 ──
+function eventColors(variant){
+  if(variant==='mid') return{fill:'#fef9c3',stroke:'#ca8a04',sw:1.5};
+  if(variant==='end') return{fill:'#fee2e2',stroke:'#dc2626',sw:3};
+  return{fill:'#dcfce7',stroke:'#16a34a',sw:1.5};
+}
+function showEventChoice(px,py,callback){
+  if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  document.getElementById('lane-choice')?.remove();
+  const dlg=document.createElement('div'); dlg.id='lane-choice';
+  const r=document.getElementById('diagram-svg').getBoundingClientRect();
+  const dx=r.left+px*zoomLevel-60, dy=r.top+py*zoomLevel-80;
+  dlg.style.left=Math.max(4,dx)+'px'; dlg.style.top=Math.max(4,Math.min(window.innerHeight-200,dy))+'px';
+  const title=document.createElement('div'); title.className='lc-title';
+  title.textContent='イベントの種類:'; dlg.appendChild(title);
+  const variants=[
+    {id:'start',label:'開始',bg:'#dcfce7',bd:'#16a34a'},
+    {id:'mid',label:'中間',bg:'#fef9c3',bd:'#ca8a04'},
+    {id:'end',label:'終了',bg:'#fee2e2',bd:'#dc2626'},
+  ];
+  const closeDlg=()=>{
+    dlg.remove();
+    if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  };
+  variants.forEach(v=>{
+    const btn=document.createElement('button');
+    btn.textContent=v.label;
+    btn.style.background=v.bg; btn.style.borderColor=v.bd;
+    btn.onmouseenter=()=>{btn.style.background=v.bd;btn.style.color='#fff';};
+    btn.onmouseleave=()=>{btn.style.background=v.bg;btn.style.color='#1e293b';};
+    btn.addEventListener('click',ev=>{ev.stopPropagation();closeDlg();callback(v.id,v.label);});
+    dlg.appendChild(btn);
+  });
+  const cancel=document.createElement('button'); cancel.className='lc-cancel';
+  cancel.textContent='キャンセル';
+  cancel.addEventListener('click',ev=>{ev.stopPropagation();closeDlg();});
+  dlg.appendChild(cancel);
+  document.body.appendChild(dlg);
+  setTimeout(()=>{
+    const close=ev=>{if(!dlg.isConnected)return;if(!dlg.contains(ev.target)){closeDlg();}};
+    document.addEventListener('mousedown',close);
+    _laneChoiceRemoveClose=()=>document.removeEventListener('mousedown',close);
+  },60);
+}
+function showLaneChoice(n,callback){
+  if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  document.getElementById('lane-choice')?.remove();
+  const sl=getSpannedLanes(n);
+  if(sl.length<=1){if(sl.length===1)callback(sl[0].id);return;}
+  const dlg=document.createElement('div'); dlg.id='lane-choice';
+  const r=document.getElementById('diagram-svg').getBoundingClientRect();
+  const dx=r.left+n.x+n.w/2-70, dy=r.top+n.y-80;
+  dlg.style.left=Math.max(4,dx)+'px'; dlg.style.top=Math.max(4,Math.min(window.innerHeight-160,dy))+'px';
+  const title=document.createElement('div'); title.className='lc-title';
+  title.textContent='接続するレーンを選択:'; dlg.appendChild(title);
+  const closeDlg=()=>{
+    dlg.remove();
+    if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  };
+  sl.forEach(lane=>{
+    const btn=document.createElement('button');
+    btn.textContent=lane.name;
+    btn.style.background=lane.bg; btn.style.borderColor=lane.hd;
+    btn.onmouseenter=()=>{btn.style.background=lane.hd;};
+    btn.onmouseleave=()=>{btn.style.background=lane.bg;};
+    btn.addEventListener('click',ev=>{ev.stopPropagation();closeDlg();callback(lane.id);});
+    dlg.appendChild(btn);
+  });
+  const cancel=document.createElement('button'); cancel.className='lc-cancel';
+  cancel.textContent='キャンセル';
+  cancel.addEventListener('click',ev=>{ev.stopPropagation();closeDlg();S.conn=null;render();});
+  dlg.appendChild(cancel);
+  document.body.appendChild(dlg);
+  setTimeout(()=>{
+    const close=e=>{if(!dlg.isConnected)return;if(!dlg.contains(e.target)){closeDlg();S.conn=null;render();}};
+    document.addEventListener('mousedown',close);
+    _laneChoiceRemoveClose=()=>document.removeEventListener('mousedown',close);
+  },60);
+}
+function renderGuides(lane,snappedCross,snapMain){
+  const g=document.getElementById('g-guides');g.innerHTML='';
+  const hdr=headerSize();
+  if(lane&&usesLanes()){
+    const lx=laneX(lane.id);
+    const snaps=[
+      {pos:lx+lane.w*.25,label:'1/4'},
+      {pos:lx+lane.w*.5, label:'中央'},
+      {pos:lx+lane.w*.75,label:'3/4'},
+    ];
+    snaps.forEach(s=>{
+      const active=snappedCross!==null&&Math.abs(snappedCross-s.pos)<1;
+      if(isV()){
+        g.appendChild(e('line',{x1:s.pos,y1:hdr,x2:s.pos,y2:SVG_H,
+          stroke:active?'#2563eb':'#64748b','stroke-width':active?2.5:1,
+          'stroke-dasharray':'5,3',opacity:active?'1':'.5','pointer-events':'none'}));
+        if(active){
+          const lw=s.label==='中央'?28:22;
+          g.appendChild(e('rect',{x:s.pos-lw/2,y:hdr+5,width:lw,height:16,rx:3,
+            fill:'#2563eb',opacity:'0.9','pointer-events':'none'}));
+          const t=e('text',{x:s.pos,y:hdr+13,'text-anchor':'middle','dominant-baseline':'middle',
+            'font-size':'10','font-weight':'700',fill:'white','pointer-events':'none'});
+          t.textContent=s.label; g.appendChild(t);
+        }
+      } else {
+        g.appendChild(e('line',{x1:hdr,y1:s.pos,x2:SVG_W,y2:s.pos,
+          stroke:active?'#2563eb':'#64748b','stroke-width':active?2.5:1,
+          'stroke-dasharray':'5,3',opacity:active?'1':'.5','pointer-events':'none'}));
+        if(active){
+          const lw=s.label==='中央'?28:22;
+          g.appendChild(e('rect',{x:hdr+5,y:s.pos-8,width:lw,height:16,rx:3,
+            fill:'#2563eb',opacity:'0.9','pointer-events':'none'}));
+          const t=e('text',{x:hdr+5+lw/2,y:s.pos,'text-anchor':'middle','dominant-baseline':'middle',
+            'font-size':'10','font-weight':'700',fill:'white','pointer-events':'none'});
+          t.textContent=s.label; g.appendChild(t);
+        }
+      }
+    });
+  }
+  if(snapMain!=null){
+    if(isV()){
+      const tw=usesLanes()?totalLaneSpan():SVG_W;
+      g.appendChild(e('line',{x1:0,y1:snapMain,x2:tw,y2:snapMain,
+        stroke:'#f59e0b','stroke-width':2,'stroke-dasharray':'5,3',opacity:'1','pointer-events':'none'}));
+    } else {
+      const th=usesLanes()?totalLaneSpan():SVG_H;
+      g.appendChild(e('line',{x1:snapMain,y1:0,x2:snapMain,y2:th,
+        stroke:'#f59e0b','stroke-width':2,'stroke-dasharray':'5,3',opacity:'1','pointer-events':'none'}));
+    }
+  }
+}
+function clearGuides(){document.getElementById('g-guides').innerHTML='';}
+
+function addNode(type,sx,sy,opts){
+  const d=SD[type],hdr=headerSize();
+  const nw=isV()?d.w:d.h, nh=isV()?d.h:d.w;
+  const crossPos=isV()?sx:sy;
+  const mainPos=isV()?sy:sx;
+  const dt=getDT();
+  const label=(opts&&opts.text)||(dt.shapeTexts&&dt.shapeTexts[type])||dt.palLabels[type]||d.text;
+  if(usesLanes()){
+    const lane=laneAt(crossPos),lx=laneX(lane.id);
+    const snappedC=snapCrossInLane(lane,crossPos);
+    const cPos=Math.max(lx+4,Math.min(lx+lane.w-d.w-4,snappedC-d.w/2));
+    const snapM=snapMainToShapes(mainPos,null);
+    const cm=snapM!==null?snapM:mainPos;
+    const canvasMain=isV()?SVG_H:SVG_W;
+    const mPos=Math.max(hdr+4,Math.min(canvasMain-d.h-4,cm-d.h/2));
+    const pos=isV()?{x:cPos,y:mPos}:{x:mPos,y:cPos};
+    const n={id:uid(),type,x:pos.x,y:pos.y,w:nw,h:nh,text:label,lid:lane.id};
+    if(opts&&opts.variant)n.variant=opts.variant;
+    S.nodes.push(n); S.sel=[n.id]; clearGuides(); snap(); render(); return n;
+  } else {
+    const snappedC=snapCrossInLane(null,crossPos);
+    const cPos=Math.max(4,snappedC-d.w/2);
+    const snapM=snapMainToShapes(mainPos,null);
+    const cm=snapM!==null?snapM:mainPos;
+    const mPos=Math.max(4,cm-d.h/2);
+    const pos=isV()?{x:cPos,y:mPos}:{x:mPos,y:cPos};
+    const n={id:uid(),type,x:pos.x,y:pos.y,w:nw,h:nh,text:label,lid:VIRTUAL_LANE.id};
+    if(opts&&opts.variant)n.variant=opts.variant;
+    S.nodes.push(n); S.sel=[n.id]; clearGuides(); snap(); render(); return n;
+  }
+}
+function delSel(){
+  if(!S.sel.length)return;
+  const ids=new Set(S.sel);
+  S.nodes=S.nodes.filter(n=>!ids.has(n.id));
+  S.edges=S.edges.filter(e=>!ids.has(e.id)&&!ids.has(e.from)&&!ids.has(e.to));
+  S.sel=[]; S.conn=null; snap(); render();
+}
+
+// ── Edges ──
+function addEdge(f,t,opts={}){
+  if(f===t||S.edges.find(e=>e.from===f&&e.to===t))return null;
+  const eid=uid();
+  S.edges.push({id:eid,from:f,to:t,label:'',fromLid:opts.fromLid||null,toLid:opts.toLid||null});
+  snap(); render();
+  return eid;
+}
+
+// ── History ──
+function snap(){
+  const d=JSON.stringify({lanes:S.lanes,nodes:S.nodes,edges:S.edges});
+  S.hist=S.hist.slice(0,S.hi+1); S.hist.push(d);
+  if(S.hist.length>80)S.hist.shift();
+  S.hi=S.hist.length-1;
+}
+function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;S.sel=[];S.conn=null;lanePanel();render()}
+function undo(){if(S.hi>0){S.hi--;restore(S.hist[S.hi])}}
+function redo(){if(S.hi<S.hist.length-1){S.hi++;restore(S.hist[S.hi])}}
+
+// ── SVG helpers ──
+function e(tag,a={}){const el=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(a))el.setAttribute(k,v);return el}
+function svgPt(ev){
+  const svg=document.getElementById('diagram-svg');
+  const pt=svg.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY;
+  try{return pt.matrixTransform(svg.getScreenCTM().inverse())}
+  catch{const r=svg.getBoundingClientRect();return{x:ev.clientX-r.left,y:ev.clientY-r.top}}
+}
+function nc(n){return[n.x+n.w/2,n.y+n.h/2]}
+function exitPt(n,side){
+  if(side==='top')    return[n.x+n.w/2, n.y];
+  if(side==='bottom') return[n.x+n.w/2, n.y+n.h];
+  if(side==='left')   return[n.x,        n.y+n.h/2];
+  if(side==='right')  return[n.x+n.w,    n.y+n.h/2];
+}
+function facingSide(from,to){
+  const dx=(to.x+to.w/2)-(from.x+from.w/2),dy=(to.y+to.h/2)-(from.y+from.h/2);
+  if(isV()){
+    // 縦モード: Y方向(main)優先 — 15°閾値
+    return Math.abs(dy)>=Math.abs(dx)*0.27?(dy>=0?'bottom':'top'):(dx>=0?'right':'left');
+  } else {
+    // 横モード: X方向(main)優先 — 15°閾値
+    return Math.abs(dx)>=Math.abs(dy)*0.27?(dx>=0?'right':'left'):(dy>=0?'bottom':'top');
+  }
+}
+// ── ポート予約方式: 同一辺への接続重複を排除 ──
+function nodeRef(n, ed, dir){
+  if(n.type!=='crosslane') return n;
+  const lid=dir==='from'?ed?.fromLid:ed?.toLid;
+  if(!lid) return n;
+  const ln=S.lanes.find(l=>l.id===lid);
+  if(!ln) return n;
+  if(isV()) return{...n,x:laneX(lid),w:ln.w,type:'rect'};
+  else return{...n,y:laneX(lid),h:ln.w,type:'rect'};
+}
+function rankedSides(from,to){
+  const dx=(to.x+to.w/2)-(from.x+from.w/2), dy=(to.y+to.h/2)-(from.y+from.h/2);
+  const angle=Math.atan2(dy,dx)*180/Math.PI;
+  const sa=[{s:'right',a:0},{s:'bottom',a:90},{s:'left',a:180},{s:'top',a:-90}];
+  return sa.sort((a,b)=>{
+    let da=Math.abs(angle-a.a); if(da>180)da=360-da;
+    let db=Math.abs(angle-b.a); if(db>180)db=360-db;
+    return da-db;
+  }).map(x=>x.s);
+}
+function allocatePorts(){
+  const asgn={}; // edgeId -> {exitSide, entrySide, aRef, bRef}
+  const used={}; // nodeId -> {top:0, bottom:0, left:0, right:0} — in/out合算
+  S.nodes.forEach(n=>{
+    used[n.id]={top:0,bottom:0,left:0,right:0};
+  });
+  // 1st pass: ideal sides
+  S.edges.forEach(ed=>{
+    const fn=S.nodes.find(n=>n.id===ed.from), tn=S.nodes.find(n=>n.id===ed.to);
+    if(!fn||!tn) return;
+    const aRef=nodeRef(fn,ed,'from'), bRef=nodeRef(tn,ed,'to');
+    const exitSide=facingSide(aRef,bRef);
+    const entrySide=facingSide(bRef,aRef);
+    asgn[ed.id]={exitSide,entrySide,aRef,bRef,fromId:fn.id,toId:tn.id};
+  });
+  // 2nd pass: resolve conflicts (earlier edges have priority)
+  S.edges.forEach(ed=>{
+    const a=asgn[ed.id]; if(!a) return;
+    // resolve exit side
+    if(used[a.fromId][a.exitSide]>0){
+      const ranked=rankedSides(a.aRef,a.bRef);
+      for(const s of ranked){
+        if(used[a.fromId][s]===0){a.exitSide=s;break;}
+      }
+    }
+    used[a.fromId][a.exitSide]++;
+    // resolve entry side
+    if(used[a.toId][a.entrySide]>0){
+      const ranked=rankedSides(a.bRef,a.aRef);
+      for(const s of ranked){
+        if(used[a.toId][s]===0){a.entrySide=s;break;}
+      }
+    }
+    used[a.toId][a.entrySide]++;
+  });
+  return asgn;
+}
+function connPts(a,b,ed,portAssign){
+  let aRef=a,bRef=b,exitSide,entrySide;
+  if(portAssign&&portAssign[ed.id]){
+    const pa=portAssign[ed.id];
+    aRef=pa.aRef; bRef=pa.bRef;
+    exitSide=pa.exitSide; entrySide=pa.entrySide;
+  } else {
+    aRef=nodeRef(a,ed,'from'); bRef=nodeRef(b,ed,'to');
+    exitSide=facingSide(aRef,bRef);
+    entrySide=facingSide(bRef,aRef);
+  }
+  const[sx,sy]=exitPt(aRef,exitSide),[ex,ey]=exitPt(bRef,entrySide);
+  return[sx,sy,ex,ey,exitSide,entrySide];
+}
+function bezier(sx,sy,ex,ey,exitSide,entrySide){
+  const dist=Math.hypot(ex-sx,ey-sy),off=Math.max(40,dist*0.45);
+  let c1x=sx,c1y=sy,c2x=ex,c2y=ey;
+  if(exitSide==='bottom')c1y+=off; else if(exitSide==='top')c1y-=off;
+  else if(exitSide==='right')c1x+=off; else if(exitSide==='left')c1x-=off;
+  if(entrySide==='top')c2y-=off; else if(entrySide==='bottom')c2y+=off;
+  else if(entrySide==='left')c2x-=off; else if(entrySide==='right')c2x+=off;
+  return`M${sx},${sy} C${c1x},${c1y} ${c2x},${c2y} ${ex},${ey}`;
+}
+// ── 障害物回避ルーティング ──
+const ROUTE_PAD=12;
+function routeObs(fid,tid){
+  const p=ROUTE_PAD;
+  return S.nodes.filter(n=>n.id!==fid&&n.id!==tid)
+    .map(n=>({l:n.x-p,t:n.y-p,r:n.x+n.w+p,b:n.y+n.h+p}));
+}
+function vHit(x,y1,y2,obs){
+  const t=Math.min(y1,y2),b=Math.max(y1,y2);
+  return obs.find(o=>x>o.l&&x<o.r&&b>o.t&&t<o.b)||null;
+}
+function hHit(y,x1,x2,obs){
+  const l=Math.min(x1,x2),r=Math.max(x1,x2);
+  return obs.find(o=>y>o.t&&y<o.b&&r>o.l&&l<o.r)||null;
+}
+function clearY(sy,ey,sx,ex,obs){
+  const mid=Math.round((sy+ey)/2);
+  if(!hHit(mid,sx,ex,obs))return mid;
+  const cs=[];
+  obs.forEach(o=>{cs.push(Math.round(o.t-1));cs.push(Math.round(o.b+1));});
+  const ok=cs.filter(y=>!hHit(y,sx,ex,obs));
+  if(!ok.length)return mid;
+  ok.sort((a,b)=>Math.abs(a-mid)-Math.abs(b-mid));
+  return ok[0];
+}
+function clearX(sx,ex,sy,ey,obs){
+  const mid=Math.round((sx+ex)/2);
+  if(!vHit(mid,sy,ey,obs))return mid;
+  const cs=[];
+  obs.forEach(o=>{cs.push(Math.round(o.l-1));cs.push(Math.round(o.r+1));});
+  const ok=cs.filter(x=>!vHit(x,sy,ey,obs));
+  if(!ok.length)return mid;
+  ok.sort((a,b)=>Math.abs(a-mid)-Math.abs(b-mid));
+  return ok[0];
+}
+function fixSegs(pts,obs){
+  for(let it=0;it<4;it++){
+    let changed=false;
+    for(let i=0;i<pts.length-1;i++){
+      const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
+      const isVS=Math.abs(x2-x1)<2,isHS=Math.abs(y2-y1)<2;
+      let hit=null;
+      if(isVS)hit=vHit(x1,y1,y2,obs);
+      else if(isHS)hit=hHit(y1,x1,x2,obs);
+      if(!hit)continue;
+      if(isVS){
+        const x=x1,down=y2>y1;
+        const dl=Math.abs(hit.l-x),dr=Math.abs(hit.r-x);
+        const dx=dl<dr?Math.round(hit.l-1):Math.round(hit.r+1);
+        const by=Math.round(down?hit.t-1:hit.b+1);
+        const ay=Math.round(down?hit.b+1:hit.t-1);
+        pts.splice(i+1,0,[x,by],[dx,by],[dx,ay],[x,ay]);
+        changed=true;break;
+      }
+      if(isHS){
+        const y=y1,right=x2>x1;
+        const dt=Math.abs(hit.t-y),db=Math.abs(hit.b-y);
+        const dy=dt<db?Math.round(hit.t-1):Math.round(hit.b+1);
+        const bx=Math.round(right?hit.l-1:hit.r+1);
+        const ax=Math.round(right?hit.r+1:hit.l-1);
+        pts.splice(i+1,0,[bx,y],[bx,dy],[ax,dy],[ax,y]);
+        changed=true;break;
+      }
+    }
+    if(!changed)break;
+  }
+  return pts;
+}
+function wpPath(pts,r){
+  r=r||20;
+  if(pts.length<2)return'';
+  if(pts.length===2)return`M${pts[0][0]},${pts[0][1]} L${pts[1][0]},${pts[1][1]}`;
+  let d=`M${pts[0][0]},${pts[0][1]}`;
+  for(let i=1;i<pts.length-1;i++){
+    const[px,py]=pts[i-1],[cx,cy]=pts[i],[nx,ny]=pts[i+1];
+    const dx1=cx-px,dy1=cy-py,dx2=nx-cx,dy2=ny-cy;
+    const l1=Math.max(Math.abs(dx1),Math.abs(dy1)),l2=Math.max(Math.abs(dx2),Math.abs(dy2));
+    const cr=Math.min(r,l1/2-1,l2/2-1);
+    if(cr<2){d+=` L${cx},${cy}`;continue;}
+    const ux=dx1?dx1/Math.abs(dx1):0,uy=dy1?dy1/Math.abs(dy1):0;
+    const vx=dx2?dx2/Math.abs(dx2):0,vy=dy2?dy2/Math.abs(dy2):0;
+    d+=` L${Math.round(cx-ux*cr)},${Math.round(cy-uy*cr)} Q${cx},${cy} ${Math.round(cx+vx*cr)},${Math.round(cy+vy*cr)}`;
+  }
+  const ep=pts[pts.length-1];
+  d+=` L${ep[0]},${ep[1]}`;
+  return d;
+}
+function routePath(sx,sy,ex,ey,exitSide,entrySide,fromId,toId){
+  const isVE=exitSide==='top'||exitSide==='bottom';
+  const isVN=entrySide==='top'||entrySide==='bottom';
+  if(isVE&&isVN){
+    if(Math.abs(ex-sx)<4)return`M${sx},${sy} L${ex},${ey}`;
+    const obs=routeObs(fromId,toId);
+    const midY=clearY(sy,ey,sx,ex,obs);
+    let pts=[[sx,sy],[sx,midY],[ex,midY],[ex,ey]];
+    pts=fixSegs(pts,obs);
+    return wpPath(pts,20);
+  }
+  const isHE=exitSide==='left'||exitSide==='right';
+  const isHN=entrySide==='left'||entrySide==='right';
+  if(isHE&&isHN){
+    if(Math.abs(ey-sy)<4)return`M${sx},${sy} L${ex},${ey}`;
+    const obs=routeObs(fromId,toId);
+    const midX=clearX(sx,ex,sy,ey,obs);
+    let pts=[[sx,sy],[midX,sy],[midX,ey],[ex,ey]];
+    pts=fixSegs(pts,obs);
+    return wpPath(pts,20);
+  }
+  return bezier(sx,sy,ex,ey,exitSide,entrySide);
+}
+// ── 交差ブリッジ ──
+function routeWaypoints(sx,sy,ex,ey,exitSide,entrySide,fromId,toId){
+  const isVE=exitSide==='top'||exitSide==='bottom';
+  const isVN=entrySide==='top'||entrySide==='bottom';
+  if(isVE&&isVN){
+    if(Math.abs(ex-sx)<4)return[[sx,sy],[ex,ey]];
+    const obs=routeObs(fromId,toId);
+    const midY=clearY(sy,ey,sx,ex,obs);
+    let pts=[[sx,sy],[sx,midY],[ex,midY],[ex,ey]];
+    return fixSegs(pts,obs);
+  }
+  const isHE=exitSide==='left'||exitSide==='right';
+  const isHN=entrySide==='left'||entrySide==='right';
+  if(isHE&&isHN){
+    if(Math.abs(ey-sy)<4)return[[sx,sy],[ex,ey]];
+    const obs=routeObs(fromId,toId);
+    const midX=clearX(sx,ex,sy,ey,obs);
+    let pts=[[sx,sy],[midX,sy],[midX,ey],[ex,ey]];
+    return fixSegs(pts,obs);
+  }
+  return null; // bezier — ブリッジ対象外
+}
+function isReturnEdge(fn,tn){
+  if(isV()) return(fn.y+fn.h/2)>(tn.y+tn.h/2);
+  else return(fn.x+fn.w/2)>(tn.x+tn.w/2);
+}
+function findCrossings(pts,otherWps){
+  const hits=[];
+  const M=2; // margin: 端部近くは除外
+  for(let i=0;i<pts.length-1;i++){
+    const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
+    const segH=Math.abs(y2-y1)<2, segV=Math.abs(x2-x1)<2;
+    if(!segH&&!segV)continue;
+    for(const owp of otherWps){
+      if(!owp)continue;
+      for(let j=0;j<owp.length-1;j++){
+        const[ox1,oy1]=owp[j],[ox2,oy2]=owp[j+1];
+        const oH=Math.abs(oy2-oy1)<2, oV=Math.abs(ox2-ox1)<2;
+        if(segH&&oV){
+          const y=y1,x=ox1;
+          if(x>Math.min(x1,x2)+M&&x<Math.max(x1,x2)-M&&
+             y>Math.min(oy1,oy2)+M&&y<Math.max(oy1,oy2)-M)
+            hits.push({seg:i,x,y});
+        } else if(segV&&oH){
+          const x=x1,y=oy1;
+          if(y>Math.min(y1,y2)+M&&y<Math.max(y1,y2)-M&&
+             x>Math.min(ox1,ox2)+M&&x<Math.max(ox1,ox2)-M)
+            hits.push({seg:i,x,y});
+        }
+      }
+    }
+  }
+  return hits;
+}
+function wpPathBridge(pts,crossings,r){
+  r=r||20;
+  const BR=12;
+  if(pts.length<2)return'';
+  if(!crossings||crossings.length===0)return wpPath(pts,r);
+  // セグメントごとに交差点をグループ化しソート
+  const bySeg={};
+  crossings.forEach(c=>{if(!bySeg[c.seg])bySeg[c.seg]=[];bySeg[c.seg].push(c);});
+  for(const k in bySeg){
+    const[x1,y1]=pts[k],[x2,y2]=pts[+k+1];
+    const segV=Math.abs(x2-x1)<2;
+    if(segV) bySeg[k].sort((a,b)=>y1<y2?a.y-b.y:b.y-a.y);
+    else bySeg[k].sort((a,b)=>x1<x2?a.x-b.x:b.x-a.x);
+  }
+  // ウェイポイントを展開（交差点でブリッジ用のポイントを挿入）
+  const expanded=[];
+  for(let i=0;i<pts.length;i++){
+    expanded.push({pt:pts[i],bridge:false});
+    if(bySeg[i]){
+      for(const c of bySeg[i]){
+        const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
+        const segV=Math.abs(x2-x1)<2;
+        if(segV){
+          const dir=y2>y1?1:-1;
+          expanded.push({pt:[c.x,c.y-BR*dir],bridge:false});
+          expanded.push({pt:[c.x,c.y+BR*dir],bridge:true,cx:c.x,cy:c.y,segV:true,dir});
+        } else {
+          const dir=x2>x1?1:-1;
+          expanded.push({pt:[c.x-BR*dir,c.y],bridge:false});
+          expanded.push({pt:[c.x+BR*dir,c.y],bridge:true,cx:c.x,cy:c.y,segV:false,dir});
+        }
+      }
+    }
+  }
+  // SVGパス構築
+  let d=`M${expanded[0].pt[0]},${expanded[0].pt[1]}`;
+  for(let i=1;i<expanded.length;i++){
+    const ep=expanded[i];
+    if(ep.bridge){
+      // 半円弧で跨ぐ
+      const sweep=ep.segV?(ep.dir>0?1:0):(ep.dir>0?0:1);
+      if(ep.segV) d+=` A${BR},${BR} 0 0 ${sweep} ${ep.pt[0]},${ep.pt[1]}`;
+      else d+=` A${BR},${BR} 0 0 ${sweep} ${ep.pt[0]},${ep.pt[1]}`;
+    } else {
+      // 通常のL（角丸なし簡易版）
+      const prev=expanded[i-1];
+      // 次が角かどうか判定して角丸
+      if(i<expanded.length-1&&!expanded[i+1].bridge){
+        const[px,py]=prev.pt,[cx,cy]=ep.pt,[nx,ny]=expanded[i+1].pt;
+        const dx1=cx-px,dy1=cy-py,dx2=nx-cx,dy2=ny-cy;
+        if((Math.abs(dx1)>2||Math.abs(dy1)>2)&&(Math.abs(dx2)>2||Math.abs(dy2)>2)){
+          const l1=Math.max(Math.abs(dx1),Math.abs(dy1)),l2=Math.max(Math.abs(dx2),Math.abs(dy2));
+          const cr=Math.min(r,l1/2-1,l2/2-1);
+          if(cr>=2&&(dx1*dy2!==dy1*dx2)){
+            const ux=dx1?dx1/Math.abs(dx1):0,uy=dy1?dy1/Math.abs(dy1):0;
+            const vx=dx2?dx2/Math.abs(dx2):0,vy=dy2?dy2/Math.abs(dy2):0;
+            d+=` L${Math.round(cx-ux*cr)},${Math.round(cy-uy*cr)} Q${cx},${cy} ${Math.round(cx+vx*cr)},${Math.round(cy+vy*cr)}`;
+            continue;
+          }
+        }
+      }
+      d+=` L${ep.pt[0]},${ep.pt[1]}`;
+    }
+  }
+  return d;
+}
+
+// ── Render ──
+function updateCrosslaneLids(n){
+  if(!isV()){
+    // 横モード: y/h がレーン軸
+    const topY=n.y, botY=n.y+n.h;
+    let newFrom=null,newTo=null,ly=0;
+    S.lanes.forEach(l=>{
+      const lBot=ly+l.w;
+      if(topY<lBot&&botY>ly){
+        if(!newFrom)newFrom=l.id;
+        newTo=l.id;
+      }
+      ly+=l.w;
+    });
+    if(newFrom&&newTo&&newFrom!==newTo){
+      const oldFromY=laneX(n.fromLid);
+      n.crossX=(n.crossX||0)+oldFromY-laneX(newFrom);
+      n.fromLid=newFrom; n.toLid=newTo; n.lid=newFrom;
+    }
+    return;
+  }
+  const leftX=n.x, rightX=n.x+n.w;
+  let newFrom=null,newTo=null,lx=0;
+  S.lanes.forEach(l=>{
+    const lRight=lx+l.w;
+    if(leftX<lRight&&rightX>lx){
+      if(!newFrom)newFrom=l.id;
+      newTo=l.id;
+    }
+    lx+=l.w;
+  });
+  if(newFrom&&newTo&&newFrom!==newTo){
+    const oldFromX=laneX(n.fromLid);
+    n.crossX=(n.crossX||0)+oldFromX-laneX(newFrom);
+    n.fromLid=newFrom; n.toLid=newTo; n.lid=newFrom;
+  }
+}
+function normalizeCrosslaneGeometry(){
+  const thickness=SD.crosslane.h;
+  S.nodes.forEach(n=>{
+    if(n.type!=='crosslane')return;
+    if(n.mainPos==null) n.mainPos=n.y; // 旧データ互換
+    const fromPos=laneX(n.fromLid);
+    const crossSpan=(n.crossW!=null)?n.crossW:(()=>{
+      const tl=S.lanes.find(l=>l.id===n.toLid);
+      return tl?laneX(n.toLid)+tl.w-fromPos:LANE_W*2;
+    })();
+    const crossPos=fromPos+(n.crossX||0);
+    if(isV()){
+      n.x=crossPos; n.w=crossSpan;
+      n.y=n.mainPos; n.h=thickness;
+    } else {
+      n.y=crossPos; n.h=crossSpan;
+      n.x=n.mainPos; n.w=thickness;
+    }
+    n.lid=n.fromLid;
+  });
+}
+function renderGrid(){
+  const g=document.getElementById('g-grid'); g.innerHTML='';
+  const hdr=headerSize();
+  if(isV()){
+    const tw=usesLanes()?totalLaneSpan():SVG_W;
+    for(let y=hdr+GRID_STEP;y<SVG_H;y+=GRID_STEP){
+      g.appendChild(e('line',{x1:0,y1:y,x2:tw,y2:y,
+        stroke:'#94a3b8','stroke-width':.5,'stroke-dasharray':'2,6',opacity:'.22','pointer-events':'none'}));
+    }
+  } else {
+    const th=usesLanes()?totalLaneSpan():SVG_H;
+    for(let x=hdr+GRID_STEP;x<SVG_W;x+=GRID_STEP){
+      g.appendChild(e('line',{x1:x,y1:0,x2:x,y2:th,
+        stroke:'#94a3b8','stroke-width':.5,'stroke-dasharray':'2,6',opacity:'.22','pointer-events':'none'}));
+    }
+  }
+}
+function render(){
+  calcCanvasSize();
+  const svg=document.getElementById('diagram-svg');
+  svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
+  if(usesLanes()) normalizeCrosslaneGeometry();
+  // noteシェイプのサイズを備考テキスト量に合わせて自動調整
+  S.nodes.forEach(n=>{
+    if((n.type==='note'||n.type==='state_detail')&&n.note){
+      if(isV()){
+        const nls=wrapText(n.note,n.w-16,10);
+        const needed=NOTE_TITLE_H+nls.length*12+16;
+        n.h=Math.max(SD[n.type].h,needed);
+      } else {
+        const chars=[...(n.note||'').replace(/\n/g,'')];
+        const charH=15;
+        const maxPerCol=Math.max(1,Math.floor((n.h-16)/charH));
+        const cols=Math.ceil(chars.length/maxPerCol);
+        const neededW=NOTE_TITLE_H+cols*14+16;
+        n.w=Math.max(SD[n.type].h,neededW);
+      }
+    }
+  });
+  renderLanes(); renderGrid(); renderEdges(); renderNodes(); renderDividers();
+  applyZoom();
+}
+function renderLanes(){
+  const g=document.getElementById('g-lanes'); g.innerHTML='';
+  if(!usesLanes()){
+    // レーンなし: 単色背景
+    g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc',stroke:'#94a3b8','stroke-width':1.5}));
+    return;
+  }
+  const hdr=headerSize();
+  if(isV()){
+    let x=0;
+    S.lanes.forEach((l,i)=>{
+      g.appendChild(e('rect',{x,y:hdr,width:l.w,height:SVG_H-hdr,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
+      g.appendChild(e('rect',{x,y:0,width:l.w,height:hdr,fill:l.hd,stroke:'#94a3b8','stroke-width':1}));
+      const t=e('text',{x:x+l.w/2,y:hdr/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'600',fill:'#1e293b'});
+      t.textContent=l.name; g.appendChild(t);
+      if(i<S.lanes.length-1)g.appendChild(e('line',{x1:x+l.w,y1:0,x2:x+l.w,y2:SVG_H,stroke:'#94a3b8','stroke-width':1.5}));
+      x+=l.w;
+    });
+    g.appendChild(e('rect',{x:0,y:0,width:totalLaneSpan(),height:SVG_H,fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
+  } else {
+    let y=0;
+    S.lanes.forEach((l,i)=>{
+      g.appendChild(e('rect',{x:hdr,y,width:SVG_W-hdr,height:l.w,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
+      g.appendChild(e('rect',{x:0,y,width:hdr,height:l.w,fill:l.hd,stroke:'#94a3b8','stroke-width':1}));
+      // 横モードのヘッダー: 1文字ずつ縦に並べる縦読み形式
+      const chars=[...l.name];
+      const charH=18, totalH=chars.length*charH;
+      const startY=y+l.w/2-totalH/2+charH/2;
+      chars.forEach((ch,ci)=>{
+        const ct=e('text',{x:hdr/2,y:startY+ci*charH,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'600',fill:'#1e293b'});
+        ct.textContent=ch; g.appendChild(ct);
+      });
+      if(i<S.lanes.length-1)g.appendChild(e('line',{x1:0,y1:y+l.w,x2:SVG_W,y2:y+l.w,stroke:'#94a3b8','stroke-width':1.5}));
+      y+=l.w;
+    });
+    g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:totalLaneSpan(),fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
+  }
+}
+function renderEdges(){
+  const g=document.getElementById('g-edges'); g.innerHTML='';
+  const portAssign=allocatePorts();
+  // 2パス描画: 順方向エッジのウェイポイントを収集 → 戻り方向エッジでブリッジ描画
+  const edgeData=[];
+  const forwardWps=[]; // 順方向エッジのウェイポイント配列
+  S.edges.forEach(ed=>{
+    const fn=S.nodes.find(n=>n.id===ed.from),tn=S.nodes.find(n=>n.id===ed.to);
+    if(!fn||!tn)return;
+    const[sx,sy,ex,ey,exitSide,entrySide]=connPts(fn,tn,ed,portAssign);
+    const isReturn=isReturnEdge(fn,tn);
+    const wps=routeWaypoints(sx,sy,ex,ey,exitSide,entrySide,ed.from,ed.to);
+    const pd=routePath(sx,sy,ex,ey,exitSide,entrySide,ed.from,ed.to);
+    edgeData.push({ed,fn,tn,sx,sy,ex,ey,exitSide,entrySide,pd,wps,isReturn});
+    if(!isReturn&&wps) forwardWps.push(wps);
+  });
+  // パス2: 戻り方向エッジはブリッジ付きパスを生成、交差情報を保持
+  edgeData.forEach(dat=>{
+    if(dat.isReturn&&dat.wps){
+      dat.crossings=findCrossings(dat.wps,forwardWps);
+      if(dat.crossings.length>0) dat.pd=wpPathBridge(dat.wps,dat.crossings);
+    }
+  });
+  // エッジ描画ヘルパー
+  function renderOneEdge(dat){
+    const{ed,sx,sy,ex,ey,pd}=dat;
+    const isSel=S.sel.includes(ed.id),col=isSel?'#2563eb':'#475569',mk=isSel?'url(#arrB)':'url(#arr)';
+    const hit=e('path',{d:pd,stroke:'transparent','stroke-width':12,fill:'none',cursor:'pointer'});
+    hit.addEventListener('mousedown',ev=>{ev.stopPropagation();});
+    hit.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+      edgeClickTimer=setTimeout(()=>{edgeClickTimer=null;S.sel=[ed.id];render();},220);
+    });
+    hit.addEventListener('dblclick',ev=>{
+      ev.stopPropagation();
+      if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+      edgeLabel(ed.id);
+    });
+    hit.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[ed.id];delSel();});
+    g.appendChild(hit);
+    // 戻り方向エッジで交差あり → 白背景パスで下の線を消してからブリッジ付き線を描画
+    if(dat.isReturn&&dat.crossings&&dat.crossings.length>0){
+      g.appendChild(e('path',{d:pd,stroke:'white','stroke-width':5,fill:'none','pointer-events':'none'}));
+    }
+    g.appendChild(e('path',{d:pd,stroke:col,'stroke-width':isSel?2:1.5,fill:'none','marker-end':mk}));
+    const mx=(sx+ex)/2, my=(sy+ey)/2;
+    if(ed.label){
+      const _sc=S.diagramType==='statechart';
+      if(isV()){
+        const _cw=_sc?8:7, _fs=_sc?'13':'11', _lh=_sc?24:20;
+        const lw=Math.max(36,ed.label.length*_cw+14);
+        g.appendChild(e('rect',{x:mx-lw/2,y:my-_lh/2,width:lw,height:_lh,rx:3,fill:'white',stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
+        const t=e('text',{x:mx,y:my,'text-anchor':'middle','dominant-baseline':'middle','font-size':_fs,fill:'#475569','pointer-events':'none'});
+        t.textContent=ed.label; g.appendChild(t);
+      } else {
+        const chars=[...ed.label];
+        const charH=16, totalH=chars.length*charH;
+        const lw=20, lh=Math.max(28,totalH+10);
+        g.appendChild(e('rect',{x:mx-lw/2,y:my-lh/2,width:lw,height:lh,rx:3,fill:'white',stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
+        const startY=my-totalH/2+charH/2;
+        chars.forEach((ch,ci)=>{
+          const t=e('text',{x:mx,y:startY+ci*charH,'text-anchor':'middle','dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
+          t.textContent=ch; g.appendChild(t);
+        });
+      }
+    } else {
+      const dot=e('circle',{cx:mx,cy:my,r:4,fill:isSel?'#93c5fd':'#cbd5e1',cursor:'pointer','pointer-events':'all'});
+      dot.addEventListener('mousedown',ev=>{ev.stopPropagation();});
+      dot.addEventListener('click',ev=>{
+        ev.stopPropagation();
+        if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+        edgeClickTimer=setTimeout(()=>{edgeClickTimer=null;S.sel=[ed.id];render();},220);
+      });
+      dot.addEventListener('dblclick',ev=>{
+        ev.stopPropagation();
+        if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+        edgeLabel(ed.id);
+      });
+      dot.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[ed.id];delSel();});
+      g.appendChild(dot);
+    }
+  }
+  // 描画順: 順方向エッジ → 戻り方向エッジ（ブリッジが上に来る）
+  edgeData.filter(d=>!d.isReturn).forEach(renderOneEdge);
+  edgeData.filter(d=>d.isReturn).forEach(renderOneEdge);
+}
+// ── 縦書きテキスト描画ヘルパー ──
+// 横モード時: 1文字ずつ縦に並べる。縦モード時: 通常の横書き。
+function appendVText(parent,text,cx,cy,fontSize,attrs){
+  attrs=attrs||{};
+  const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
+  if(isV()){
+    const t=e('text',{x:cx,y:cy,...baseAttrs});
+    t.textContent=text; parent.appendChild(t);
+  } else {
+    const chars=[...text];
+    const charH=fontSize*1.5;
+    const totalH=chars.length*charH;
+    const startY=cy-totalH/2+charH/2;
+    chars.forEach((ch,i)=>{
+      const t=e('text',{x:cx,y:startY+i*charH,...baseAttrs});
+      t.textContent=ch; parent.appendChild(t);
+    });
+  }
+}
+
+function shapeEl(n,sel){
+  const d=SD[n.type]||SD.rect,st=sel?'#2563eb':d.stroke,sw=sel?2.5:1.5;
+  if(n.type==='crosslane'){
+    const grp=e('g');
+    grp.appendChild(e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:d.fill,stroke:st,'stroke-width':sw}));
+    const sl=getSpannedLanes(n);
+    if(isV()){
+      let divX=laneX(n.fromLid);
+      for(let i=0;i<sl.length-1;i++){
+        divX+=sl[i].w;
+        if(divX>n.x&&divX<n.x+n.w){
+          grp.appendChild(e('line',{x1:divX,y1:n.y+4,x2:divX,y2:n.y+n.h-4,
+            stroke:st,'stroke-width':.8,'stroke-dasharray':'3,2',opacity:'.55','pointer-events':'none'}));
+        }
+      }
+    } else {
+      let divY=laneX(n.fromLid);
+      for(let i=0;i<sl.length-1;i++){
+        divY+=sl[i].w;
+        if(divY>n.y&&divY<n.y+n.h){
+          grp.appendChild(e('line',{x1:n.x+4,y1:divY,x2:n.x+n.w-4,y2:divY,
+            stroke:st,'stroke-width':.8,'stroke-dasharray':'3,2',opacity:'.55','pointer-events':'none'}));
+        }
+      }
+    }
+    return grp;
+  }
+  if(n.type==='note'){
+    const grp=e('g');
+    grp.appendChild(e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:d.fill,stroke:st,'stroke-width':sw}));
+    if(isV()){
+      const divY=n.y+NOTE_TITLE_H;
+      grp.appendChild(e('rect',{x:n.x+sw,y:divY,width:n.w-sw*2,height:n.y+n.h-divY-sw,rx:2,
+        fill:'rgba(255,255,255,0.5)','pointer-events':'none'}));
+      grp.appendChild(e('line',{x1:n.x,y1:divY,x2:n.x+n.w,y2:divY,
+        stroke:st,'stroke-width':'.8',opacity:'.6','pointer-events':'none'}));
+    } else {
+      const divX=n.x+NOTE_TITLE_H;
+      grp.appendChild(e('rect',{x:divX,y:n.y+sw,width:n.x+n.w-divX-sw,height:n.h-sw*2,rx:2,
+        fill:'rgba(255,255,255,0.5)','pointer-events':'none'}));
+      grp.appendChild(e('line',{x1:divX,y1:n.y,x2:divX,y2:n.y+n.h,
+        stroke:st,'stroke-width':'.8',opacity:'.6','pointer-events':'none'}));
+    }
+    return grp;
+  }
+  if(n.type==='rect')
+    return e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:d.fill,stroke:st,'stroke-width':sw});
+  if(n.type==='diamond'){
+    const cx=n.x+n.w/2,cy=n.y+n.h/2;
+    return e('polygon',{points:`${cx},${n.y} ${n.x+n.w},${cy} ${cx},${n.y+n.h} ${n.x},${cy}`,fill:d.fill,stroke:st,'stroke-width':sw});
+  }
+  if(n.type==='terminal')
+    return e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:n.h/2,fill:d.fill,stroke:st,'stroke-width':sw});
+  if(n.type==='parallelogram'){
+    const sk=14,{x,y,w,h}=n;
+    return e('polygon',{points:`${x+sk},${y} ${x+w},${y} ${x+w-sk},${y+h} ${x},${y+h}`,fill:d.fill,stroke:st,'stroke-width':sw});
+  }
+  if(n.type==='state')
+    return e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:16,fill:d.fill,stroke:st,'stroke-width':sw});
+  if(n.type==='state_detail'){
+    const grp=e('g');
+    grp.appendChild(e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:16,fill:d.fill,stroke:st,'stroke-width':sw}));
+    if(isV()){
+      const divY=n.y+NOTE_TITLE_H;
+      grp.appendChild(e('rect',{x:n.x+sw,y:divY,width:n.w-sw*2,height:n.y+n.h-divY-sw,rx:2,
+        fill:'rgba(255,255,255,0.5)','pointer-events':'none'}));
+      grp.appendChild(e('line',{x1:n.x,y1:divY,x2:n.x+n.w,y2:divY,
+        stroke:st,'stroke-width':'.8',opacity:'.6','pointer-events':'none'}));
+    } else {
+      const divX=n.x+NOTE_TITLE_H;
+      grp.appendChild(e('rect',{x:divX,y:n.y+sw,width:n.x+n.w-divX-sw,height:n.h-sw*2,rx:2,
+        fill:'rgba(255,255,255,0.5)','pointer-events':'none'}));
+      grp.appendChild(e('line',{x1:divX,y1:n.y,x2:divX,y2:n.y+n.h,
+        stroke:st,'stroke-width':'.8',opacity:'.6','pointer-events':'none'}));
+    }
+    return grp;
+  }
+  if(n.type==='initial'){
+    const icx=n.x+n.w/2,icy=n.y+n.h/2,ir=Math.min(n.w,n.h)/2;
+    return e('circle',{cx:icx,cy:icy,r:ir,fill:d.fill,stroke:sel?'#2563eb':d.stroke,'stroke-width':sel?2.5:1.5});
+  }
+  if(n.type==='final'){
+    const grp=e('g');
+    const fcx=n.x+n.w/2,fcy=n.y+n.h/2,fr=Math.min(n.w,n.h)/2;
+    grp.appendChild(e('circle',{cx:fcx,cy:fcy,r:fr,fill:'none',stroke:sel?'#2563eb':d.stroke,'stroke-width':sel?2.5:2}));
+    grp.appendChild(e('circle',{cx:fcx,cy:fcy,r:fr*0.6,fill:sel?'#2563eb':d.fill,stroke:'none'}));
+    return grp;
+  }
+  if(n.type==='event'){
+    const grp=e('g');
+    const ecx=n.x+n.w/2,ecy=n.y+n.h/2,r=Math.min(n.w,n.h)/2;
+    const ec=eventColors(n.variant);
+    const esw=sel?2.5:(ec.sw||1.5);
+    grp.appendChild(e('circle',{cx:ecx,cy:ecy,r,fill:ec.fill,stroke:sel?'#2563eb':ec.stroke,'stroke-width':esw}));
+    if(n.variant==='end'){
+      grp.appendChild(e('circle',{cx:ecx,cy:ecy,r:r-4,fill:'none',stroke:sel?'#2563eb':ec.stroke,'stroke-width':1.5}));
+    }
+    return grp;
+  }
+  if(n.type==='gateway_xor'||n.type==='gateway_par'){
+    const grp=e('g');
+    const gcx=n.x+n.w/2,gcy=n.y+n.h/2;
+    grp.appendChild(e('polygon',{points:`${gcx},${n.y} ${n.x+n.w},${gcy} ${gcx},${n.y+n.h} ${n.x},${gcy}`,fill:d.fill,stroke:st,'stroke-width':sw}));
+    const mark=n.type==='gateway_xor'?'✕':'＋';
+    const mt=e('text',{x:gcx,y:gcy,'text-anchor':'middle','dominant-baseline':'middle','font-size':'16','font-weight':'bold',fill:st,'pointer-events':'none'});
+    mt.textContent=mark; grp.appendChild(mt);
+    return grp;
+  }
+  if(n.type==='doc'){
+    const wv=10,{x,y,w,h}=n;
+    return e('path',{d:`M${x},${y} L${x+w},${y} L${x+w},${y+h-wv} Q${x+w*0.75},${y+h+wv*.5} ${x+w/2},${y+h-wv} Q${x+w*0.25},${y+h-wv*1.5} ${x},${y+h-wv} Z`,fill:d.fill,stroke:st,'stroke-width':sw});
+  }
+}
+function renderNodes(){
+  const g=document.getElementById('g-nodes'); g.innerHTML='';
+  S.nodes.forEach(n=>{
+    const sel=S.sel.includes(n.id);
+    const ng=e('g',{'data-nid':n.id});
+    ng.appendChild(shapeEl(n,sel));
+    const [cx,cy]=nc(n);
+    if(n.type==='note'||n.type==='state_detail'){
+      if(isV()){
+        // 縦モード: タイトル上、説明下（横書き）
+        const divY=n.y+NOTE_TITLE_H;
+        const titleCy=n.y+NOTE_TITLE_H/2;
+        const tt=e('text',{x:cx,y:titleCy,'text-anchor':'middle','dominant-baseline':'middle','font-size':'12',fill:'#1e293b','pointer-events':'none'});
+        tt.textContent=n.text; ng.appendChild(tt);
+        if(n.note){
+          const nls=wrapText(n.note,n.w-16,10);
+          nls.forEach((nl,ni)=>{
+            const nt=e('text',{x:n.x+8,y:divY+8+ni*12,
+              'text-anchor':'start','dominant-baseline':'hanging','font-size':'10',fill:'#475569','pointer-events':'none'});
+            nt.textContent=nl; ng.appendChild(nt);
+          });
+        } else {
+          const ph=e('text',{x:n.x+8,y:divY+8,'text-anchor':'start','dominant-baseline':'hanging',
+            'font-size':'10',fill:'#94a3b8','font-style':'italic','pointer-events':'none'});
+          ph.textContent=n.type==='state_detail'?'entry / do / exit…':'備考…'; ng.appendChild(ph);
+        }
+        const nHA=e('rect',{x:n.x,y:divY,width:n.w,height:n.h-NOTE_TITLE_H,fill:'transparent','pointer-events':'all'});
+        nHA.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}editNote(n.id);});
+        ng.appendChild(nHA);
+      } else {
+        // 横モード: タイトル左（縦書き）、説明右（縦書き）
+        const divX=n.x+NOTE_TITLE_H;
+        const titleCx=n.x+NOTE_TITLE_H/2;
+        appendVText(ng,n.text,titleCx,cy,12);
+        if(n.note){
+          const chars=[...(n.note||'').replace(/\n/g,'')];
+          const charH=15;
+          const maxPerCol=Math.max(1,Math.floor((n.h-16)/charH));
+          const cols=Math.ceil(chars.length/maxPerCol);
+          for(let col=0;col<cols;col++){
+            for(let ci=0;ci<maxPerCol;ci++){
+              const idx=col*maxPerCol+ci;
+              if(idx>=chars.length)break;
+              const ct=e('text',{x:divX+10+col*14,y:n.y+8+ci*charH,
+                'text-anchor':'start','dominant-baseline':'hanging','font-size':'10',fill:'#475569','pointer-events':'none'});
+              ct.textContent=chars[idx]; ng.appendChild(ct);
+            }
+          }
+        } else {
+          const phText=n.type==='state_detail'?'アクション…':'備考…';
+          const phChars=[...phText];
+          phChars.forEach((ch,ci)=>{
+            const ct=e('text',{x:divX+10,y:n.y+8+ci*15,
+              'text-anchor':'start','dominant-baseline':'hanging','font-size':'10',fill:'#94a3b8','font-style':'italic','pointer-events':'none'});
+            ct.textContent=ch; ng.appendChild(ct);
+          });
+        }
+        const nHA=e('rect',{x:divX,y:n.y,width:n.w-NOTE_TITLE_H,height:n.h,fill:'transparent','pointer-events':'all'});
+        nHA.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}editNote(n.id);});
+        ng.appendChild(nHA);
+      }
+    } else if(n.type==='event'||n.type==='gateway_xor'||n.type==='gateway_par'){
+      if(n.text){
+        const lt=e('text',{x:n.x+n.w/2,y:n.y+n.h+14,'text-anchor':'middle','dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
+        lt.textContent=n.text; ng.appendChild(lt);
+      }
+    } else {
+      const textCy=n.type==='doc'?n.y+(n.h-10)/2:cy;
+      if(isV()){
+        const lines=n.text.split('\n'),lh=15;
+        lines.forEach((ln,i)=>{
+          const t=e('text',{x:cx,y:textCy-(lines.length-1)*lh/2+i*lh,'text-anchor':'middle','dominant-baseline':'middle','font-size':'12',fill:'#1e293b','pointer-events':'none'});
+          t.textContent=ln; ng.appendChild(t);
+        });
+      } else {
+        appendVText(ng,n.text,cx,textCy,12);
+      }
+    }
+    if(sel&&S.mode==='connect'){
+      if(n.type==='crosslane'){
+        getSpannedLanes(n).forEach(ln=>{
+          if(isV()){
+            const dotx=laneX(ln.id)+ln.w/2;
+            ng.appendChild(e('circle',{cx:dotx,cy,r:6,fill:'#3b82f6',opacity:.8,'pointer-events':'none'}));
+          } else {
+            const doty=laneX(ln.id)+ln.w/2;
+            ng.appendChild(e('circle',{cx,cy:doty,r:6,fill:'#3b82f6',opacity:.8,'pointer-events':'none'}));
+          }
+        });
+      } else {
+        ng.appendChild(e('circle',{cx,cy,r:6,fill:'#2563eb',opacity:.7,'pointer-events':'none'}));
+      }
+    }
+    if(n.type==='crosslane'&&S.mode!=='connect'){
+      const hw=8;
+      if(isV()){
+        const lHandle=e('rect',{x:n.x,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
+        lHandle.style.cursor='ew-resize';
+        lHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'left');});
+        ng.appendChild(lHandle);
+        const rHandle=e('rect',{x:n.x+n.w-hw,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
+        rHandle.style.cursor='ew-resize';
+        rHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'right');});
+        ng.appendChild(rHandle);
+      } else {
+        const tHandle=e('rect',{x:n.x,y:n.y,width:n.w,height:hw,fill:'transparent','pointer-events':'all'});
+        tHandle.style.cursor='ns-resize';
+        tHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'left');});
+        ng.appendChild(tHandle);
+        const bHandle=e('rect',{x:n.x,y:n.y+n.h-hw,width:n.w,height:hw,fill:'transparent','pointer-events':'all'});
+        bHandle.style.cursor='ns-resize';
+        bHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'right');});
+        ng.appendChild(bHandle);
+      }
+    }
+    ng.style.cursor=S.mode==='connect'?'crosshair':(n.type==='crosslane'?(isV()?'ns-resize':'ew-resize'):'move');
+    ng.addEventListener('mousedown',ev=>nodeMD(ev,n.id));
+    ng.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(S.mode==='connect'){
+        const fromId=connNid();
+        if(!S.conn){
+          if(n.type==='crosslane'){
+            showLaneChoice(n,lid=>{S.conn={nid:n.id,fromLid:lid};S.sel=[n.id];render();hint('接続先ノードをクリック (Escでキャンセル)');});
+          } else {
+            S.conn=n.id; S.sel=[n.id]; render();
+            hint('接続先ノードをクリック (Escでキャンセル)');
+          }
+        } else if(fromId!==n.id){
+          const afterEdge=()=>{
+            document.getElementById('prev-edge').style.display='none';
+            S.conn=null;S.sel=[];render();
+            hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)');
+          };
+          if(n.type==='crosslane'){
+            showLaneChoice(n,toLid=>{const eid=addEdge(fromId,n.id,{fromLid:connFromLid(),toLid});afterEdge();if(eid&&S.diagramType==='statechart')setTimeout(()=>edgeLabel(eid),50);});
+          } else {
+            const eid=addEdge(fromId,n.id,{fromLid:connFromLid()}); afterEdge();
+            if(eid&&S.diagramType==='statechart')setTimeout(()=>edgeLabel(eid),50);
+          }
+        }
+        return;
+      }
+      if(S_didDrag)return;
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      nodeClickTimer=setTimeout(()=>{nodeClickTimer=null;S.sel=[n.id];render();},220);
+    });
+    ng.addEventListener('dblclick',ev=>{
+      ev.stopPropagation();
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      editText(n.id);
+    });
+    ng.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[n.id];delSel()});
+    g.appendChild(ng);
+  });
+}
+
+// ── Mode ──
+function setMode(m){
+  S.mode=m; S.conn=null;
+  document.getElementById('prev-edge').style.display='none';
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('on'));
+  document.getElementById('btn-'+m)?.classList.add('on');
+  document.getElementById('diagram-svg').className=m==='connect'?'cx':'';
+  if(m==='connect'){clearPal();hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)')}
+  else hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+  render();
+}
+function clearPal(){
+  activePal=null;
+  document.querySelectorAll('.ps').forEach(p=>p.classList.remove('on'));
+  clearGuides();
+}
+function palClick(type){
+  if(activePal===type){clearPal();hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');return}
+  activePal=type;
+  document.querySelectorAll('.ps').forEach(p=>p.classList.remove('on'));
+  document.getElementById('ps-'+type)?.classList.add('on');
+  if(S.mode==='connect')setMode('select');
+  const label=getDT().palLabels[type]||SD[type]?.text||type;
+  hint(`「${label}」: キャンバスをクリックして配置 (Escでキャンセル)`);
+}
+
+// ── Palette drag ──
+function palDragStart(ev,type){
+  if(ev.button!==0)return;
+  ev.preventDefault(); ev.stopPropagation();
+  if(S.mode==='connect')setMode('select');
+  const d=SD[type];
+  const ghost=document.createElement('div');
+  const label=getDT().palLabels[type]||d.text;
+  Object.assign(ghost.style,{
+    position:'fixed',width:'64px',height:'36px',background:d.fill,
+    border:`2px dashed ${d.stroke}`,borderRadius:'4px',pointerEvents:'none',
+    zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',
+    fontSize:'11px',color:'#333',opacity:'.88',
+    left:(ev.clientX-32)+'px',top:(ev.clientY-18)+'px',
+  });
+  ghost.textContent=label; document.body.appendChild(ghost);
+  let moved=false;
+  const mv=evM=>{
+    moved=true;ghost.style.left=(evM.clientX-32)+'px';ghost.style.top=(evM.clientY-18)+'px';
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    const sx=(evM.clientX-r.left)/zoomLevel,sy=(evM.clientY-r.top)/zoomLevel;
+    const hdr=headerSize();
+    const crossPos=isV()?sx:sy;
+    const mainPos=isV()?sy:sx;
+    if(crossPos>=0&&mainPos>hdr){
+      if(usesLanes()){
+        const lane=laneAt(crossPos);
+        renderGuides(lane,snapCrossInLane(lane,crossPos),snapMainToShapes(mainPos,null));
+      } else {
+        renderGuides(null,null,snapMainToShapes(mainPos,null));
+      }
+    } else clearGuides();
+  };
+  const up=evU=>{
+    ghost.remove(); document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up);
+    clearGuides();
+    if(!moved)return;
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    if(evU.clientX>=r.left&&evU.clientX<=r.right&&evU.clientY>=r.top&&evU.clientY<=r.bottom){
+      const px=(evU.clientX-r.left)/zoomLevel,py=(evU.clientY-r.top)/zoomLevel;
+      const hdr=headerSize();
+      const mainPos=isV()?py:px;
+      if(mainPos>hdr) placeShape(type,px,py);
+    }
+  };
+  document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+}
+
+// ── Canvas events ──
+function svgMD(ev){
+  if(ev.button!==0)return;
+  if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+  if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+  if(S.mode==='connect'){S.conn=null;document.getElementById('prev-edge').style.display='none';S.sel=[];render();return}
+  if(activePal){
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    const px=(ev.clientX-r.left)/zoomLevel,py=(ev.clientY-r.top)/zoomLevel;
+    const hdr=headerSize();
+    const mainPos=isV()?py:px;
+    if(mainPos>hdr){placeShape(activePal,px,py);return}
+  }
+  document.getElementById('lane-choice')?.remove();
+  S.sel=[]; render();
+}
+function svgDbl(ev){
+  const pt=svgPt(ev);
+  const hdr=headerSize();
+  const mainPos=isV()?pt.y:pt.x;
+  if(S.mode==='select'&&!ev.target.closest('[data-nid]')&&mainPos>hdr){
+    addNode('rect',pt.x,pt.y);
+  }
+}
+function svgRC(ev){ev.preventDefault()}
+
+function nodeMD(ev,nid){
+  ev.stopPropagation();
+  if(ev.button!==0)return;
+  if(S.mode==='connect')return;
+  const n=S.nodes.find(n=>n.id===nid),pt=svgPt(ev);
+  S.drag={nid,sx:pt.x,sy:pt.y,ox:n.x,oy:n.y,crosslane:n.type==='crosslane'};
+  S_didDrag=false;
+}
+
+document.addEventListener('mousemove',ev=>{
+  if(crosslaneResizeState){
+    const pt=svgPt(ev);
+    const n=S.nodes.find(n=>n.id===crosslaneResizeState.nid); if(!n)return;
+    const fromPos=laneX(n.fromLid), minW=40;
+    const {origCrossX,origCrossW,startX}=crosslaneResizeState;
+    const delta=isV()?(pt.x-startX):(pt.y-startX);
+    let guidePos=null;
+    if(crosslaneResizeState.side==='left'){
+      const rawPos=fromPos+origCrossX+delta;
+      const {snapped,isSnap}=snapToLaneBoundary(rawPos);
+      const newCX=snapped-fromPos, newCW=(fromPos+origCrossX+origCrossW)-snapped;
+      if(newCW>=minW){n.crossX=newCX; n.crossW=newCW;}
+      if(isSnap)guidePos=snapped;
+    } else {
+      const rawPos=fromPos+origCrossX+origCrossW+delta;
+      const {snapped,isSnap}=snapToLaneBoundary(rawPos);
+      const newCW=snapped-(fromPos+(n.crossX||0));
+      if(newCW>=minW) n.crossW=newCW;
+      if(isSnap)guidePos=snapped;
+    }
+    renderSnapGuide(guidePos);
+    normalizeCrosslaneGeometry(); renderEdges(); renderNodes(); return;
+  }
+  if(laneResizeState){
+    const pt=svgPt(ev);
+    const lane=S.lanes.find(l=>l.id===laneResizeState.laneId);
+    if(lane){
+      const delta=isV()?(pt.x-laneResizeState.startX):(pt.y-laneResizeState.startY);
+      const newW=Math.max(100,laneResizeState.origW+delta);
+      const diff=newW-laneResizeState.origW;
+      lane.w=newW;
+      Object.entries(laneResizeState.origNodePos).forEach(([nid,opos])=>{
+        const n=S.nodes.find(n=>n.id===nid);
+        if(n){
+          if(isV()) n.x=opos+diff;
+          else n.y=opos+diff;
+        }
+      });
+      const lx=laneX(lane.id);
+      S.nodes.filter(n=>n.lid===lane.id).forEach(n=>{
+        if(isV()) n.x=Math.max(lx+2,Math.min(lx+lane.w-n.w-2,n.x));
+        else n.y=Math.max(lx+2,Math.min(lx+lane.w-n.h-2,n.y));
+      });
+      render();
+    }
+    return;
+  }
+  if(S.drag){
+    const pt=svgPt(ev),n=S.nodes.find(n=>n.id===S.drag.nid);
+    if(!n)return;
+    if(Math.hypot(pt.x-S.drag.sx,pt.y-S.drag.sy)>4) S_didDrag=true;
+    if(!S_didDrag)return;
+    const hdr=headerSize();
+    // 主軸方向の移動
+    if(isV()){
+      n.y=S.drag.oy+(pt.y-S.drag.sy);
+      const snapM=snapMainToShapes(n.y+n.h/2,n.id);
+      if(snapM!==null) n.y=snapM-n.h/2;
+      if(n.y+n.h>SVG_H-100){
+        SVG_H=Math.max(SVG_H,Math.ceil((n.y+n.h+200)/GRID_STEP)*GRID_STEP);
+        const _s=document.getElementById('diagram-svg');_s.setAttribute('height',SVG_H);
+        renderLanes();renderGrid();renderDividers();
+      }
+      n.y=Math.max(hdr+2,Math.min(SVG_H-n.h-2,n.y));
+      if(!S.drag.crosslane){
+        n.x=S.drag.ox+(pt.x-S.drag.sx);
+        if(usesLanes()){
+          const l=laneAt(n.x+n.w/2),lx=laneX(l.id);
+          n.lid=l.id;
+          const snappedC=snapCrossInLane(l,n.x+n.w/2);
+          n.x=Math.max(lx+2,Math.min(lx+l.w-n.w-2,snappedC-n.w/2));
+          renderGuides(l,snappedC,snapM);
+        } else {
+          n.x=Math.max(2,Math.min(SVG_W-n.w-2,n.x));
+          renderGuides(null,null,snapM);
+        }
+      } else {
+        if(n.mainPos!=null) n.mainPos=n.y;
+        renderGuides(null,null,snapM);
+      }
+    } else {
+      n.x=S.drag.ox+(pt.x-S.drag.sx);
+      const snapM=snapMainToShapes(n.x+n.w/2,n.id);
+      if(snapM!==null) n.x=snapM-n.w/2;
+      if(n.x+n.w>SVG_W-100){
+        SVG_W=Math.max(SVG_W,Math.ceil((n.x+n.w+200)/GRID_STEP)*GRID_STEP);
+        const _s=document.getElementById('diagram-svg');_s.setAttribute('width',SVG_W);
+        renderLanes();renderGrid();renderDividers();
+      }
+      n.x=Math.max(hdr+2,Math.min(SVG_W-n.w-2,n.x));
+      if(!S.drag.crosslane){
+        n.y=S.drag.oy+(pt.y-S.drag.sy);
+        if(usesLanes()){
+          const l=laneAt(n.y+n.h/2),ly=laneX(l.id);
+          n.lid=l.id;
+          const snappedC=snapCrossInLane(l,n.y+n.h/2);
+          n.y=Math.max(ly+2,Math.min(ly+l.w-n.h-2,snappedC-n.h/2));
+          renderGuides(l,snappedC,snapM);
+        } else {
+          n.y=Math.max(2,Math.min(SVG_H-n.h-2,n.y));
+          renderGuides(null,null,snapM);
+        }
+      } else {
+        if(n.mainPos!=null) n.mainPos=n.x;
+        renderGuides(null,null,snapM);
+      }
+    }
+    renderEdges(); renderNodes(); return;
+  }
+  if(activePal){
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    const sx=(ev.clientX-r.left)/zoomLevel,sy=(ev.clientY-r.top)/zoomLevel;
+    const hdr=headerSize();
+    const crossPos=isV()?sx:sy;
+    const mainPos=isV()?sy:sx;
+    if(crossPos>=0&&mainPos>hdr){
+      if(usesLanes()){
+        const lane=laneAt(crossPos);
+        renderGuides(lane,snapCrossInLane(lane,crossPos),snapMainToShapes(mainPos,null));
+      } else {
+        renderGuides(null,null,snapMainToShapes(mainPos,null));
+      }
+    } else {
+      clearGuides();
+    }
+  }
+  if(S.mode==='connect'&&S.conn){
+    const pt=svgPt(ev),fn=S.nodes.find(n=>n.id===connNid());
+    if(fn){
+      let cx,cy;
+      if(fn.type==='crosslane'&&typeof S.conn==='object'&&S.conn.fromLid){
+        const ln=S.lanes.find(l=>l.id===S.conn.fromLid);
+        if(isV()){
+          cx=ln?laneX(ln.id)+ln.w/2:fn.x+fn.w/2; cy=fn.y+fn.h/2;
+        } else {
+          cx=fn.x+fn.w/2; cy=ln?laneX(ln.id)+ln.w/2:fn.y+fn.h/2;
+        }
+      } else {[cx,cy]=nc(fn);}
+      const prev=document.getElementById('prev-edge');
+      prev.setAttribute('d',`M${cx},${cy} L${pt.x},${pt.y}`);
+      prev.style.display='';
+    }
+  }
+});
+document.addEventListener('mouseup',()=>{
+  if(crosslaneResizeState){
+    const cn=S.nodes.find(n=>n.id===crosslaneResizeState.nid);
+    if(cn){updateCrosslaneLids(cn);}
+    snap(); clearGuides(); crosslaneResizeState=null; render(); return;
+  }
+  if(laneResizeState){
+    snap(); laneResizeState=null;
+    document.getElementById('diagram-svg').style.cursor='';
+    return;
+  }
+  if(S.drag){
+    if(S_didDrag){const nid=S.drag.nid;S.drag=null;S.sel=[nid];clearGuides();snap();render();}
+    else{S.drag=null;}
+  }
+});
+
+// ── Lane divider resize handles ──
+let laneResizeState=null;
+let crosslaneResizeState=null;
+
+function renderDividers(){
+  const g=document.getElementById('g-dividers'); g.innerHTML='';
+  if(!usesLanes())return;
+  if(isV()){
+    let x=0;
+    S.lanes.forEach((l,i)=>{
+      x+=l.w;
+      if(i<S.lanes.length-1){
+        const hit=e('rect',{x:x-4,y:0,width:8,height:SVG_H,fill:'transparent',cursor:'col-resize'});
+        hit.addEventListener('mousedown',ev=>startLaneResize(ev,l.id));
+        hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor='col-resize';});
+        hit.addEventListener('mouseleave',()=>{if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';});
+        g.appendChild(hit);
+      }
+    });
+  } else {
+    let y=0;
+    S.lanes.forEach((l,i)=>{
+      y+=l.w;
+      if(i<S.lanes.length-1){
+        const hit=e('rect',{x:0,y:y-4,width:SVG_W,height:8,fill:'transparent',cursor:'row-resize'});
+        hit.addEventListener('mousedown',ev=>startLaneResize(ev,l.id));
+        hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor='row-resize';});
+        hit.addEventListener('mouseleave',()=>{if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';});
+        g.appendChild(hit);
+      }
+    });
+  }
+}
+
+function startLaneResize(ev,laneId){
+  ev.stopPropagation(); ev.preventDefault();
+  const pt=svgPt(ev);
+  const lane=S.lanes.find(l=>l.id===laneId);
+  const laneIdx=S.lanes.indexOf(lane);
+  const origNodePos={};
+  S.nodes.forEach(n=>{
+    const ni=S.lanes.findIndex(l=>l.id===n.lid);
+    if(ni>laneIdx) origNodePos[n.id]=isV()?n.x:n.y;
+  });
+  laneResizeState={laneId,startX:pt.x,startY:pt.y,origW:lane.w,origNodePos};
+  document.getElementById('diagram-svg').style.cursor=isV()?'col-resize':'row-resize';
+}
+function startCrosslaneResize(ev,nid,side){
+  ev.stopPropagation(); ev.preventDefault();
+  const pt=svgPt(ev);
+  const n=S.nodes.find(n=>n.id===nid); if(!n)return;
+  const fromPos=laneX(n.fromLid);
+  const tl=S.lanes.find(l=>l.id===n.toLid);
+  const origCrossW=n.crossW!=null?n.crossW:(tl?laneX(n.toLid)+tl.w-fromPos:LANE_W*2);
+  const origCrossX=n.crossX||0;
+  const startX=isV()?pt.x:pt.y;
+  crosslaneResizeState={nid,side,startX,origCrossX,origCrossW};
+}
+
+// ── Crosslane resize snap ──
+function snapToLaneBoundary(pos){
+  const threshold=16;
+  let best=pos,bestDist=Infinity;
+  let lx=0;
+  S.lanes.forEach(l=>{
+    [lx, lx+l.w*0.25, lx+l.w/2, lx+l.w*0.75, lx+l.w].forEach(p=>{
+      const d=Math.abs(pos-p);
+      if(d<bestDist){bestDist=d;best=p;}
+    });
+    lx+=l.w;
+  });
+  const isSnap=bestDist<threshold;
+  if(!isSnap)best=pos;
+  return{snapped:best,isSnap};
+}
+function renderSnapGuide(activePos){
+  const g=document.getElementById('g-guides'); g.innerHTML='';
+  if(!usesLanes())return;
+  const hdr=headerSize();
+  const pts=[],seen=new Set();
+  let lx=0;
+  S.lanes.forEach(l=>{
+    [{pos:lx,lb:'境界'},{pos:lx+l.w*0.25,lb:'1/4'},{pos:lx+l.w/2,lb:'中央'},{pos:lx+l.w*0.75,lb:'3/4'},{pos:lx+l.w,lb:'境界'}].forEach(p=>{
+      if(seen.has(p.pos))return;
+      seen.add(p.pos);pts.push(p);
+    });
+    lx+=l.w;
+  });
+  pts.forEach(p=>{
+    const active=activePos!=null&&Math.abs(activePos-p.pos)<1;
+    if(isV()){
+      g.appendChild(e('line',{x1:p.pos,y1:hdr,x2:p.pos,y2:SVG_H,
+        stroke:active?'#2563eb':'#64748b','stroke-width':active?2.5:1,
+        'stroke-dasharray':'5,3',opacity:active?'1':'.5','pointer-events':'none'}));
+      if(active){
+        const lw=p.lb==='中央'||p.lb==='境界'?28:22;
+        g.appendChild(e('rect',{x:p.pos-lw/2,y:hdr+5,width:lw,height:16,rx:3,
+          fill:'#2563eb',opacity:'0.9','pointer-events':'none'}));
+        const t=e('text',{x:p.pos,y:hdr+13,'text-anchor':'middle','dominant-baseline':'middle',
+          'font-size':'10','font-weight':'700',fill:'white','pointer-events':'none'});
+        t.textContent=p.lb;g.appendChild(t);
+      }
+    } else {
+      g.appendChild(e('line',{x1:hdr,y1:p.pos,x2:SVG_W,y2:p.pos,
+        stroke:active?'#2563eb':'#64748b','stroke-width':active?2.5:1,
+        'stroke-dasharray':'5,3',opacity:active?'1':'.5','pointer-events':'none'}));
+      if(active){
+        const lw=p.lb==='中央'||p.lb==='境界'?28:22;
+        g.appendChild(e('rect',{x:hdr+5,y:p.pos-8,width:lw,height:16,rx:3,
+          fill:'#2563eb',opacity:'0.9','pointer-events':'none'}));
+        const t=e('text',{x:hdr+5+lw/2,y:p.pos,'text-anchor':'middle','dominant-baseline':'middle',
+          'font-size':'10','font-weight':'700',fill:'white','pointer-events':'none'});
+        t.textContent=p.lb;g.appendChild(t);
+      }
+    }
+  });
+}
+
+// ── SVG内インラインエディタ ──
+function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder){
+  document.getElementById('svg-editor')?.remove();
+  const fo=document.createElementNS(NS,'foreignObject');
+  fo.id='svg-editor';
+  fo.setAttribute('x',x); fo.setAttribute('y',y);
+  fo.setAttribute('width',w); fo.setAttribute('height',h);
+  const isMulti=h>30;
+  const inp=document.createElement(isMulti?'textarea':'input');
+  if(!isMulti) inp.type='text';
+  inp.style.cssText=`width:100%;height:100%;border:2px solid #3b82f6;border-radius:4px;`+
+    `padding:${isMulti?'4px 6px':'2px 6px'};font:${isMulti?'12':'11'}px 'Segoe UI',sans-serif;`+
+    `text-align:center;resize:none;outline:none;background:rgba(255,255,255,0.97);box-sizing:border-box;`;
+  inp.value=initVal;
+  if(placeholder)inp.placeholder=placeholder;
+  fo.appendChild(inp);
+  document.getElementById('g-nodes').appendChild(fo);
+  setTimeout(()=>{inp.focus();inp.select();},0);
+  let done=false;
+  const commit=()=>{if(done)return;done=true;const v=inp.value;fo.remove();onCommit(v);};
+  const cancel=()=>{if(done)return;done=true;fo.remove();render();};
+  inp.addEventListener('blur',commit);
+  inp.addEventListener('keydown',ev=>{
+    ev.stopPropagation();
+    if(ev.key==='Escape'){ev.preventDefault();cancel();}
+    else if(ev.key==='Enter'&&(!isMulti||!ev.shiftKey)){ev.preventDefault();commit();}
+  });
+}
+
+// ── Edit ──
+function editText(nid){
+  const n=S.nodes.find(n=>n.id===nid);
+  if(!n)return;
+  S.sel=[nid]; render();
+  if((n.type==='note'||n.type==='state_detail')&&!isV()){
+    openSvgEditor(n.x,n.y,NOTE_TITLE_H,n.h,n.text,v=>{n.text=v;snap();render();});
+  } else {
+    const h=(n.type==='note'||n.type==='state_detail')?NOTE_TITLE_H:n.h;
+    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();});
+  }
+}
+function editNote(nid){
+  const n=S.nodes.find(n=>n.id===nid); if(!n)return;
+  S.sel=[nid]; render();
+  const ph=n.type==='state_detail'?'entry / do / exit…':'備考…';
+  if(isV()){
+    const divY=n.y+NOTE_TITLE_H,noteH=n.h-NOTE_TITLE_H;
+    openSvgEditor(n.x,divY,n.w,noteH,n.note||'',v=>{
+      n.note=v;
+      const nls=wrapText(v,n.w-16,10);
+      const neededNoteH=nls.length*12+16;
+      n.h=Math.max(SD[n.type].h,NOTE_TITLE_H+neededNoteH);
+      snap();render();
+    },ph);
+  } else {
+    const divX=n.x+NOTE_TITLE_H,noteW=n.w-NOTE_TITLE_H;
+    openSvgEditor(divX,n.y,noteW,n.h,n.note||'',v=>{
+      n.note=v;
+      const chars=[...(v||'').replace(/\n/g,'')];
+      const charH=15;
+      const maxPerCol=Math.max(1,Math.floor((n.h-16)/charH));
+      const cols=Math.ceil(chars.length/maxPerCol);
+      const neededW=NOTE_TITLE_H+cols*14+16;
+      n.w=Math.max(SD[n.type].h,neededW);
+      snap();render();
+    },ph);
+  }
+}
+function edgeLabel(eid){
+  const ed=S.edges.find(e=>e.id===eid);
+  if(!ed)return;
+  const fn=S.nodes.find(n=>n.id===ed.from),tn=S.nodes.find(n=>n.id===ed.to);
+  if(!fn||!tn)return;
+  S.sel=[eid]; render();
+  const[sx,sy,ex,ey]=connPts(fn,tn);
+  const mx=(sx+ex)/2, my=(sy+ey)/2;
+  const ew=140,eh=26;
+  const ph=S.diagramType==='statechart'?'[条件] / アクション':null;
+  openSvgEditor(mx-ew/2,my-eh/2,ew,eh,ed.label||'',v=>{ed.label=v;snap();render();},ph);
+}
+
+// ── Keyboard ──
+document.addEventListener('keydown',ev=>{
+  if(ev.target.tagName==='INPUT'||ev.target.tagName==='TEXTAREA')return;
+  if(ev.key==='Delete'||ev.key==='Backspace')delSel();
+  if(ev.key==='z'&&(ev.ctrlKey||ev.metaKey)&&!ev.shiftKey){ev.preventDefault();undo()}
+  if((ev.key==='y'&&(ev.ctrlKey||ev.metaKey))||(ev.key==='z'&&ev.shiftKey&&(ev.ctrlKey||ev.metaKey))){ev.preventDefault();redo()}
+  if(ev.key==='Escape'){
+    S.conn=null; clearPal();
+    document.getElementById('prev-edge').style.display='none';
+    S.sel=[]; render();
+    hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+  }
+  if(ev.key==='v'&&!ev.ctrlKey&&!ev.metaKey)setMode('select');
+  if(ev.key==='c'&&!ev.ctrlKey&&!ev.metaKey)setMode('connect');
+});
+
+// ── Lane panel ──
+function lanePanel(){
+  if(!usesLanes())return;
+  const list=document.getElementById('lane-list'); list.innerHTML='';
+  S.lanes.forEach(l=>{
+    const row=document.createElement('div'); row.className='lr';
+    row.innerHTML=`<div class="ldot" style="background:${l.hd}"></div>
+<input class="lname" value="${l.name.replace(/"/g,'&quot;')}" onchange="renameLane('${l.id}',this.value)" oninput="renameLane('${l.id}',this.value)">
+<button class="ldel" onclick="removeLane('${l.id}')" title="削除">✕</button>`;
+    list.appendChild(row);
+  });
+}
+
+// ── Save ──
+function saveHtmlCore(name){
+  document.getElementById('svg-editor')?.remove();
+  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name};
+  const SCR='<scr'+'ipt',CSCR='</scr'+'ipt>';
+  const stateJson=JSON.stringify(st).replace(new RegExp(CSCR,'gi'),'<\\/script>');
+  let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+  html=html.replace(new RegExp(SCR+' id="__state__">[\\s\\S]*?'+CSCR+'\\s*','g'),'');
+  html=html.replace(new RegExp(SCR+' id="swimlane-state">[\\s\\S]*?'+CSCR+'\\s*','g'),'');
+  html=html.replace(/\s+data-state="[^"]*"/g,'');
+  html=html.replace('</head>',()=>SCR+' id="swimlane-state">window.__SWIMLANE_STATE__='+stateJson+';'+CSCR+'\n</head>');
+  const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
+  dl(new Blob([html],{type:'text/html;charset=utf-8'}),safe+'.html');
+}
+
+function openSaveAsDialog(){
+  const cur=(S_diagramName||document.getElementById('diagram-name').value||'').trim();
+  const inp=document.getElementById('save-filename-input');
+  inp.value=cur;
+  document.getElementById('save-modal').style.display='flex';
+  setTimeout(()=>{inp.focus();inp.select();},50);
+}
+function closeSaveDialog(){
+  document.getElementById('save-modal').style.display='none';
+}
+function confirmSaveAs(){
+  const name=document.getElementById('save-filename-input').value.trim()||'ダイアグラム';
+  S_diagramName=name;
+  const ni=document.getElementById('diagram-name');
+  if(ni)ni.value=name;
+  closeSaveDialog();
+  saveHtmlCore(name);
+}
+
+// ── Export ──
+function expSVG(){
+  const svg=document.getElementById('diagram-svg').cloneNode(true);
+  svg.setAttribute('xmlns',NS);
+  const bg=e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'white'});
+  svg.insertBefore(bg,svg.firstChild);
+  const s=new XMLSerializer().serializeToString(svg);
+  dl(new Blob(['<?xml version="1.0"?>\n'+s],{type:'image/svg+xml'}),'diagram.svg');
+}
+function expPNG(){
+  const svg=document.getElementById('diagram-svg').cloneNode(true);
+  svg.setAttribute('xmlns',NS);
+  const bg=e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'white'});
+  svg.insertBefore(bg,svg.firstChild);
+  const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml'}));
+  const img=new Image(); const sc=2;
+  img.onload=()=>{
+    const c=document.createElement('canvas');
+    c.width=SVG_W*sc; c.height=SVG_H*sc;
+    const ctx=c.getContext('2d'); ctx.scale(sc,sc); ctx.drawImage(img,0,0);
+    URL.revokeObjectURL(url); c.toBlob(b=>dl(b,'diagram.png'));
+  };
+  img.src=url;
+}
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+
+let zoomLevel=1;
+const ZOOM_STEPS=[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2];
+function applyZoom(){
+  const svg=document.getElementById('diagram-svg');
+  svg.style.transform='scale('+zoomLevel+')';
+  const wrap=document.getElementById('canvas-wrap');
+  let spacer=document.getElementById('zoom-spacer');
+  if(!spacer){spacer=document.createElement('div');spacer.id='zoom-spacer';spacer.style.position='absolute';spacer.style.top='0';spacer.style.left='0';spacer.style.pointerEvents='none';wrap.appendChild(spacer);}
+  spacer.style.width=Math.round(SVG_W*zoomLevel)+'px';
+  spacer.style.height=Math.round(SVG_H*zoomLevel)+'px';
+  document.getElementById('zoom-label').textContent=Math.round(zoomLevel*100)+'%';
+}
+function zoomIn(){
+  const idx=ZOOM_STEPS.findIndex(s=>s>=zoomLevel+0.01);
+  if(idx>=0)zoomLevel=ZOOM_STEPS[idx];
+  applyZoom();
+}
+function zoomOut(){
+  let idx=ZOOM_STEPS.length-1;
+  for(let i=ZOOM_STEPS.length-1;i>=0;i--){if(ZOOM_STEPS[i]<zoomLevel-0.01){idx=i;break;}}
+  zoomLevel=ZOOM_STEPS[idx];
+  applyZoom();
+}
+function fitView(){
+  const wrap=document.getElementById('canvas-wrap');
+  const ww=wrap.clientWidth,wh=wrap.clientHeight;
+  zoomLevel=Math.min(ww/SVG_W,wh/SVG_H,1);
+  zoomLevel=Math.round(zoomLevel*100)/100;
+  applyZoom();
+  wrap.scrollTop=0;wrap.scrollLeft=0;
+}
+function hint(msg){const h=document.getElementById('hint');h.textContent=msg;h.style.display=msg?'':'none'}
+
+init();
+</script>
+</body>
+</html>

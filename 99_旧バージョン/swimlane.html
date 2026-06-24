@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スイムレーン図メーカー</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;display:flex;flex-direction:column;height:100vh;overflow:hidden;user-select:none}
+
+#toolbar{background:#1e293b;color:#f1f5f9;padding:0 12px;height:46px;display:flex;align-items:center;gap:6px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.tbtn.save{background:#0f4c81;border-color:#1d6aa5;color:#bfdbfe;}
+.tbtn.save:hover{background:#1d6aa5;color:#fff}
+
+#app-header{padding:12px 12px 10px;border-bottom:2px solid #e2e8f0;background:#fff;flex-shrink:0}
+#app-title{font-size:15px;font-weight:800;color:#1e293b;letter-spacing:.2px;margin-bottom:8px;line-height:1.2}
+#diagram-name{width:100%;padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:12px;color:#374151;outline:none;background:#f8fafc}
+#diagram-name:focus{border-color:#3b82f6;background:#fff;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+.tbtn{background:transparent;border:1px solid transparent;color:#94a3b8;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;white-space:nowrap;transition:all .12s}
+.tbtn:hover{background:#334155;color:#f1f5f9}
+.tbtn.on{background:#2563eb;color:#fff;border-color:#3b82f6}
+.tbtn.red:hover{background:#dc2626;color:#fff}
+.sep{width:1px;height:26px;background:#334155;margin:0 3px;flex-shrink:0}
+
+#main{display:flex;flex:1;overflow:hidden}
+
+#sidebar{width:168px;background:#fff;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;flex-shrink:0}
+.ph{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.6px;padding:9px 12px 6px;background:#f8fafc;border-bottom:1px solid #f1f5f9}
+
+#palette{padding:8px}
+.ps{display:flex;align-items:center;gap:7px;padding:6px 8px;margin-bottom:3px;border:1px solid #e2e8f0;border-radius:5px;cursor:pointer;font-size:12px;color:#374151;background:#f9fafb;transition:all .12s}
+.ps:hover{background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
+.ps.on{background:#dbeafe;border-color:#3b82f6;color:#1d4ed8}
+
+#lane-sec{flex:1;display:flex;flex-direction:column;overflow:hidden;border-top:1px solid #e2e8f0}
+#lane-list{flex:1;overflow-y:auto;padding:6px 8px}
+.lr{display:flex;align-items:center;gap:4px;padding:4px 5px;margin-bottom:3px;border:1px solid #e2e8f0;border-radius:4px;background:#f9fafb}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:1px solid #94a3b8}
+.lname{flex:1;border:none;background:transparent;font-size:12px;color:#374151;outline:none;min-width:0}
+.lname:focus{color:#1d4ed8}
+.ldel{background:none;border:none;cursor:pointer;color:#cbd5e1;font-size:11px;padding:1px 3px;border-radius:2px;line-height:1}
+.ldel:hover{background:#fee2e2;color:#dc2626}
+#add-lane-row{padding:5px 8px;border-top:1px solid #f1f5f9}
+#add-lane-btn{width:100%;padding:5px;background:none;border:1.5px dashed #cbd5e1;border-radius:4px;cursor:pointer;color:#64748b;font-size:12px;transition:all .12s}
+#add-lane-btn:hover{border-color:#3b82f6;color:#3b82f6;background:#eff6ff}
+
+#canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
+#diagram-svg{display:block;cursor:default}
+#diagram-svg.cx *,#diagram-svg.cx{cursor:crosshair!important}
+
+#hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#e2e8f0;padding:5px 14px;border-radius:20px;font-size:11px;pointer-events:none;white-space:nowrap;z-index:100;display:none}
+#lane-choice{position:fixed;z-index:1000;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:10px 12px;display:flex;flex-direction:column;gap:5px;min-width:120px}
+#lane-choice .lc-title{font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px}
+#lane-choice button{padding:5px 10px;border-radius:4px;border:1.5px solid #e2e8f0;cursor:pointer;font-size:12px;color:#1e293b;text-align:left;transition:all .1s}
+#lane-choice .lc-cancel{background:#f1f5f9;color:#64748b;font-size:11px;border-color:#e2e8f0}
+
+/* 名前をつけて保存 モーダル */
+#save-modal{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center}
+#save-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.4)}
+#save-modal-box{position:relative;background:#fff;border-radius:10px;padding:24px 28px;min-width:320px;box-shadow:0 8px 40px rgba(0,0,0,.22)}
+#save-modal-title{font-size:15px;font-weight:700;color:#1e293b;margin-bottom:14px}
+#save-modal-label{font-size:12px;font-weight:600;color:#475569}
+#save-filename-input{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;margin-top:5px;margin-bottom:5px;box-sizing:border-box}
+#save-filename-input:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+#save-modal-hint{font-size:11px;color:#94a3b8;margin-bottom:18px}
+#save-modal-footer{display:flex;gap:8px;justify-content:flex-end}
+#save-modal-footer button{padding:7px 18px;border-radius:6px;font-size:13px;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#374151;transition:all .12s}
+#save-modal-footer button:hover{background:#f1f5f9}
+#save-modal-footer .btn-primary{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:600}
+#save-modal-footer .btn-primary:hover{background:#1d4ed8}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button class="tbtn on" id="btn-select" onclick="setMode('select')">▶ 選択</button>
+  <button class="tbtn" id="btn-connect" onclick="setMode('connect')">→ 接続</button>
+  <div class="sep"></div>
+  <button class="tbtn" onclick="undo()">↩ 元に戻す</button>
+  <button class="tbtn" onclick="redo()">↪ やり直す</button>
+  <div class="sep"></div>
+  <button class="tbtn red" onclick="delSel()">✕ 削除</button>
+  <div class="sep"></div>
+  <button class="tbtn save" onclick="saveOverwrite()">💾 上書き保存</button>
+  <button class="tbtn save" onclick="openSaveAsDialog()">📝 名前をつけて保存</button>
+  <button class="tbtn" onclick="expPNG()">↓ PNG</button>
+  <button class="tbtn" onclick="expSVG()">↓ SVG</button>
+  <div class="sep"></div>
+  <button class="tbtn" onclick="fitView()">⊡ 全体</button>
+  <div style="flex:1"></div>
+  <span style="font-size:11px;color:#475569">Dblクリック:テキスト編集 / 右クリック:削除</span>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="app-header">
+      <div id="app-title">スイムレーン図メーカー</div>
+      <input id="diagram-name" type="text" placeholder="図の名称を入力" oninput="S_diagramName=this.value"/>
+    </div>
+    <div class="ph">シェイプ</div>
+    <div id="palette">
+      <div class="ps" id="ps-rect"     onmousedown="palDragStart(event,'rect')"     onclick="palClick('rect')">
+        <svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="2" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/></svg>プロセス
+      </div>
+      <div class="ps" id="ps-diamond"  onmousedown="palDragStart(event,'diamond')"  onclick="palClick('diamond')">
+        <svg width="22" height="15"><polygon points="11,1 21,7.5 11,14 1,7.5" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/></svg>判断
+      </div>
+      <div class="ps" id="ps-terminal" onmousedown="palDragStart(event,'terminal')" onclick="palClick('terminal')">
+        <svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="6.5" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/></svg>開始/終了
+      </div>
+      <div class="ps" id="ps-doc"      onmousedown="palDragStart(event,'doc')"      onclick="palClick('doc')">
+        <svg width="22" height="15"><path d="M1,1h20v9q-10,5-20,0z" fill="#fce7f3" stroke="#be185d" stroke-width="1.5"/></svg>書類
+      </div>
+      <div class="ps" id="ps-note"     onmousedown="palDragStart(event,'note')"     onclick="palClick('note')">
+        <svg width="22" height="15"><rect x="1" y="1" width="20" height="13" rx="2" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/><line x1="1" y1="9" x2="21" y2="9" stroke="#3b82f6" stroke-width=".8" opacity=".7"/></svg>プロセス(説明有)
+      </div>
+      <div class="ps" id="ps-crosslane" onmousedown="palDragStart(event,'crosslane')" onclick="palClick('crosslane')">
+        <svg width="22" height="15"><rect x="1" y="1" width="20" height="13" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/><line x1="11" y1="1" x2="11" y2="14" stroke="#3b82f6" stroke-width=".8" stroke-dasharray="2,2"/></svg>複数レーンプロセス
+      </div>
+    </div>
+    <div id="lane-sec">
+      <div class="ph">レーン</div>
+      <div id="lane-list"></div>
+      <div id="add-lane-row"><button id="add-lane-btn" onclick="addLane()">＋ レーンを追加</button></div>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <svg id="diagram-svg" onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)">
+      <defs>
+        <marker id="arr"  markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#475569"/></marker>
+        <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#2563eb"/></marker>
+        <marker id="arrP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#3b82f6"/></marker>
+      </defs>
+      <g id="g-lanes"></g>
+      <g id="g-grid"></g>
+      <g id="g-guides"></g>
+      <g id="g-edges"></g>
+      <g id="g-nodes"></g>
+      <g id="g-dividers"></g>
+      <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
+    </svg>
+  </div>
+</div>
+<div id="hint"></div>
+
+<!-- 名前をつけて保存 モーダルダイアログ -->
+<div id="save-modal" style="display:none">
+  <div id="save-modal-bg" onclick="closeSaveDialog()"></div>
+  <div id="save-modal-box">
+    <div id="save-modal-title">名前をつけて保存</div>
+    <div id="save-modal-label">ファイル名</div>
+    <input id="save-filename-input" type="text" placeholder="スイムレーン図"
+           onkeydown="if(event.key==='Enter')confirmSaveAs();else if(event.key==='Escape')closeSaveDialog()"/>
+    <div id="save-modal-hint">.html が自動的に付きます</div>
+    <div id="save-modal-footer">
+      <button onclick="closeSaveDialog()">キャンセル</button>
+      <button class="btn-primary" onclick="confirmSaveAs()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ① 同期的に即時キャプチャ（init()より前に必ず実行）
+//    fetch()の.catch()はPromiseのため非同期 → init()実行後に走ってしまい
+//    レンダリング済みのDOMをキャプチャしてしまう問題を防ぐ
+const _outerHtmlFallback = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+// ② file://プロトコルではfetch()がブロックされる場合があるため①をfallbackとして使用
+//    fetch成功時は生ファイルソース（より確実）を使用
+const _pageHtmlP = fetch(location.href)
+  .then(r => r.text())
+  .catch(() => _outerHtmlFallback);
+
+const NS='http://www.w3.org/2000/svg';
+const HEADER_H=44, LANE_W=220, SVG_H=1200, GRID_Y=60;
+
+const SD={
+  rect:     {w:120,h:48, text:'プロセス',   fill:'#dbeafe',stroke:'#3b82f6'},
+  diamond:  {w:120,h:64, text:'判断',        fill:'#fef9c3',stroke:'#ca8a04'},
+  terminal: {w:110,h:40, text:'開始/終了',   fill:'#dcfce7',stroke:'#16a34a'},
+  doc:      {w:120,h:52, text:'書類',         fill:'#fce7f3',stroke:'#be185d'},
+  note:     {w:140,h:80, text:'プロセス',    fill:'#dbeafe',stroke:'#3b82f6'},
+  crosslane:{w:440,h:48, text:'複数レーンプロセス', fill:'#dbeafe',stroke:'#3b82f6'},
+};
+const LC=[
+  {bg:'#eff6ff',hd:'#bfdbfe'},{bg:'#f0fdf4',hd:'#bbf7d0'},
+  {bg:'#fefce8',hd:'#fde68a'},{bg:'#fdf4ff',hd:'#e9d5ff'},
+  {bg:'#fff1f2',hd:'#fecdd3'},{bg:'#f0fdfa',hd:'#99f6e4'},
+  {bg:'#fff7ed',hd:'#fed7aa'},
+];
+
+let S={lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0};
+let activePal=null;
+let nodeClickTimer=null; // ダブルクリック判定用タイマー
+let edgeClickTimer=null; // エッジ用ダブルクリック判定タイマー
+let S_didDrag=false;     // クリックとドラッグを区別するフラグ
+let _laneChoiceRemoveClose=null; // showLaneChoiceのcloseリスナー参照（重複防止）
+let S_diagramName='';            // 図の名称
+
+function uid(){return 'e'+(++S.uid)}
+
+// ── Init ──
+function init(){
+  if(window.__SAVED_STATE__){
+    const st=window.__SAVED_STATE__;
+    S.lanes=st.lanes; S.nodes=st.nodes; S.edges=st.edges;
+    if(st.uid!=null)S.uid=st.uid;
+    S_diagramName=st.diagramName||'';
+    const ni=document.getElementById('diagram-name');
+    if(ni)ni.value=S_diagramName;
+    lanePanel(); snap(); render();
+    hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+    return;
+  }
+  addLane(); addLane(); addLane();
+  snap(); render();
+  hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+}
+
+// ── Lanes ──
+function addLane(name){
+  const i=S.lanes.length;
+  S.lanes.push({id:uid(),name:name||('レーン'+(i+1)),...LC[i%LC.length],w:LANE_W});
+  lanePanel(); render();
+}
+function removeLane(id){
+  if(S.lanes.length<=1)return;
+  S.lanes=S.lanes.filter(l=>l.id!==id);
+  const lids=new Set(S.lanes.map(l=>l.id));
+  S.nodes=S.nodes.filter(n=>{
+    if(n.type==='crosslane') return lids.has(n.fromLid)&&lids.has(n.toLid)&&n.fromLid!==n.toLid;
+    return n.lid!==id;
+  });
+  const nids=new Set(S.nodes.map(n=>n.id));
+  S.edges=S.edges.filter(e=>nids.has(e.from)&&nids.has(e.to));
+  snap(); lanePanel(); render();
+}
+// S.conn は string(通常ノードID) or {nid,fromLid}(crosslaneから接続開始) のどちらか
+function connNid(){return S.conn?(typeof S.conn==='object'?S.conn.nid:S.conn):null;}
+function connFromLid(){return S.conn&&typeof S.conn==='object'?S.conn.fromLid:null;}
+function renameLane(id,v){const l=S.lanes.find(l=>l.id===id);if(l){l.name=v;render()}}
+function laneX(id){let x=0;for(const l of S.lanes){if(l.id===id)return x;x+=l.w}return 0}
+function laneAt(x){let c=0;for(const l of S.lanes){if(x>=c&&x<c+l.w)return l;c+=l.w}return x<0?S.lanes[0]:S.lanes[S.lanes.length-1]}
+function totalW(){return S.lanes.reduce((s,l)=>s+l.w,0)}
+
+// ── Nodes ──
+function snapXInLane(lane,cx){
+  const lx=laneX(lane.id);
+  const snaps=[lx+lane.w*.25,lx+lane.w*.5,lx+lane.w*.75];
+  const threshold=40;
+  let best=cx,bestDist=threshold;
+  for(const s of snaps){const d=Math.abs(cx-s);if(d<bestDist){bestDist=d;best=s;}}
+  return best;
+}
+// 他シェイプの中心Y・グリッド線へのスナップ（excludeId: ドラッグ中の自分自身を除外）
+function snapYToShapes(cy,excludeId){
+  const threshold=15;
+  let bestY=null,bestDist=threshold;
+  // 他シェイプの中心
+  S.nodes.forEach(n=>{
+    if(n.id===excludeId)return;
+    const ncy=n.y+n.h/2;
+    const d=Math.abs(cy-ncy);
+    if(d<bestDist){bestDist=d;bestY=ncy;}
+  });
+  // グリッド線（60px間隔）
+  for(let gy=HEADER_H+GRID_Y;gy<SVG_H;gy+=GRID_Y){
+    const d=Math.abs(cy-gy);
+    if(d<bestDist){bestDist=d;bestY=gy;}
+  }
+  return bestY; // nullならスナップなし
+}
+// crosslaneノードが跨ぐレーン一覧を返す
+function getSpannedLanes(n){
+  const fi=S.lanes.findIndex(l=>l.id===n.fromLid);
+  const ti=S.lanes.findIndex(l=>l.id===n.toLid);
+  return(fi>=0&&ti>=0)?S.lanes.slice(Math.min(fi,ti),Math.max(fi,ti)+1):[];
+}
+// crosslaneノードの配置
+function addCrosslaneNode(fromLid,toLid,py){
+  const h=SD.crosslane.h;
+  const ySnapY=snapYToShapes(py,null);
+  const cy=ySnapY!==null?ySnapY:py;
+  const y=Math.max(HEADER_H+4,Math.min(SVG_H-h-4,cy-h/2));
+  // デフォルト幅: 2レーン合計の75%、中央揃え
+  const fromX=laneX(fromLid);
+  const toLane=S.lanes.find(l=>l.id===toLid);
+  const totalSpan=(toLane?laneX(toLid)+toLane.w:fromX+LANE_W)-fromX;
+  const crossW=Math.round(totalSpan*0.75);
+  const crossX=Math.round((totalSpan-crossW)/2);
+  const n={id:uid(),type:'crosslane',fromLid,toLid,y,h,
+           crossX,crossW,text:'複数レーンプロセス',x:0,w:0,lid:fromLid};
+  S.nodes.push(n); S.sel=[n.id]; clearGuides(); snap(); render(); return n;
+}
+// パレット配置の共通処理（crosslaneは専用フローへ）
+function placeShape(type,px,py){
+  if(type==='crosslane'){
+    const lane=laneAt(px);
+    const li=S.lanes.findIndex(l=>l.id===lane.id);
+    const ti=li<S.lanes.length-1?li+1:(li>0?li-1:li);
+    const fromLid=li<=ti?lane.id:S.lanes[ti].id;
+    const toLid=li<=ti?S.lanes[ti].id:lane.id;
+    addCrosslaneNode(fromLid,toLid,py);
+  } else {
+    addNode(type,px,py);
+  }
+}
+// crosslane接続時のレーン選択ポップアップ
+function showLaneChoice(n,callback){
+  // 前回のcloseリスナーを確実に削除
+  if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  document.getElementById('lane-choice')?.remove();
+  const sl=getSpannedLanes(n);
+  if(sl.length<=1){if(sl.length===1)callback(sl[0].id);return;}
+  const dlg=document.createElement('div'); dlg.id='lane-choice';
+  const r=document.getElementById('diagram-svg').getBoundingClientRect();
+  // getBoundingClientRectはスクロール済みのビューポート座標を返すため直接使用
+  const dx=r.left+n.x+n.w/2-70, dy=r.top+n.y-80;
+  dlg.style.left=Math.max(4,dx)+'px'; dlg.style.top=Math.max(4,Math.min(window.innerHeight-160,dy))+'px';
+  const title=document.createElement('div'); title.className='lc-title';
+  title.textContent='接続するレーンを選択:'; dlg.appendChild(title);
+  const closeDlg=()=>{
+    dlg.remove();
+    if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  };
+  sl.forEach(lane=>{
+    const btn=document.createElement('button');
+    btn.textContent=lane.name;
+    btn.style.background=lane.bg; btn.style.borderColor=lane.hd;
+    btn.onmouseenter=()=>{btn.style.background=lane.hd;};
+    btn.onmouseleave=()=>{btn.style.background=lane.bg;};
+    btn.addEventListener('click',ev=>{ev.stopPropagation();closeDlg();callback(lane.id);});
+    dlg.appendChild(btn);
+  });
+  const cancel=document.createElement('button'); cancel.className='lc-cancel';
+  cancel.textContent='キャンセル';
+  cancel.addEventListener('click',ev=>{ev.stopPropagation();closeDlg();S.conn=null;render();});
+  dlg.appendChild(cancel);
+  document.body.appendChild(dlg);
+  setTimeout(()=>{
+    const close=e=>{if(!dlg.isConnected)return;if(!dlg.contains(e.target)){closeDlg();S.conn=null;render();}};
+    document.addEventListener('mousedown',close);
+    _laneChoiceRemoveClose=()=>document.removeEventListener('mousedown',close);
+  },60);
+}
+// lane: Xスナップ対象レーン, snappedCx: スナップX座標(nullなら非スナップ), ySnapY: スナップY座標(nullなら非スナップ)
+function renderGuides(lane,snappedCx,ySnapY){
+  const g=document.getElementById('g-guides');g.innerHTML='';
+  // 縦ガイド（レーン内X位置）
+  if(lane){
+    const lx=laneX(lane.id);
+    const snaps=[
+      {x:lx+lane.w*.25,label:'1/4'},
+      {x:lx+lane.w*.5, label:'中央'},
+      {x:lx+lane.w*.75,label:'3/4'},
+    ];
+    snaps.forEach(s=>{
+      const active=snappedCx!==null&&Math.abs(snappedCx-s.x)<1;
+      g.appendChild(e('line',{x1:s.x,y1:HEADER_H,x2:s.x,y2:SVG_H,
+        stroke:active?'#2563eb':'#64748b','stroke-width':active?2.5:1,
+        'stroke-dasharray':'5,3',opacity:active?'1':'.5','pointer-events':'none'}));
+      if(active){
+        const lw=s.label==='中央'?28:22;
+        g.appendChild(e('rect',{x:s.x-lw/2,y:HEADER_H+5,width:lw,height:16,rx:3,
+          fill:'#2563eb',opacity:'0.9','pointer-events':'none'}));
+        const t=e('text',{x:s.x,y:HEADER_H+13,'text-anchor':'middle','dominant-baseline':'middle',
+          'font-size':'10','font-weight':'700',fill:'white','pointer-events':'none'});
+        t.textContent=s.label; g.appendChild(t);
+      }
+    });
+  }
+  // 横ガイド（他シェイプの中心Y）
+  if(ySnapY!=null){
+    const tw=totalW();
+    g.appendChild(e('line',{x1:0,y1:ySnapY,x2:tw,y2:ySnapY,
+      stroke:'#f59e0b','stroke-width':2,'stroke-dasharray':'5,3',
+      opacity:'1','pointer-events':'none'}));
+  }
+}
+function clearGuides(){document.getElementById('g-guides').innerHTML='';}
+
+function addNode(type,sx,sy){
+  const d=SD[type],lane=laneAt(sx),lx=laneX(lane.id);
+  const snappedCx=snapXInLane(lane,sx);
+  const x=Math.max(lx+4,Math.min(lx+lane.w-d.w-4,snappedCx-d.w/2));
+  const ySnapY=snapYToShapes(sy,null);
+  const cy=ySnapY!==null?ySnapY:sy;
+  const y=Math.max(HEADER_H+4,Math.min(SVG_H-d.h-4,cy-d.h/2));
+  const n={id:uid(),type,x,y,w:d.w,h:d.h,text:d.text,lid:lane.id};
+  S.nodes.push(n); S.sel=[n.id]; clearGuides(); snap(); render(); return n;
+}
+function delSel(){
+  if(!S.sel.length)return;
+  const ids=new Set(S.sel);
+  S.nodes=S.nodes.filter(n=>!ids.has(n.id));
+  S.edges=S.edges.filter(e=>!ids.has(e.id)&&!ids.has(e.from)&&!ids.has(e.to));
+  S.sel=[]; S.conn=null; snap(); render();
+}
+
+// ── Edges ──
+function addEdge(f,t,opts={}){
+  if(f===t||S.edges.find(e=>e.from===f&&e.to===t))return;
+  S.edges.push({id:uid(),from:f,to:t,label:'',fromLid:opts.fromLid||null,toLid:opts.toLid||null});
+  snap(); render();
+}
+
+// ── History ──
+function snap(){
+  const d=JSON.stringify({lanes:S.lanes,nodes:S.nodes,edges:S.edges});
+  S.hist=S.hist.slice(0,S.hi+1); S.hist.push(d);
+  if(S.hist.length>80)S.hist.shift();
+  S.hi=S.hist.length-1;
+}
+function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;S.sel=[];S.conn=null;lanePanel();render()}
+function undo(){if(S.hi>0){S.hi--;restore(S.hist[S.hi])}}
+function redo(){if(S.hi<S.hist.length-1){S.hi++;restore(S.hist[S.hi])}}
+
+// ── SVG helpers ──
+function e(tag,a={}){const el=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(a))el.setAttribute(k,v);return el}
+function svgPt(ev){
+  const svg=document.getElementById('diagram-svg');
+  const pt=svg.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY;
+  try{return pt.matrixTransform(svg.getScreenCTM().inverse())}
+  catch{const r=svg.getBoundingClientRect();return{x:ev.clientX-r.left,y:ev.clientY-r.top}}
+}
+function nc(n){return[n.x+n.w/2,n.y+n.h/2]}
+function exitPt(n,side){
+  if(side==='top')    return[n.x+n.w/2, n.y];
+  if(side==='bottom') return[n.x+n.w/2, n.y+n.h];
+  if(side==='left')   return[n.x,        n.y+n.h/2];
+  if(side==='right')  return[n.x+n.w,    n.y+n.h/2];
+}
+function facingSide(from,to){
+  const dx=(to.x+to.w/2)-(from.x+from.w/2),dy=(to.y+to.h/2)-(from.y+from.h/2);
+  return Math.abs(dy)>=Math.abs(dx)?(dy>=0?'bottom':'top'):(dx>=0?'right':'left');
+}
+function diamondExit(diamond,targetId){
+  const outs=S.edges.filter(e=>e.from===diamond.id);
+  if(outs.length<=1){const t=S.nodes.find(n=>n.id===targetId);return t?facingSide(diamond,t):'bottom';}
+  const sideAngles=[{s:'bottom',a:90},{s:'right',a:0},{s:'left',a:180},{s:'top',a:-90}];
+  const targets=outs.map(e=>{
+    const t=S.nodes.find(n=>n.id===e.to);if(!t)return null;
+    const dx=(t.x+t.w/2)-(diamond.x+diamond.w/2),dy=(t.y+t.h/2)-(diamond.y+diamond.h/2);
+    return{tid:e.to,angle:Math.atan2(dy,dx)*180/Math.PI};
+  }).filter(Boolean);
+  const assigned={},used=new Set();
+  // 方向が明確なターゲットから順にグリーディ割り当て
+  targets.slice().sort((a,b)=>{
+    const da=Math.min(...sideAngles.map(sa=>{let d=Math.abs(a.angle-sa.a);return d>180?360-d:d;}));
+    const db=Math.min(...sideAngles.map(sa=>{let d=Math.abs(b.angle-sa.a);return d>180?360-d:d;}));
+    return da-db;
+  }).forEach(t=>{
+    let best=null,bd=Infinity;
+    for(const sa of sideAngles){
+      if(used.has(sa.s))continue;
+      let d=Math.abs(t.angle-sa.a);if(d>180)d=360-d;
+      if(d<bd){bd=d;best=sa.s;}
+    }
+    if(best){assigned[t.tid]=best;used.add(best);}
+  });
+  return assigned[targetId]||'bottom';
+}
+function connPts(a,b,ed){
+  // crosslaneシェイプの場合は指定レーン幅のみを使って接続点を計算
+  let aRef=a,bRef=b;
+  if(a.type==='crosslane'&&ed?.fromLid){
+    const ln=S.lanes.find(l=>l.id===ed.fromLid);
+    if(ln)aRef={...a,x:laneX(ed.fromLid),w:ln.w,type:'rect'};
+  }
+  if(b.type==='crosslane'&&ed?.toLid){
+    const ln=S.lanes.find(l=>l.id===ed.toLid);
+    if(ln)bRef={...b,x:laneX(ed.toLid),w:ln.w,type:'rect'};
+  }
+  const exitSide=a.type==='diamond'?diamondExit(a,b.id):facingSide(aRef,bRef);
+  const entrySide=facingSide(bRef,aRef);
+  const[sx,sy]=exitPt(aRef,exitSide),[ex,ey]=exitPt(bRef,entrySide);
+  return[sx,sy,ex,ey,exitSide,entrySide];
+}
+function bezier(sx,sy,ex,ey,exitSide,entrySide){
+  const dist=Math.hypot(ex-sx,ey-sy),off=Math.max(40,dist*0.45);
+  let c1x=sx,c1y=sy,c2x=ex,c2y=ey;
+  if(exitSide==='bottom')c1y+=off; else if(exitSide==='top')c1y-=off;
+  else if(exitSide==='right')c1x+=off; else if(exitSide==='left')c1x-=off;
+  if(entrySide==='top')c2y-=off; else if(entrySide==='bottom')c2y+=off;
+  else if(entrySide==='left')c2x-=off; else if(entrySide==='right')c2x+=off;
+  return`M${sx},${sy} C${c1x},${c1y} ${c2x},${c2y} ${ex},${ey}`;
+}
+
+// ── Render ──
+// crosslaneのx/wをlane定義とcrossX/crossWから更新（renderEdges・renderNodes共通前処理）
+function normalizeCrosslaneGeometry(){
+  S.nodes.forEach(n=>{
+    if(n.type!=='crosslane')return;
+    const fromX=laneX(n.fromLid);
+    n.x=fromX+(n.crossX||0);
+    n.w=(n.crossW!=null)?n.crossW:(()=>{
+      const tl=S.lanes.find(l=>l.id===n.toLid);
+      return tl?laneX(n.toLid)+tl.w-fromX:LANE_W*2;
+    })();
+    n.lid=n.fromLid;
+  });
+}
+function renderGrid(){
+  const g=document.getElementById('g-grid'); g.innerHTML='';
+  const tw=totalW();
+  for(let y=HEADER_H+GRID_Y;y<SVG_H;y+=GRID_Y){
+    g.appendChild(e('line',{x1:0,y1:y,x2:tw,y2:y,
+      stroke:'#94a3b8','stroke-width':.5,'stroke-dasharray':'2,6',opacity:'.22','pointer-events':'none'}));
+  }
+}
+function render(){
+  const tw=totalW(),svg=document.getElementById('diagram-svg');
+  svg.setAttribute('width',tw); svg.setAttribute('height',SVG_H);
+  normalizeCrosslaneGeometry();
+  renderLanes(tw); renderGrid(); renderEdges(); renderNodes(); renderDividers(tw);
+}
+function renderLanes(tw){
+  const g=document.getElementById('g-lanes'); g.innerHTML='';
+  let x=0;
+  S.lanes.forEach((l,i)=>{
+    // 列の本体背景
+    g.appendChild(e('rect',{x,y:HEADER_H,width:l.w,height:SVG_H-HEADER_H,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
+    // ヘッダー背景
+    g.appendChild(e('rect',{x,y:0,width:l.w,height:HEADER_H,fill:l.hd,stroke:'#94a3b8','stroke-width':1}));
+    // ヘッダーラベル（横書き）
+    const t=e('text',{x:x+l.w/2,y:HEADER_H/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'600',fill:'#1e293b'});
+    t.textContent=l.name; g.appendChild(t);
+    // 列の区切り線
+    if(i<S.lanes.length-1)g.appendChild(e('line',{x1:x+l.w,y1:0,x2:x+l.w,y2:SVG_H,stroke:'#94a3b8','stroke-width':1.5}));
+    x+=l.w;
+  });
+  g.appendChild(e('rect',{x:0,y:0,width:tw,height:SVG_H,fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
+}
+function renderEdges(){
+  const g=document.getElementById('g-edges'); g.innerHTML='';
+  S.edges.forEach(ed=>{
+    const fn=S.nodes.find(n=>n.id===ed.from),tn=S.nodes.find(n=>n.id===ed.to);
+    if(!fn||!tn)return;
+    const isSel=S.sel.includes(ed.id),col=isSel?'#2563eb':'#475569',mk=isSel?'url(#arrB)':'url(#arr)';
+    const[sx,sy,ex,ey,exitSide,entrySide]=connPts(fn,tn,ed),pd=bezier(sx,sy,ex,ey,exitSide,entrySide);
+    // 太めの透明ヒットエリア
+    const hit=e('path',{d:pd,stroke:'transparent','stroke-width':12,fill:'none',cursor:'pointer'});
+    hit.addEventListener('mousedown',ev=>{ev.stopPropagation();});
+    hit.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+      edgeClickTimer=setTimeout(()=>{edgeClickTimer=null;S.sel=[ed.id];render();},220);
+    });
+    hit.addEventListener('dblclick',ev=>{
+      ev.stopPropagation();
+      if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+      edgeLabel(ed.id);
+    });
+    g.appendChild(hit);
+    g.appendChild(e('path',{d:pd,stroke:col,'stroke-width':isSel?2:1.5,fill:'none','marker-end':mk}));
+    // ラベル表示（背景付き）
+    const mx=(sx+ex)/2, my=(sy+ey)/2;
+    if(ed.label){
+      const lw=Math.max(36,ed.label.length*7+14);
+      g.appendChild(e('rect',{x:mx-lw/2,y:my-11,width:lw,height:20,rx:3,fill:'white',stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
+      const t=e('text',{x:mx,y:my,'text-anchor':'middle','dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
+      t.textContent=ed.label; g.appendChild(t);
+    } else {
+      // ラベルなし時にダブルクリック可能な小ガイド
+      const dot=e('circle',{cx:mx,cy:my,r:4,fill:isSel?'#93c5fd':'#cbd5e1',cursor:'pointer','pointer-events':'all'});
+      dot.addEventListener('mousedown',ev=>{ev.stopPropagation();});
+      dot.addEventListener('click',ev=>{
+        ev.stopPropagation();
+        if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+        edgeClickTimer=setTimeout(()=>{edgeClickTimer=null;S.sel=[ed.id];render();},220);
+      });
+      dot.addEventListener('dblclick',ev=>{
+        ev.stopPropagation();
+        if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+        edgeLabel(ed.id);
+      });
+      g.appendChild(dot);
+    }
+  });
+}
+function shapeEl(n,sel){
+  const d=SD[n.type]||SD.rect,st=sel?'#2563eb':d.stroke,sw=sel?2.5:1.5;
+  if(n.type==='crosslane'){
+    const grp=e('g');
+    grp.appendChild(e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:d.fill,stroke:st,'stroke-width':sw}));
+    // 跨いでいるレーンの区切り線をレーン境界位置で描画（シェイプ内に収まる場合のみ）
+    const sl=getSpannedLanes(n);
+    let divX=laneX(n.fromLid);
+    for(let i=0;i<sl.length-1;i++){
+      divX+=sl[i].w;
+      if(divX>n.x&&divX<n.x+n.w){
+        grp.appendChild(e('line',{x1:divX,y1:n.y+4,x2:divX,y2:n.y+n.h-4,
+          stroke:st,'stroke-width':.8,'stroke-dasharray':'3,2',opacity:'.55','pointer-events':'none'}));
+      }
+    }
+    return grp;
+  }
+  if(n.type==='note'){
+    const grp=e('g'),DIV=0.58,divY=Math.round(n.y+n.h*DIV);
+    grp.appendChild(e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:d.fill,stroke:st,'stroke-width':sw}));
+    // 備考エリア背景
+    grp.appendChild(e('rect',{x:n.x+sw,y:divY,width:n.w-sw*2,height:n.y+n.h-divY-sw,rx:2,
+      fill:'rgba(255,255,255,0.5)','pointer-events':'none'}));
+    // 区切り線
+    grp.appendChild(e('line',{x1:n.x,y1:divY,x2:n.x+n.w,y2:divY,
+      stroke:st,'stroke-width':'.8',opacity:'.6','pointer-events':'none'}));
+    return grp;
+  }
+  if(n.type==='rect')
+    return e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:d.fill,stroke:st,'stroke-width':sw});
+  if(n.type==='diamond'){
+    const cx=n.x+n.w/2,cy=n.y+n.h/2;
+    return e('polygon',{points:`${cx},${n.y} ${n.x+n.w},${cy} ${cx},${n.y+n.h} ${n.x},${cy}`,fill:d.fill,stroke:st,'stroke-width':sw});
+  }
+  if(n.type==='terminal')
+    return e('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:n.h/2,fill:d.fill,stroke:st,'stroke-width':sw});
+  if(n.type==='doc'){
+    const wv=10,{x,y,w,h}=n;
+    return e('path',{d:`M${x},${y} L${x+w},${y} L${x+w},${y+h-wv} Q${x+w*0.75},${y+h+wv*.5} ${x+w/2},${y+h-wv} Q${x+w*0.25},${y+h-wv*1.5} ${x},${y+h-wv} Z`,fill:d.fill,stroke:st,'stroke-width':sw});
+  }
+}
+function renderNodes(){
+  const g=document.getElementById('g-nodes'); g.innerHTML='';
+  // ジオメトリはrender()→normalizeCrosslaneGeometry()で事前更新済み
+  S.nodes.forEach(n=>{
+    const sel=S.sel.includes(n.id);
+    const ng=e('g',{'data-nid':n.id});
+    ng.appendChild(shapeEl(n,sel));
+    const [cx,cy]=nc(n);
+    if(n.type==='note'){
+      // タイトル（上部エリア）
+      const DIV=0.58,divY=Math.round(n.y+n.h*DIV);
+      const titleCy=n.y+(divY-n.y)/2, noteCy=divY+(n.y+n.h-divY)/2;
+      const tt=e('text',{x:cx,y:titleCy,'text-anchor':'middle','dominant-baseline':'middle',
+        'font-size':'12',fill:'#1e293b','pointer-events':'none'});
+      tt.textContent=n.text; ng.appendChild(tt);
+      // 備考テキスト（下部エリア）
+      if(n.note){
+        const nls=n.note.split('\n');
+        nls.forEach((nl,ni)=>{
+          const nt=e('text',{x:n.x+8,y:noteCy-(nls.length-1)*12/2+ni*12,
+            'text-anchor':'start','dominant-baseline':'middle','font-size':'10',fill:'#475569','pointer-events':'none'});
+          nt.textContent=nl; ng.appendChild(nt);
+        });
+      } else {
+        const ph=e('text',{x:n.x+8,y:noteCy,'text-anchor':'start','dominant-baseline':'middle',
+          'font-size':'10',fill:'#94a3b8','font-style':'italic','pointer-events':'none'});
+        ph.textContent='備考…'; ng.appendChild(ph);
+      }
+      // 備考エリア: ダブルクリックで備考編集
+      const nHA=e('rect',{x:n.x,y:divY,width:n.w,height:n.y+n.h-divY,fill:'transparent','pointer-events':'all'});
+      nHA.addEventListener('dblclick',ev=>{
+        ev.stopPropagation();
+        if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+        editNote(n.id);
+      });
+      ng.appendChild(nHA);
+    } else {
+      const lines=n.text.split('\n'),lh=15;
+      lines.forEach((ln,i)=>{
+        const t=e('text',{x:cx,y:cy-(lines.length-1)*lh/2+i*lh,'text-anchor':'middle','dominant-baseline':'middle','font-size':'12',fill:'#1e293b','pointer-events':'none'});
+        t.textContent=ln; ng.appendChild(t);
+      });
+    }
+    // 接続モード中のcrosslaneは各レーンに接続点ドットを表示
+    if(sel&&S.mode==='connect'){
+      if(n.type==='crosslane'){
+        getSpannedLanes(n).forEach(ln=>{
+          const lx=laneX(ln.id),dotx=lx+ln.w/2;
+          ng.appendChild(e('circle',{cx:dotx,cy,r:6,fill:'#3b82f6',opacity:.8,'pointer-events':'none'}));
+        });
+      } else {
+        ng.appendChild(e('circle',{cx,cy,r:6,fill:'#2563eb',opacity:.7,'pointer-events':'none'}));
+      }
+    }
+    // crosslane: 左右端に横リサイズハンドル（選択モード時）
+    if(n.type==='crosslane'&&S.mode!=='connect'){
+      const hw=8;
+      const lHandle=e('rect',{x:n.x,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
+      lHandle.style.cursor='ew-resize';
+      lHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'left');});
+      ng.appendChild(lHandle);
+      const rHandle=e('rect',{x:n.x+n.w-hw,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
+      rHandle.style.cursor='ew-resize';
+      rHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'right');});
+      ng.appendChild(rHandle);
+    }
+    ng.style.cursor=S.mode==='connect'?'crosshair':(n.type==='crosslane'?'ns-resize':'move');
+    ng.addEventListener('mousedown',ev=>nodeMD(ev,n.id));
+    ng.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(S.mode==='connect'){
+        const fromId=connNid();
+        if(!S.conn){
+          // 接続元選択
+          if(n.type==='crosslane'){
+            showLaneChoice(n,lid=>{S.conn={nid:n.id,fromLid:lid};S.sel=[n.id];render();hint('接続先ノードをクリック (Escでキャンセル)');});
+          } else {
+            S.conn=n.id; S.sel=[n.id]; render();
+            hint('接続先ノードをクリック (Escでキャンセル)');
+          }
+        } else if(fromId!==n.id){
+          // 接続先選択
+          const srcN=S.nodes.find(n=>n.id===fromId);
+          const keepConn=srcN&&srcN.type==='crosslane'; // crosslane接続元は接続状態を維持
+          const afterEdge=()=>{
+            document.getElementById('prev-edge').style.display='none';
+            if(keepConn){S.sel=[fromId];render();hint('続けて接続先をクリック (Escでキャンセル)');}
+            else{S.conn=null;S.sel=[];render();hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)');}
+          };
+          if(n.type==='crosslane'){
+            showLaneChoice(n,toLid=>{addEdge(fromId,n.id,{fromLid:connFromLid(),toLid});afterEdge();});
+          } else {
+            addEdge(fromId,n.id,{fromLid:connFromLid()}); afterEdge();
+          }
+        }
+        return;
+      }
+      if(S_didDrag)return;
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      nodeClickTimer=setTimeout(()=>{nodeClickTimer=null;S.sel=[n.id];render();},220);
+    });
+    ng.addEventListener('dblclick',ev=>{
+      ev.stopPropagation();
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      editText(n.id);
+    });
+    ng.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[n.id];delSel()});
+    g.appendChild(ng);
+  });
+}
+
+// ── Mode ──
+function setMode(m){
+  S.mode=m; S.conn=null;
+  document.getElementById('prev-edge').style.display='none';
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('on'));
+  document.getElementById('btn-'+m)?.classList.add('on');
+  document.getElementById('diagram-svg').className=m==='connect'?'cx':'';
+  if(m==='connect'){clearPal();hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)')}
+  else hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+  render();
+}
+function clearPal(){
+  activePal=null;
+  document.querySelectorAll('.ps').forEach(p=>p.classList.remove('on'));
+  clearGuides();
+}
+function palClick(type){
+  if(activePal===type){clearPal();hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');return}
+  activePal=type;
+  document.querySelectorAll('.ps').forEach(p=>p.classList.remove('on'));
+  document.getElementById('ps-'+type).classList.add('on');
+  if(S.mode==='connect')setMode('select');
+  hint(`「${SD[type].text}」: キャンバスをクリックして配置 (Escでキャンセル)`);
+}
+
+// ── Palette drag ──
+function palDragStart(ev,type){
+  if(ev.button!==0)return;
+  ev.preventDefault(); ev.stopPropagation();
+  if(S.mode==='connect')setMode('select'); // 接続モードなら選択モードに自動切り替え
+  const d=SD[type];
+  const ghost=document.createElement('div');
+  Object.assign(ghost.style,{
+    position:'fixed',width:'64px',height:'36px',background:d.fill,
+    border:`2px dashed ${d.stroke}`,borderRadius:'4px',pointerEvents:'none',
+    zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',
+    fontSize:'11px',color:'#333',opacity:'.88',
+    left:(ev.clientX-32)+'px',top:(ev.clientY-18)+'px',
+  });
+  ghost.textContent=d.text; document.body.appendChild(ghost);
+  let moved=false;
+  const mv=e=>{
+    moved=true;ghost.style.left=(e.clientX-32)+'px';ghost.style.top=(e.clientY-18)+'px';
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    const sx=e.clientX-r.left,sy=e.clientY-r.top;
+    if(sx>=0&&sx<=r.width&&sy>HEADER_H){
+      const lane=laneAt(sx);
+      renderGuides(lane,snapXInLane(lane,sx),snapYToShapes(sy,null));
+    } else clearGuides();
+  };
+  const up=e=>{
+    ghost.remove(); document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up);
+    clearGuides();
+    if(!moved)return; // let click handler fire
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    if(e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom){
+      const px=e.clientX-r.left,py=e.clientY-r.top;
+      if(py>HEADER_H) placeShape(type,px,py);
+    }
+  };
+  document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+}
+
+// ── Canvas events ──
+function svgMD(ev){
+  if(ev.button!==0)return;
+  if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+  if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
+  if(S.mode==='connect'){S.conn=null;document.getElementById('prev-edge').style.display='none';S.sel=[];render();return}
+  if(activePal){
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    const px=ev.clientX-r.left,py=ev.clientY-r.top;
+    if(py>HEADER_H){placeShape(activePal,px,py);return}
+  }
+  document.getElementById('lane-choice')?.remove();
+  S.sel=[]; render();
+}
+function svgDbl(ev){
+  const pt=svgPt(ev);
+  if(S.mode==='select'&&!ev.target.closest('[data-nid]')&&pt.y>HEADER_H){
+    addNode('rect',pt.x,pt.y);
+  }
+}
+function svgRC(ev){ev.preventDefault()}
+
+function nodeMD(ev,nid){
+  ev.stopPropagation();
+  if(ev.button!==0)return;
+  if(S.mode==='connect')return;
+  const n=S.nodes.find(n=>n.id===nid),pt=svgPt(ev);
+  // crosslaneはY方向のみドラッグ可
+  S.drag={nid,sx:pt.x,sy:pt.y,ox:n.x,oy:n.y,crosslane:n.type==='crosslane'};
+  S_didDrag=false;
+}
+
+document.addEventListener('mousemove',ev=>{
+  if(crosslaneResizeState){
+    const pt=svgPt(ev);
+    const n=S.nodes.find(n=>n.id===crosslaneResizeState.nid); if(!n)return;
+    const fromX=laneX(n.fromLid), minW=40;
+    const {origCrossX,origCrossW,startX}=crosslaneResizeState;
+    let guideX=null;
+    if(crosslaneResizeState.side==='left'){
+      const rawX=fromX+origCrossX+(pt.x-startX);
+      const {snapped,isSnap}=snapToLaneBoundary(rawX);
+      const newCX=snapped-fromX, newCW=(fromX+origCrossX+origCrossW)-snapped;
+      if(newCW>=minW){n.crossX=newCX; n.crossW=newCW;}
+      if(isSnap)guideX=snapped;
+    } else {
+      const rawX=fromX+origCrossX+origCrossW+(pt.x-startX);
+      const {snapped,isSnap}=snapToLaneBoundary(rawX);
+      const newCW=snapped-(fromX+(n.crossX||0));
+      if(newCW>=minW) n.crossW=newCW;
+      if(isSnap)guideX=snapped;
+    }
+    renderSnapXGuide(guideX);
+    normalizeCrosslaneGeometry(); renderEdges(); renderNodes(); return;
+  }
+  if(laneResizeState){
+    const pt=svgPt(ev);
+    const lane=S.lanes.find(l=>l.id===laneResizeState.laneId);
+    if(lane){
+      const newW=Math.max(100,laneResizeState.origW+(pt.x-laneResizeState.startX));
+      const delta=newW-laneResizeState.origW;
+      lane.w=newW;
+      // 右側レーンのノードを一緒にずらす（元座標+差分で累積誤差なし）
+      Object.entries(laneResizeState.origNodeX).forEach(([nid,ox])=>{
+        const n=S.nodes.find(n=>n.id===nid); if(n) n.x=ox+delta;
+      });
+      // リサイズしたレーン内ノードを範囲内にクランプ
+      const lx=laneX(lane.id);
+      S.nodes.filter(n=>n.lid===lane.id).forEach(n=>{
+        n.x=Math.max(lx+2,Math.min(lx+lane.w-n.w-2,n.x));
+      });
+      render();
+    }
+    return;
+  }
+  if(S.drag){
+    const pt=svgPt(ev),n=S.nodes.find(n=>n.id===S.drag.nid);
+    if(!n)return;
+    if(Math.hypot(pt.x-S.drag.sx,pt.y-S.drag.sy)>4) S_didDrag=true;
+    if(!S_didDrag)return;
+    n.y=S.drag.oy+(pt.y-S.drag.sy);
+    const ySnapY=snapYToShapes(n.y+n.h/2,n.id);
+    if(ySnapY!==null) n.y=ySnapY-n.h/2;
+    n.y=Math.max(HEADER_H+2,Math.min(SVG_H-n.h-2,n.y));
+    if(!S.drag.crosslane){
+      // 通常ノード: X方向も移動
+      n.x=S.drag.ox+(pt.x-S.drag.sx);
+      const l=laneAt(n.x+n.w/2),lx=laneX(l.id);
+      n.lid=l.id;
+      const snappedCx=snapXInLane(l,n.x+n.w/2);
+      n.x=Math.max(lx+2,Math.min(lx+l.w-n.w-2,snappedCx-n.w/2));
+      renderGuides(l,snappedCx,ySnapY);
+    } else {
+      // crosslane: X位置はレーン定義から固定、Y方向のみ
+      renderGuides(null,null,ySnapY);
+    }
+    renderEdges(); renderNodes(); return;
+  }
+  if(activePal){
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    const sx=ev.clientX-r.left,sy=ev.clientY-r.top;
+    if(sx>=0&&sx<=r.width&&sy>HEADER_H){
+      const lane=laneAt(sx);
+      renderGuides(lane,snapXInLane(lane,sx),snapYToShapes(sy,null));
+    } else {
+      clearGuides();
+    }
+  }
+  if(S.mode==='connect'&&S.conn){
+    const pt=svgPt(ev),fn=S.nodes.find(n=>n.id===connNid());
+    if(fn){
+      let cx,cy;
+      if(fn.type==='crosslane'&&typeof S.conn==='object'&&S.conn.fromLid){
+        const ln=S.lanes.find(l=>l.id===S.conn.fromLid);
+        cx=ln?laneX(ln.id)+ln.w/2:fn.x+fn.w/2; cy=fn.y+fn.h/2;
+      } else {[cx,cy]=nc(fn);}
+      const prev=document.getElementById('prev-edge');
+      prev.setAttribute('d',`M${cx},${cy} L${pt.x},${pt.y}`);
+      prev.style.display='';
+    }
+  }
+});
+document.addEventListener('mouseup',()=>{
+  if(crosslaneResizeState){snap(); clearGuides(); crosslaneResizeState=null; return;}
+  if(laneResizeState){
+    snap(); laneResizeState=null;
+    document.getElementById('diagram-svg').style.cursor='';
+    return;
+  }
+  if(S.drag){
+    if(S_didDrag){const nid=S.drag.nid;S.drag=null;S.sel=[nid];clearGuides();snap();render();}
+    else{S.drag=null;}
+  }
+});
+
+// ── Lane divider resize handles ──
+let laneResizeState=null;
+let crosslaneResizeState=null;
+
+function renderDividers(){
+  const g=document.getElementById('g-dividers'); g.innerHTML='';
+  let x=0;
+  S.lanes.forEach((l,i)=>{
+    x+=l.w;
+    if(i<S.lanes.length-1){
+      // 8px幅の透明なヒットエリア
+      const hit=e('rect',{x:x-4,y:0,width:8,height:SVG_H,fill:'transparent',cursor:'col-resize'});
+      hit.addEventListener('mousedown',ev=>startLaneResize(ev,l.id));
+      // ホバー時に視覚フィードバック
+      hit.addEventListener('mouseenter',()=>{
+        document.getElementById('diagram-svg').style.cursor='col-resize';
+      });
+      hit.addEventListener('mouseleave',()=>{
+        if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';
+      });
+      g.appendChild(hit);
+    }
+  });
+}
+
+function startLaneResize(ev,laneId){
+  ev.stopPropagation(); ev.preventDefault();
+  const pt=svgPt(ev);
+  const lane=S.lanes.find(l=>l.id===laneId);
+  const laneIdx=S.lanes.indexOf(lane);
+  // リサイズ開始時の右側レーンのノード位置を保存（差分計算のため）
+  const origNodeX={};
+  S.nodes.forEach(n=>{
+    const ni=S.lanes.findIndex(l=>l.id===n.lid);
+    if(ni>laneIdx) origNodeX[n.id]=n.x;
+  });
+  laneResizeState={laneId,startX:pt.x,origW:lane.w,origNodeX};
+  document.getElementById('diagram-svg').style.cursor='col-resize';
+}
+// crosslaneシェイプの横幅リサイズ開始
+function startCrosslaneResize(ev,nid,side){
+  ev.stopPropagation(); ev.preventDefault();
+  const pt=svgPt(ev);
+  const n=S.nodes.find(n=>n.id===nid); if(!n)return;
+  const fromX=laneX(n.fromLid);
+  const tl=S.lanes.find(l=>l.id===n.toLid);
+  // crossW未設定（旧データ）は全スパン幅をデフォルトとして使用
+  const origCrossW=n.crossW!=null?n.crossW:(tl?laneX(n.toLid)+tl.w-fromX:LANE_W*2);
+  const origCrossX=n.crossX||0;
+  crosslaneResizeState={nid,side,startX:pt.x,origCrossX,origCrossW};
+}
+
+// ── SVG内インラインエディタ（foreignObject方式） ──
+function openSvgEditor(x,y,w,h,initVal,onCommit){
+  // すでに開いていれば閉じる
+  document.getElementById('svg-editor')?.remove();
+  const fo=document.createElementNS(NS,'foreignObject');
+  fo.id='svg-editor';
+  fo.setAttribute('x',x); fo.setAttribute('y',y);
+  fo.setAttribute('width',w); fo.setAttribute('height',h);
+  const isMulti=h>30;
+  const inp=document.createElement(isMulti?'textarea':'input');
+  if(!isMulti) inp.type='text';
+  inp.style.cssText=`width:100%;height:100%;border:2px solid #3b82f6;border-radius:4px;`+
+    `padding:${isMulti?'4px 6px':'2px 6px'};font:${isMulti?'12':'11'}px 'Segoe UI',sans-serif;`+
+    `text-align:center;resize:none;outline:none;background:rgba(255,255,255,0.97);box-sizing:border-box;`;
+  inp.value=initVal;
+  fo.appendChild(inp);
+  document.getElementById('g-nodes').appendChild(fo);
+  setTimeout(()=>{inp.focus();inp.select();},0);
+  let done=false;
+  const commit=()=>{if(done)return;done=true;const v=inp.value;fo.remove();onCommit(v);};
+  const cancel=()=>{if(done)return;done=true;fo.remove();render();};
+  inp.addEventListener('blur',commit);
+  inp.addEventListener('keydown',ev=>{
+    ev.stopPropagation();
+    if(ev.key==='Escape'){ev.preventDefault();cancel();}
+    else if(ev.key==='Enter'&&(!isMulti||!ev.shiftKey)){ev.preventDefault();commit();}
+  });
+}
+
+// ── Edit ──
+function editText(nid){
+  const n=S.nodes.find(n=>n.id===nid);
+  if(!n)return;
+  S.sel=[nid]; render();
+  // noteタイプはタイトルエリアの高さ分のみ編集
+  const h=n.type==='note'?Math.round(n.h*0.58):n.h;
+  openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();});
+}
+function editNote(nid){
+  const n=S.nodes.find(n=>n.id===nid); if(!n)return;
+  S.sel=[nid]; render();
+  const DIV=0.58,divY=Math.round(n.y+n.h*DIV),noteH=n.y+n.h-divY;
+  openSvgEditor(n.x,divY,n.w,noteH,n.note||'',v=>{n.note=v;snap();render();});
+}
+function edgeLabel(eid){
+  const ed=S.edges.find(e=>e.id===eid);
+  if(!ed)return;
+  const fn=S.nodes.find(n=>n.id===ed.from),tn=S.nodes.find(n=>n.id===ed.to);
+  if(!fn||!tn)return;
+  S.sel=[eid]; render();
+  const[sx,sy,ex,ey]=connPts(fn,tn);
+  const mx=(sx+ex)/2, my=(sy+ey)/2;
+  const ew=140,eh=26;
+  openSvgEditor(mx-ew/2,my-eh/2,ew,eh,ed.label||'',v=>{ed.label=v;snap();render();});
+}
+
+// ── Keyboard ──
+document.addEventListener('keydown',ev=>{
+  if(ev.target.tagName==='INPUT'||ev.target.tagName==='TEXTAREA')return;
+  if(ev.key==='Delete'||ev.key==='Backspace')delSel();
+  if(ev.key==='z'&&(ev.ctrlKey||ev.metaKey)&&!ev.shiftKey){ev.preventDefault();undo()}
+  if((ev.key==='y'&&(ev.ctrlKey||ev.metaKey))||(ev.key==='z'&&ev.shiftKey&&(ev.ctrlKey||ev.metaKey))){ev.preventDefault();redo()}
+  if(ev.key==='Escape'){
+    S.conn=null; clearPal();
+    document.getElementById('prev-edge').style.display='none';
+    S.sel=[]; render();
+    hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
+  }
+  if(ev.key==='v'&&!ev.ctrlKey&&!ev.metaKey)setMode('select');
+  if(ev.key==='c'&&!ev.ctrlKey&&!ev.metaKey)setMode('connect');
+});
+
+// ── Lane panel ──
+function lanePanel(){
+  const list=document.getElementById('lane-list'); list.innerHTML='';
+  S.lanes.forEach(l=>{
+    const row=document.createElement('div'); row.className='lr';
+    row.innerHTML=`<div class="ldot" style="background:${l.hd}"></div>
+<input class="lname" value="${l.name.replace(/"/g,'&quot;')}" onchange="renameLane('${l.id}',this.value)" oninput="renameLane('${l.id}',this.value)">
+<button class="ldel" onclick="removeLane('${l.id}')" title="削除">✕</button>`;
+    list.appendChild(row);
+  });
+}
+
+// ── Crosslane resize snap ──
+function snapToLaneBoundary(x){
+  const threshold=16;
+  let best=x,bestDist=threshold;
+  let lx=0;
+  S.lanes.forEach(l=>{
+    [lx, lx+l.w/2, lx+l.w].forEach(p=>{
+      const d=Math.abs(x-p);
+      if(d<bestDist){bestDist=d;best=p;}
+    });
+    lx+=l.w;
+  });
+  return{snapped:best,isSnap:Math.abs(best-x)<threshold};
+}
+function renderSnapXGuide(x){
+  const g=document.getElementById('g-guides'); g.innerHTML='';
+  if(x==null)return;
+  const lbl=e('g');
+  g.appendChild(e('line',{x1:x,y1:0,x2:x,y2:SVG_H,
+    stroke:'#2563eb','stroke-width':2,'stroke-dasharray':'5,3',opacity:'1','pointer-events':'none'}));
+}
+
+// ── Save ──
+// saveHtmlCore: 実際の保存処理
+// fetch()で取得した生ソースをベースにstateスクリプトを</head>前に注入してダウンロード
+async function saveHtmlCore(name){
+  document.getElementById('svg-editor')?.remove();
+  const st={lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name};
+  // HTMLインジェクション防止: < > をUnicodeエスケープ
+  const stJson=JSON.stringify(st).replace(/</g,'\\u003c').replace(/>/g,'\\u003e');
+  // 生ソースを取得（fetchで確実に元ファイルの内容を使用）
+  let html=await _pageHtmlP;
+  // 既存のstateスクリプトを除去（前回保存時に注入したもの）
+  html=html.replace(/<script id="__state__">[\s\S]*?<\/script>\n?/g,'');
+  // </head>直前に注入 → init()より先に実行されるため状態が正しく復元される
+  html=html.replace('</head>',`<script id="__state__">window.__SAVED_STATE__=${stJson};<\/script>\n</head>`);
+  const safe=(name||'スイムレーン図').replace(/[\\/:*?"<>|]/g,'_');
+  dl(new Blob([html],{type:'text/html;charset=utf-8'}),safe+'.html');
+}
+
+// 上書き保存: 現在の図の名称でそのまま保存（ダイアログなし）
+function saveOverwrite(){
+  const name=(S_diagramName||document.getElementById('diagram-name').value||'スイムレーン図').trim();
+  saveHtmlCore(name);
+}
+
+// 名前をつけて保存: ダイアログを開く
+function openSaveAsDialog(){
+  const cur=(S_diagramName||document.getElementById('diagram-name').value||'').trim();
+  const inp=document.getElementById('save-filename-input');
+  inp.value=cur;
+  document.getElementById('save-modal').style.display='flex';
+  setTimeout(()=>{inp.focus();inp.select();},50);
+}
+function closeSaveDialog(){
+  document.getElementById('save-modal').style.display='none';
+}
+function confirmSaveAs(){
+  const name=document.getElementById('save-filename-input').value.trim()||'スイムレーン図';
+  // 図の名称フィールドも同期して更新
+  S_diagramName=name;
+  const ni=document.getElementById('diagram-name');
+  if(ni)ni.value=name;
+  closeSaveDialog();
+  saveHtmlCore(name);
+}
+
+// ── Export ──
+function expSVG(){
+  const tw=totalW();
+  const svg=document.getElementById('diagram-svg').cloneNode(true);
+  svg.setAttribute('xmlns',NS);
+  const bg=e('rect',{x:0,y:0,width:tw,height:SVG_H,fill:'white'});
+  svg.insertBefore(bg,svg.firstChild);
+  const s=new XMLSerializer().serializeToString(svg);
+  dl(new Blob(['<?xml version="1.0"?>\n'+s],{type:'image/svg+xml'}),'swimlane.svg');
+}
+function expPNG(){
+  const tw=totalW();
+  const svg=document.getElementById('diagram-svg').cloneNode(true);
+  svg.setAttribute('xmlns',NS);
+  const bg=e('rect',{x:0,y:0,width:tw,height:SVG_H,fill:'white'});
+  svg.insertBefore(bg,svg.firstChild);
+  const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml'}));
+  const img=new Image(); const sc=2;
+  img.onload=()=>{
+    const c=document.createElement('canvas');
+    c.width=tw*sc; c.height=SVG_H*sc;
+    const ctx=c.getContext('2d'); ctx.scale(sc,sc); ctx.drawImage(img,0,0);
+    URL.revokeObjectURL(url); c.toBlob(b=>dl(b,'swimlane.png'));
+  };
+  img.src=url;
+}
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+
+function fitView(){const w=document.getElementById('canvas-wrap');w.scrollTop=0;w.scrollLeft=0}
+function hint(msg){const h=document.getElementById('hint');h.textContent=msg;h.style.display=msg?'':'none'}
+
+init();
+</script>
+</body>
+</html>
