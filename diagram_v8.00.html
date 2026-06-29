@@ -1040,14 +1040,14 @@ function seedSampleGantt(){
     {text:'テスト・リリース', color:'#15803d'}, // 濃緑
   ];
   const phaseIds=phaseDefs.map(p=>{ const id=uid(); S.nodes.push({id,type:'gantt_summary',text:p.text,color:p.color}); return id; });
-  // 6タスク（相対日数で階段状に配置／進捗は前工程ほど高い＝今が初期フェーズ進行中の想定）
+  // 6タスク（相対日数で階段状に配置／進捗は既定すべて0%＝実績はユーザーが入力する）
   const taskDefs=[
-    {text:'要件ヒアリング',   s:0,  len:4,  prog:100, assignee:'企画', pi:0},
-    {text:'要件定義書作成',   s:7,  len:4,  prog:100, assignee:'企画', pi:0},
-    {text:'基本設計',         s:14, len:8,  prog:70,  assignee:'設計', pi:1},
-    {text:'実装',             s:23, len:16, prog:35,  assignee:'開発', pi:1},
-    {text:'テスト',           s:42, len:11, prog:0,   assignee:'QA',   pi:2},
-    {text:'リリース準備',     s:56, len:4,  prog:0,   assignee:'運用', pi:2},
+    {text:'要件ヒアリング',   s:0,  len:4,  prog:0, assignee:'企画', pi:0},
+    {text:'要件定義書作成',   s:7,  len:4,  prog:0, assignee:'企画', pi:0},
+    {text:'基本設計',         s:14, len:8,  prog:0, assignee:'設計', pi:1},
+    {text:'実装',             s:23, len:16, prog:0, assignee:'開発', pi:1},
+    {text:'テスト',           s:42, len:11, prog:0, assignee:'QA',   pi:2},
+    {text:'リリース準備',     s:56, len:4,  prog:0, assignee:'運用', pi:2},
   ];
   taskDefs.forEach((t,i)=>{
     S.nodes.push({id:uid(),type:'gantt_task',row:i,text:t.text,
