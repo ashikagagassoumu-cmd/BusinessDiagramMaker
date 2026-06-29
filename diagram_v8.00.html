@@ -35,6 +35,7 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #main{display:flex;flex:1;overflow:hidden}
 
 #sidebar{width:190px;background:#fff;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;flex-shrink:0}
+#sidebar-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
 .ph{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.6px;padding:9px 12px 6px;background:#f8fafc;border-bottom:1px solid #f1f5f9}
 
 #palette{padding:8px}
@@ -315,8 +316,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div id="main">
   <div id="sidebar">
     <div id="app-header">
-      <input id="diagram-name" type="text" placeholder="図の名称を入力" oninput="S_diagramName=this.value"/>
+      <input id="diagram-name" type="text" placeholder="図の名称を入力" oninput="onDiagramNameInput(this.value)"/>
     </div>
+    <div id="sidebar-scroll">
     <div class="ph">シェイプ</div>
     <div id="palette"></div>
     <div id="gantt-settings" style="display:none">
@@ -339,9 +341,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="ph" id="gantt-head-ph">見出し・凡例</div>
       <div class="gset-body" id="gantt-head-body">
         <label class="gchk"><input type="checkbox" id="gh-show" onchange="ganttHeadSet('show',this.checked)"> 見出しを表示</label>
-        <label>工事名
-          <input id="gh-title" type="text" placeholder="例）○○新築工事" oninput="ganttHeadSet('title',this.value)"/>
-        </label>
+        <div class="ghsub" style="margin-top:0">工事名は図の名称（上部「図の名称」欄）を自動参照します</div>
         <div class="ghsub">情報の行（ラベル：値）</div>
         <div id="gh-rows"></div>
         <button class="ghbtn" onclick="ganttHeadAddRow()">＋ 行を追加</button>
@@ -377,6 +377,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="ph">レーン</div>
       <div id="lane-list"></div>
       <div id="add-lane-row"><button id="add-lane-btn" onclick="addLane()">＋ レーンを追加</button></div>
+    </div>
     </div>
   </div>
 
@@ -1039,14 +1040,14 @@ function seedSampleGantt(){
     {text:'テスト・リリース', color:'#15803d'}, // 濃緑
   ];
   const phaseIds=phaseDefs.map(p=>{ const id=uid(); S.nodes.push({id,type:'gantt_summary',text:p.text,color:p.color}); return id; });
-  // 6タスク（相対日数で階段状に配置／進捗は前工程ほど高い＝今が初期フェーズ進行中の想定）
+  // 6タスク（相対日数で階段状に配置／進捗は既定すべて0%＝実績はユーザーが入力する）
   const taskDefs=[
-    {text:'要件ヒアリング',   s:0,  len:4,  prog:100, assignee:'企画', pi:0},
-    {text:'要件定義書作成',   s:7,  len:4,  prog:100, assignee:'企画', pi:0},
-    {text:'基本設計',         s:14, len:8,  prog:70,  assignee:'設計', pi:1},
-    {text:'実装',             s:23, len:16, prog:35,  assignee:'開発', pi:1},
-    {text:'テスト',           s:42, len:11, prog:0,   assignee:'QA',   pi:2},
-    {text:'リリース準備',     s:56, len:4,  prog:0,   assignee:'運用', pi:2},
+    {text:'要件ヒアリング',   s:0,  len:4,  prog:0, assignee:'企画', pi:0},
+    {text:'要件定義書作成',   s:7,  len:4,  prog:0, assignee:'企画', pi:0},
+    {text:'基本設計',         s:14, len:8,  prog:0, assignee:'設計', pi:1},
+    {text:'実装',             s:23, len:16, prog:0, assignee:'開発', pi:1},
+    {text:'テスト',           s:42, len:11, prog:0, assignee:'QA',   pi:2},
+    {text:'リリース準備',     s:56, len:4,  prog:0, assignee:'運用', pi:2},
   ];
   taskDefs.forEach((t,i)=>{
     S.nodes.push({id:uid(),type:'gantt_task',row:i,text:t.text,
@@ -3214,7 +3215,8 @@ function renderGanttTitleBlock(){
   const padX=16, mLab=(s,fs)=>{let w=0;for(const ch of (s||''))w+=(ch.charCodeAt(0)>255?fs:fs*0.55);return w;};
   gg.appendChild(e('rect',{x:0,y:0,width:W,height:m.H,fill:'#ffffff','pointer-events':'none'}));
   const tt=e('text',{x:padX,y:42,'font-size':'26','font-weight':'700','pointer-events':'none'});
-  if((h.title||'').trim()){ tt.setAttribute('fill','#0f172a'); tt.textContent=h.title; }
+  const _ttl=exportDiagramName();   // v8.00追補: 工事名は図の名称を自動参照（見出し専用入力は廃止）
+  if(_ttl){ tt.setAttribute('fill','#0f172a'); tt.textContent=_ttl; }
   else { tt.setAttribute('fill','#cbd5e1'); tt.textContent='（工事名）'; }
   gg.appendChild(tt);
   gg.appendChild(e('line',{x1:padX,y1:52,x2:Math.min(700,W*0.62),y2:52,stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
@@ -7331,7 +7333,7 @@ async function expExcel(){
   {
     const splitC=leftCols;
     ws.mergeCells(1,1,1,splitC);
-    const ncell=ws.getCell(1,1); ncell.value=(hdr?(hdr.title||exportDiagramName()):exportDiagramName())||'';
+    const ncell=ws.getCell(1,1); ncell.value=exportDiagramName()||'';   // v8.00追補: 工事名＝図の名称を自動参照
     ncell.font={name:FONT,bold:true,size:14,color:{argb:'FF1E293B'}};
     ncell.alignment={horizontal:'left',vertical:'middle',indent:1};
     ws.mergeCells(1,splitC+1,1,totalCols);
@@ -8440,6 +8442,8 @@ function updateGanttToolbar(){
   ganttHeadSyncPanel();   // v8.00: 見出し・凡例パネルを同期
 }
 // ===== v8.00: 見出し・凡例 設定UI =====
+// v8.00追補: 図の名称が変わったら、ガント見出しの工事名（＝図の名称を自動参照）も即時反映。
+function onDiagramNameInput(v){ S_diagramName=v; if(S.diagramType==='gantt'&&S.gantt&&S.gantt.header&&S.gantt.header.show) render(); }
 function ganttHeadSet(key,val){ ganttEnsureHeader(); S.gantt.header[key]=val; render(); }
 function ganttHeadSet2(o,key,val){ ganttEnsureHeader(); S.gantt.header[o]=S.gantt.header[o]||{}; S.gantt.header[o][key]=val; render(); }
 function ganttHeadAddRow(){ ganttEnsureHeader(); S.gantt.header.rows.push({label:'',value:''}); render(); }
@@ -8459,7 +8463,7 @@ function ganttHeadSyncPanel(){
   const h=S.gantt.header, lg=S.gantt.legend;
   const setC=(id,v)=>{const el=document.getElementById(id); if(el&&document.activeElement!==el)el.checked=!!v;};
   const setV=(id,v)=>{const el=document.getElementById(id); if(el&&document.activeElement!==el)el.value=v;};
-  setC('gh-show',h.show); setV('gh-title',h.title||''); setC('gh-date',h.showDate); setC('gh-appr',h.approval&&h.approval.show);
+  setC('gh-show',h.show); setC('gh-date',h.showDate); setC('gh-appr',h.approval&&h.approval.show);
   setC('gl-show',lg.show); setC('gl-auto',lg.auto);
   if(ganttHeadEditing())return;
   const he=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
