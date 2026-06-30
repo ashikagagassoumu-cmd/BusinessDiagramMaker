@@ -1299,6 +1299,7 @@ function init(){
     S.mindLayout=st.mindLayout||'radial';
     S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
     migrateOrgSections();         // v7.02: 旧2段(sub)→ミニ表へ自動移行（見た目不変）
+    ganttMigrateColLabels();      // 微修正(v8.00据置): 旧データのタスク別項目名→列ラベルへ集約
     S_diagramName=st.diagramName||'';
     const ni=document.getElementById('diagram-name');
     if(ni)ni.value=S_diagramName;
@@ -2131,7 +2132,7 @@ function snap(){
   if(S.hist.length>80)S.hist.shift();
   S.hi=S.hist.length-1;
 }
-function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;if(p.gantt)S.gantt=p.gantt;if(p.mindLayout)S.mindLayout=p.mindLayout;S.sel=[];S.conn=null;lanePanel();render()}
+function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;if(p.gantt)S.gantt=p.gantt;if(p.mindLayout)S.mindLayout=p.mindLayout;ganttMigrateColLabels();S.sel=[];S.conn=null;lanePanel();render()}
 function undo(){if(S.hi>0){S.hi--;restore(S.hist[S.hi])}}
 function redo(){if(S.hi<S.hist.length-1){S.hi++;restore(S.hist[S.hi])}}
 
@@ -2981,9 +2982,18 @@ function ganttColList(){ const g=S.gantt;
 function ganttColsTotalW(){ return ganttColList().reduce((a,c)=>a+(c.width||120),0); }
 function ganttDefLabel(colId,row){ return colId==='c0'?(row==='r3'?'概要':'担当'):''; }
 function ganttLabelW(label){ const fs=11, s=(label||'')+'：'; let w=0; for(const ch of s) w+=(ch.charCodeAt(0)>255?fs:fs*0.6); return w; }
-function ganttCellLabel(n,colId,row){ n.cells=n.cells||{}; const c=n.cells[colId]=n.cells[colId]||{}; const cell=c[row]=c[row]||{}; if(cell.l==null) cell.l=ganttDefLabel(colId,row); return cell.l; }
+// 微修正(v8.00据置・B案): 項目名(ラベル)は「列のプロパティ」＝全タスク共通。col.r3Label/col.r4Label に保持。
+//   既定は c0=概要/担当、追加列=空。本文(値)は従来どおりタスクごと（c0=desc/assignee, 他=cells[colId].v）。
+function ganttColLabel(colId,row){ const col=ganttColList().find(c=>c.id===colId); const k=(row==='r3')?'r3Label':'r4Label'; return (col&&col[k]!=null)?col[k]:ganttDefLabel(colId,row); }
+function ganttSetColLabel(colId,row,label){ const col=ganttColList().find(c=>c.id===colId); if(!col)return; col[(row==='r3')?'r3Label':'r4Label']=label; if(label!=null&&label!=='') S.gantt.lastLabel=label; }
+// 旧データ移行（冪等）: タスクごとに持っていた項目名(cell.l)を列ラベルへ集約（最初の非空を採用）。
+function ganttMigrateColLabels(){ const g=S.gantt; if(!g||!Array.isArray(g.cols))return;
+  g.cols.forEach(col=>{ ['r3','r4'].forEach(row=>{ const k=(row==='r3')?'r3Label':'r4Label'; if(col[k]!=null)return;
+    for(const n of S.nodes){ const cc=n.cells&&n.cells[col.id]&&n.cells[col.id][row]; if(cc&&cc.l!=null&&String(cc.l).trim()!==''){ col[k]=cc.l; break; } } }); }); }
+// 既存呼び出し互換（n は無視＝列ラベルを返す）。
+function ganttCellLabel(n,colId,row){ return ganttColLabel(colId,row); }
 function ganttCellVal(n,colId,row){ if(colId==='c0') return (row==='r3'?(n.desc||''):(n.assignee||'')); n.cells=n.cells||{}; const c=n.cells[colId]=n.cells[colId]||{}; const cell=c[row]=c[row]||{}; return cell.v||''; }
-function ganttSetCell(n,colId,row,label,val){ n.cells=n.cells||{}; const c=n.cells[colId]=n.cells[colId]||{}; const cell=c[row]=c[row]||{}; cell.l=label; if(colId==='c0'){ if(row==='r3') n.desc=val; else n.assignee=val; } else cell.v=val; if(label!=null&&label!=='') S.gantt.lastLabel=label; }
+function ganttSetCell(n,colId,row,label,val){ ganttSetColLabel(colId,row,label); if(colId==='c0'){ if(row==='r3') n.desc=val; else n.assignee=val; } else { n.cells=n.cells||{}; const c=n.cells[colId]=n.cells[colId]||{}; const cell=c[row]=c[row]||{}; cell.v=val; } }
 // セルの折返し行配列（本文のみ。空なら ['']）。ぶら下げ用に列幅からラベル幅を控除。
 function ganttCellLines(n,col,row){ const val=ganttCellVal(n,col.id,row); if(!val||!String(val).trim()) return ['']; const wrapW=Math.max(20,(col.width||120)-GANTT_DESC_INDENT-8); const bodyW=Math.max(24, wrapW-ganttLabelW(ganttCellLabel(n,col.id,row))); return wrapText(String(val),bodyW,11); }
 function ganttCellLineCount(n,col,row){ return ganttCellLines(n,col,row).length; }
@@ -3466,14 +3476,34 @@ function renderGanttHeader(){
   // v5.00 列モデル: 各列の右境界に列幅リサイズハンドル（⇔・全高）
   let hx=ganttPhaseColW();
   ganttColList().forEach((col,ci)=>{
+    const colLeftX=hx;                                   // この列の左端
     hx+=col.width; const handleX=hx;
     const rh=e('rect',{x:handleX-3,y:0,width:6,height:SVG_H,fill:'transparent',cursor:'col-resize'});
     rh.addEventListener('mousedown',ev=>{ev.stopPropagation();const pt=svgPt(ev);
       ganttDragState={mode:'colw',colIdx:ci,startX:pt.x,startY:pt.y,startW:col.width,moved:false};});
     gg.appendChild(rh);
+    // 微修正(v8.00据置): 追加列の削除アイコン（既定列c0は対象外）。列の上端中央に置き、
+    //   カーソルを近づけた時だけ表示（既定opacity:0→ホバーで1）。クリックでganttDeleteColumn（確認あり）。
+    if(col.id!=='c0'){
+      const dcx=colLeftX+col.width/2, dcy=GANTT_HEADER_H-11;   // ヘッダー行の下端寄り
+      const dgrp=e('g');
+      // ホバー判定ゾーン＝列下部の帯。左右のリサイズハンドル(±3px)と干渉しないよう内側に8px寄せる。
+      const zone=e('rect',{x:colLeftX+8,y:GANTT_HEADER_H-22,width:Math.max(0,col.width-16),height:22,fill:'transparent'});
+      const icon=e('g'); icon.style.opacity='0'; icon.style.transition='opacity .12s'; icon.style.cursor='pointer';
+      icon.appendChild(e('circle',{cx:dcx,cy:dcy,r:8,fill:'#dc2626',stroke:'#7f1d1d','stroke-width':1}));
+      icon.appendChild(e('line',{x1:dcx-3.4,y1:dcy-3.4,x2:dcx+3.4,y2:dcy+3.4,stroke:'#fff','stroke-width':1.7,'pointer-events':'none'}));
+      icon.appendChild(e('line',{x1:dcx+3.4,y1:dcy-3.4,x2:dcx-3.4,y2:dcy+3.4,stroke:'#fff','stroke-width':1.7,'pointer-events':'none'}));
+      const dtt=e('title'); dtt.textContent='この列を削除'; icon.appendChild(dtt);
+      dgrp.addEventListener('mouseenter',()=>{icon.style.opacity='1';});
+      dgrp.addEventListener('mouseleave',()=>{icon.style.opacity='0';});
+      icon.addEventListener('mousedown',ev=>ev.stopPropagation());
+      icon.addEventListener('click',ev=>{ev.stopPropagation();ganttDeleteColumn(col.id);});
+      dgrp.appendChild(zone); dgrp.appendChild(icon);
+      gg.appendChild(dgrp);
+    }
   });
   // v5.00: ⊕ 列追加ボタン（情報欄と時間軸の境目付近・ヘッダー行）
-  const plusCx=leftW-14, plusCy=GANTT_HEADER_H/2;
+  const plusCx=leftW-14, plusCy=GANTT_HEADER_H-11;   // ヘッダー行の下端寄り
   const pgrp=e('g'); pgrp.style.cursor='pointer';
   pgrp.appendChild(e('circle',{cx:plusCx,cy:plusCy,r:9,fill:'#2563eb',stroke:'#1e40af','stroke-width':1}));
   pgrp.appendChild(e('line',{x1:plusCx-4.5,y1:plusCy,x2:plusCx+4.5,y2:plusCy,stroke:'#fff','stroke-width':1.8,'pointer-events':'none'}));
@@ -3694,8 +3724,11 @@ function renderGanttNameCol(){
       const cw=col.width;
       [['r3',r3Top,r3n],['r4',r4Top,r4n]].forEach(([row,ry,rn])=>{
         addHit(n,'cell:'+col.id+':'+row,colx,ry,cw,lh*rn);
-        if(ganttCellVal(n,col.id,row).trim()){
-          const lab=ganttCellLabel(n,col.id,row), hang=ganttLabelW(lab);
+        const lab=ganttCellLabel(n,col.id,row);
+        // 微修正(v8.00据置): 追加列は項目名(ラベル)だけでも表示する（本文が空でも項目名が見えるように）。
+        //   c0(概要/担当)は従来どおり本文が空なら既定ラベルも非表示＝空タスクで「概要：/担当：」を出さない。
+        if(ganttCellVal(n,col.id,row).trim() || (col.id!=='c0' && lab && lab.trim())){
+          const hang=ganttLabelW(lab);
           ganttCellLines(n,col,row).forEach((ln,li)=>addText(colx+di+(li?hang:0), ry+li*lh+lh/2, (li?ln:(lab?lab+'：':'')+ln), {sel,fs:11,noClip:true}));
         }
       });
@@ -3936,6 +3969,18 @@ function ganttEditField(id,field){
 function ganttEditName(id){ ganttEditField(id,'text'); }
 // ── v5.00 列モデル: 列追加・セル編集 ──
 function ganttAddColumn(){ const cols=ganttColList(); cols.push({id:'gc'+(++S.uid),width:160}); snap(); render(); }
+// 微修正(v8.00据置): 追加した概要列を削除。既定列 c0（概要/担当）は対象外。
+//   列内に入力済みの項目名・本文(node.cells[colId])も併せて削除するため、確認ダイアログで警告する。
+function ganttDeleteColumn(colId){
+  if(colId==='c0') return;                                   // 既定列は削除不可
+  if(ganttColList().findIndex(c=>c.id===colId)<0) return;
+  showConfirm('この概要列を削除します。\n列内に入力した項目名・本文もすべて削除され、元に戻せません。\nよろしいですか？',()=>{
+    const cols=ganttColList(); const i=cols.findIndex(c=>c.id===colId); if(i<0) return;
+    cols.splice(i,1);
+    S.nodes.forEach(n=>{ if(n.cells) delete n.cells[colId]; });   // 各タスクのセル内容も破棄
+    snap(); render();
+  });
+}
 // 行3・4の自由セル（項目名＋本文）を編集。c0 は値を desc/assignee に、それ以外は node.cells に保存。
 function ganttEditCell(id,colId,row){
   const n=S.nodes.find(x=>x.id===id); if(!n)return;
@@ -4043,8 +4088,16 @@ function openGanttEditor(id){
     // v4.17: フェーズは「包括範囲」の概念。期間はメンバーから自動、概要/担当は持たない → 名称＋色のみ
     html+=`<div class="gm-field" style="color:#64748b;font-size:12px">包括範囲はフェーズ列の上下端ドラッグで設定します（期間はメンバーから自動）。</div>`;
   } else {
-    html+=`<div class="gm-field"><label>概要</label><input id="gm-desc" type="text" value="${esc(n.desc)}"/></div>
-    <div class="gm-field"><label>担当者</label><input id="gm-assignee" type="text" value="${esc(n.assignee)}"/></div>`;
+    // 微修正(v8.00据置): c0(概要/担当)も項目名を編集可能に。「概要」「担当」は既定値で、項目名欄を上書きできる。
+    //   本文は従来どおり desc/assignee に bind（id=gm-desc/gm-assignee を維持）。
+    html+=`<div class="gm-field"><label>情報欄（項目名：本文）</label>
+      <div style="display:flex;gap:6px">
+        <input id="gm-col-c0-r3-l" type="text" placeholder="項目名" value="${esc(ganttCellLabel(n,'c0','r3'))}" style="flex:0 0 38%"/>
+        <input id="gm-desc" type="text" placeholder="本文" value="${esc(n.desc)}" style="flex:1"/></div>
+      <div style="display:flex;gap:6px;margin-top:5px">
+        <input id="gm-col-c0-r4-l" type="text" placeholder="項目名" value="${esc(ganttCellLabel(n,'c0','r4'))}" style="flex:0 0 38%"/>
+        <input id="gm-assignee" type="text" placeholder="本文" value="${esc(n.assignee)}" style="flex:1"/></div>
+    </div>`;
     // v5.01: 追加列（c0以外）の項目名・本文を編集する欄。情報欄の行3・行4の各セルに対応（全タスク共通の列）。
     ganttColList().forEach((col,ci)=>{
       if(col.id==='c0') return;
@@ -4115,6 +4168,9 @@ function confirmGanttEdit(){
   n.assignee=(val('gm-assignee')||'').trim();
   // v5.01: 追加列（c0以外）のセル（項目名＋本文）を保存。フェーズ(summary)はセルを持たないため対象外。
   if(n.type!=='gantt_summary'){
+    // 微修正(v8.00据置): c0(概要/担当)の項目名も保存。本文は直前に確定した desc/assignee を維持。
+    const c0l3=document.getElementById('gm-col-c0-r3-l'); if(c0l3) ganttSetCell(n,'c0','r3',c0l3.value.trim(),n.desc);
+    const c0l4=document.getElementById('gm-col-c0-r4-l'); if(c0l4) ganttSetCell(n,'c0','r4',c0l4.value.trim(),n.assignee);
     ganttColList().forEach(col=>{ if(col.id==='c0') return;
       ['r3','r4'].forEach(row=>{
         const l=document.getElementById('gm-col-'+col.id+'-'+row+'-l');
@@ -7511,6 +7567,7 @@ function importStateFromHtml(html){
   S.mindLayout=st.mindLayout||'radial';   // C-1修正(v4.02): init同様にレイアウトモードを復元（インポート時の欠落を是正）
   S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
   migrateOrgSections();         // v7.02: 旧2段(sub)→ミニ表へ自動移行（見た目不変）
+  ganttMigrateColLabels();      // 微修正(v8.00据置): 旧データのタスク別項目名→列ラベルへ集約
   S.sel=[]; S.conn=null;
   S_diagramName=st.diagramName||'';
   const ni=document.getElementById('diagram-name');
