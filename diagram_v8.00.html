@@ -166,6 +166,41 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .gm-susp-del:hover{background:#fee2e2}
 .gm-susp-add{width:100%;padding:9px;border:1.5px dashed #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
 .gm-susp-add:hover{border-color:#3b82f6;color:#2563eb;background:#eff6ff}
+/* 微修正(v8.00据置): 見出し編集ダイアログ（ダブルクリックで開く・幅広入力） */
+#gantt-head-modal{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center}
+#gantt-head-modal .ghm-bg{position:absolute;inset:0;background:rgba(0,0,0,.4)}
+#gantt-head-modal .ghm-box{position:relative;background:#fff;border-radius:10px;padding:20px 22px;width:560px;max-width:calc(100vw - 32px);max-height:calc(100vh - 40px);overflow:auto;box-shadow:0 8px 40px rgba(0,0,0,.22)}
+#gantt-head-modal .ghm-h{font-size:15px;font-weight:700;color:#1e293b;margin-bottom:14px}
+.ghm-hr{border:none;border-top:1px solid #eef2f7;margin:16px 0 13px}
+.ghm-sec{font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.03em;margin:0 0 8px}
+.ghm-sub{font-size:11px;font-weight:700;color:#94a3b8;margin:11px 0 6px}
+.ghm-note{font-size:11px;color:#94a3b8;margin-top:3px}
+.ghm-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.ghm-in{padding:7px 9px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;box-sizing:border-box;min-width:0;background:#fff}
+.ghm-in:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+.ghm-rl{flex:0 0 120px}
+.ghm-rv{flex:1}
+.ghm-ic{flex:0 0 auto;width:28px;height:32px;border:1px solid #e2e8f0;background:#f8fafc;color:#94a3b8;border-radius:5px;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center}
+.ghm-ic:hover{color:#2563eb;border-color:#bfdbfe}
+.ghm-ic.del:hover{color:#ef4444;border-color:#fecaca;background:#fef2f2}
+.ghm-add{margin-top:3px;padding:8px;width:100%;border:1.5px dashed #cbd5e1;border-radius:6px;background:#f8fafc;color:#475569;font-size:12px;font-weight:600;cursor:pointer}
+.ghm-add:hover{border-color:#3b82f6;color:#2563eb}
+.ghm-inline{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.ghm-chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:#475569;cursor:pointer}
+.ghm-chk input{width:16px;height:16px;accent-color:#2563eb}
+.ghm-date{flex:0 0 auto;padding:7px 9px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none}
+.ghm-slots{display:flex;gap:9px;margin-top:9px}
+.ghm-slot{flex:1}
+.ghm-role{width:100%;text-align:center;font-weight:700;color:#334155;padding:6px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;outline:none;margin-bottom:4px;box-sizing:border-box;background:#f8fafc}
+.ghm-name{width:100%;text-align:center;padding:7px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;box-sizing:border-box}
+.ghm-name:focus,.ghm-role:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+.ghm-sw{flex:0 0 16px;height:12px;border-radius:3px;border:1px solid #cbd5e1}
+.ghm-color{flex:0 0 30px;height:30px;padding:1px;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer}
+.ghm-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.ghm-foot button{padding:7px 18px;border-radius:6px;font-size:13px;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#374151}
+.ghm-foot button:hover{background:#f1f5f9}
+.ghm-foot .pri{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:600}
+.ghm-foot .pri:hover{background:#1d4ed8}
 /* 追補(v7.05): 樹状図の箱 編集ダイアログ（役職名＋行×列の表をボタンで増減） */
 #org-modal{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center}
 #org-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.4)}
@@ -341,19 +376,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="ph" id="gantt-head-ph">見出し・凡例</div>
       <div class="gset-body" id="gantt-head-body">
         <label class="gchk"><input type="checkbox" id="gh-show" onchange="ganttHeadSet('show',this.checked)"> 見出しを表示</label>
-        <div class="ghsub" style="margin-top:0">工事名は図の名称（上部「図の名称」欄）を自動参照します</div>
-        <div class="ghsub">情報の行（ラベル：値）</div>
-        <div id="gh-rows"></div>
-        <button class="ghbtn" onclick="ganttHeadAddRow()">＋ 行を追加</button>
+        <button class="ghbtn" onclick="openGanttHeadEditor()">✎ 見出しを編集…</button>
+        <div class="ghsub" style="margin-top:2px">工事名・工事場所などは、見出しを<b>ダブルクリック</b>でも編集できます</div>
+        <hr class="ghhr">
         <label class="gchk"><input type="checkbox" id="gh-date" onchange="ganttHeadSet('showDate',this.checked)"> 作成日を表示</label>
         <label class="gchk"><input type="checkbox" id="gh-appr" onchange="ganttHeadSet2('approval','show',this.checked)"> 承認欄（押印枠）</label>
-        <div id="gh-appr-slots"></div>
         <hr class="ghhr">
         <label class="gchk"><input type="checkbox" id="gl-show" onchange="ganttLegendSet('show',this.checked)"> 凡例を表示</label>
         <label class="gchk"><input type="checkbox" id="gl-auto" onchange="ganttLegendSet('auto',this.checked)"> 色・記号から自動生成</label>
-        <div class="ghsub">凡例ラベルの上書き・追加</div>
-        <div id="gl-items"></div>
-        <button class="ghbtn" onclick="ganttLegendAddExtra()">＋ 凡例項目を追加（工種色分け等）</button>
       </div>
     </div>
     <div id="gantt-list-sec" style="display:none">
@@ -498,6 +528,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <button onclick="closeGanttModal()">キャンセル</button>
         <button class="btn-primary" onclick="confirmGanttEdit()">適用</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 微修正(v8.00据置): 見出し編集ダイアログ（工程表の見出しをダブルクリックで開く） -->
+<div id="gantt-head-modal">
+  <div class="ghm-bg" onclick="closeGanttHeadEditor(false)"></div>
+  <div class="ghm-box">
+    <div class="ghm-h">見出しの編集</div>
+    <div id="ghm-body"></div>
+    <div class="ghm-foot">
+      <button onclick="closeGanttHeadEditor(false)">閉じる</button>
+      <button class="pri" onclick="closeGanttHeadEditor(true)">OK</button>
     </div>
   </div>
 </div>
@@ -3224,6 +3267,14 @@ function renderGanttTitleBlock(){
   const m=ganttHeadModel(), W=SVG_W, gg=document.getElementById('g-dividers');
   const padX=16, mLab=(s,fs)=>{let w=0;for(const ch of (s||''))w+=(ch.charCodeAt(0)>255?fs:fs*0.55);return w;};
   gg.appendChild(e('rect',{x:0,y:0,width:W,height:m.H,fill:'#ffffff','pointer-events':'none'}));
+  // 微修正(v8.00据置): 見出し全体を覆う透明ヒット矩形。ダブルクリックで見出し編集ダイアログを開く。
+  //   見出し内の各要素は pointer-events:none のため、この矩形が最前面のヒット対象になる。
+  {
+    const hit=e('rect',{x:0,y:0,width:W,height:m.H,fill:'transparent',cursor:'pointer'});
+    const htt=e('title'); htt.textContent='ダブルクリックで見出しを編集'; hit.appendChild(htt);
+    hit.addEventListener('dblclick',ev=>{ev.stopPropagation();openGanttHeadEditor();});
+    gg.appendChild(hit);
+  }
   const tt=e('text',{x:padX,y:42,'font-size':'26','font-weight':'700','pointer-events':'none'});
   const _ttl=exportDiagramName();   // v8.00追補: 工事名は図の名称を自動参照（見出し専用入力は廃止）
   if(_ttl){ tt.setAttribute('fill','#0f172a'); tt.textContent=_ttl; }
@@ -6929,6 +6980,11 @@ function edgeLabel(eid){
 
 // ── Keyboard ──
 document.addEventListener('keydown',ev=>{
+  // 微修正(v8.00据置): 見出し編集ダイアログが開いている間は Esc=閉じる（変更を破棄）
+  if(document.getElementById('gantt-head-modal')&&document.getElementById('gantt-head-modal').style.display==='flex'){
+    if(ev.key==='Escape'){ev.preventDefault();closeGanttHeadEditor(false);}
+    return;
+  }
   // ガント詳細モーダルが開いている間は Esc=閉じる / Enter=適用
   if(document.getElementById('gantt-modal').style.display==='flex'){
     if(ev.key==='Escape'){ev.preventDefault();closeGanttModal();}
@@ -8515,27 +8571,83 @@ function ganttLegendSetExtra(i,f,v){ ganttEnsureHeader(); const ex=S.gantt.legen
 function ganttLegendRemoveExtra(i){ ganttEnsureHeader(); S.gantt.legend.extra.splice(i,1); render(); }
 // 入力中（テキスト入力にフォーカス）は動的リストを作り直さない＝キャレット/フォーカス維持
 function ganttHeadEditing(){ const a=document.activeElement, b=document.getElementById('gantt-head-body'); return !!(a&&b&&b.contains(a)&&a.tagName==='INPUT'&&a.type!=='checkbox'); }
+// 微修正(v8.00据置): サイドバーはトグルのみ同期（入力欄はダイアログへ移設）。開いていればダイアログも更新。
 function ganttHeadSyncPanel(){
   if(S.diagramType!=='gantt')return; ganttEnsureHeader();
   const h=S.gantt.header, lg=S.gantt.legend;
   const setC=(id,v)=>{const el=document.getElementById(id); if(el&&document.activeElement!==el)el.checked=!!v;};
-  const setV=(id,v)=>{const el=document.getElementById(id); if(el&&document.activeElement!==el)el.value=v;};
   setC('gh-show',h.show); setC('gh-date',h.showDate); setC('gh-appr',h.approval&&h.approval.show);
   setC('gl-show',lg.show); setC('gl-auto',lg.auto);
-  if(ganttHeadEditing())return;
-  const he=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const rl=document.getElementById('gh-rows');
-  if(rl) rl.innerHTML=(h.rows||[]).map((r,i)=>`<div class="ghrow"><input class="ghlab" type="text" value="${he(r.label)}" placeholder="ラベル" oninput="ganttHeadSetRow(${i},'label',this.value)"><input type="text" value="${he(r.value)}" placeholder="値" oninput="ganttHeadSetRow(${i},'value',this.value)"><button class="ghx" title="上へ" onclick="ganttHeadMoveRow(${i},-1)">▲</button><button class="ghx" title="下へ" onclick="ganttHeadMoveRow(${i},1)">▼</button><button class="ghx" title="削除" onclick="ganttHeadRemoveRow(${i})">✕</button></div>`).join('');
-  const ap=document.getElementById('gh-appr-slots');
-  if(ap){ if(h.approval&&h.approval.show){ ap.style.display=''; ap.innerHTML='<div class="ghsub">承認欄（左から表示順／紙面は右から作成）</div>'+(h.approval.slots||[]).map((s,i)=>`<div class="ghrow"><input class="ghlab" type="text" value="${he(s.role)}" placeholder="役割" oninput="ganttHeadSetSlot(${i},'role',this.value)"><input type="text" value="${he(s.name)}" placeholder="氏名(任意)" oninput="ganttHeadSetSlot(${i},'name',this.value)"></div>`).join(''); } else { ap.style.display='none'; ap.innerHTML=''; } }
-  const li=document.getElementById('gl-items');
-  if(li){ let html='';
+  ganttHeadDlgRefresh();
+}
+// ===== 微修正(v8.00据置): 見出し編集ダイアログ（ダブルクリックで開く・幅広入力） =====
+let _ghBackup=null;   // キャンセル用に開いた時点の header/legend/名称を退避
+function ghEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// ダイアログ本文のテキスト入力にフォーカス中は作り直さない＝キャレット/フォーカス維持
+function ganttHeadDlgEditing(){ const a=document.activeElement, b=document.getElementById('ghm-body');
+  return !!(a&&b&&b.contains(a)&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA')&&a.type!=='checkbox'); }
+function ganttHeadDlgOpen(){ const m=document.getElementById('gantt-head-modal'); return !!(m&&m.style.display==='flex'); }
+function ganttHeadDlgBody(){
+  ganttEnsureHeader(); const h=S.gantt.header, lg=S.gantt.legend, he=ghEsc;
+  let html='';
+  // 工事名（図の名称と連動）
+  html+=`<div class="gm-field"><label>工事名（上部「図の名称」と連動）</label>`
+    +`<input type="text" id="ghm-title" value="${he(exportDiagramName())}" oninput="ganttHeadDlgSetTitle(this.value)">`
+    +`<div class="ghm-note">ここを変えると図の名称も変わります（同じものを二重入力しない）。</div></div>`;
+  // 情報行（ラベル：値）＋並べ替え＋削除＋追加
+  html+=`<hr class="ghm-hr"><div class="ghm-sec">情報行（ラベル：値）</div>`;
+  html+=(h.rows||[]).map((r,i)=>`<div class="ghm-row">`
+    +`<input class="ghm-in ghm-rl" type="text" value="${he(r.label)}" placeholder="ラベル" oninput="ganttHeadSetRow(${i},'label',this.value)">`
+    +`<input class="ghm-in ghm-rv" type="text" value="${he(r.value)}" placeholder="値" oninput="ganttHeadSetRow(${i},'value',this.value)">`
+    +`<button class="ghm-ic" title="上へ" onclick="ganttHeadMoveRow(${i},-1)">▲</button>`
+    +`<button class="ghm-ic" title="下へ" onclick="ganttHeadMoveRow(${i},1)">▼</button>`
+    +`<button class="ghm-ic del" title="削除" onclick="ganttHeadRemoveRow(${i})">×</button></div>`).join('');
+  html+=`<button class="ghm-add" onclick="ganttHeadAddRow()">＋ 行を追加</button>`;
+  // 作成日
+  html+=`<hr class="ghm-hr"><div class="ghm-inline">`
+    +`<label class="ghm-chk"><input type="checkbox" ${h.showDate?'checked':''} onchange="ganttHeadSet('showDate',this.checked)"> 作成日を表示</label>`
+    +`<input type="date" class="ghm-date" value="${he(h.dateText||'')}" oninput="ganttHeadSet('dateText',this.value)"></div>`
+    +`<div class="ghm-note">空欄のときは当日の日付を表示します。</div>`;
+  // 承認欄
+  html+=`<hr class="ghm-hr"><label class="ghm-chk"><input type="checkbox" ${(h.approval&&h.approval.show)?'checked':''} onchange="ganttHeadSet2('approval','show',this.checked)"> 承認欄を表示</label>`;
+  if(h.approval&&h.approval.show){
+    html+=`<div class="ghm-slots">`+(h.approval.slots||[]).map((s,i)=>`<div class="ghm-slot">`
+      +`<input class="ghm-role" type="text" value="${he(s.role)}" oninput="ganttHeadSetSlot(${i},'role',this.value)">`
+      +`<input class="ghm-name" type="text" placeholder="氏名（任意）" value="${he(s.name)}" oninput="ganttHeadSetSlot(${i},'name',this.value)"></div>`).join('')+`</div>`
+      +`<div class="ghm-note">役割名は上の枠で変更できます（画面の並び＝左から／紙面は右から作成）。</div>`;
+  }
+  // 凡例
+  html+=`<hr class="ghm-hr"><div class="ghm-inline">`
+    +`<label class="ghm-chk"><input type="checkbox" ${lg.show?'checked':''} onchange="ganttLegendSet('show',this.checked)"> 凡例を表示</label>`
+    +`<label class="ghm-chk"><input type="checkbox" ${lg.auto?'checked':''} onchange="ganttLegendSet('auto',this.checked)"> 図から自動生成</label></div>`;
+  if(lg.show){
+    let li='';
     ganttLegendItems().forEach(it=>{ if(String(it.key).indexOf('extra')===0)return;
       const sw=it.kind==='shade'?'#eef2f6':(it.fill||'#ffffff');
-      html+=`<div class="ghrow"><span class="ghsw" style="background:${sw}"></span><input type="text" value="${he(it.label)}" oninput="ganttLegendSetOverride('${it.key}',this.value)"></div>`; });
-    (lg.extra||[]).forEach((ex,i)=>{ html+=`<div class="ghrow"><input type="color" value="${ex.color||'#dcfce7'}" style="flex:0 0 28px;padding:1px;height:26px" oninput="ganttLegendSetExtra(${i},'color',this.value)"><input type="text" value="${he(ex.label)}" placeholder="工種・業者名" oninput="ganttLegendSetExtra(${i},'label',this.value)"><button class="ghx" title="削除" onclick="ganttLegendRemoveExtra(${i})">✕</button></div>`; });
-    li.innerHTML=html;
+      li+=`<div class="ghm-row"><span class="ghm-sw" style="background:${sw}"></span><input class="ghm-in ghm-rv" type="text" value="${he(it.label)}" oninput="ganttLegendSetOverride('${it.key}',this.value)"></div>`; });
+    (lg.extra||[]).forEach((ex,i)=>{ li+=`<div class="ghm-row"><input type="color" class="ghm-color" value="${ex.color||'#dcfce7'}" oninput="ganttLegendSetExtra(${i},'color',this.value)"><input class="ghm-in ghm-rv" type="text" value="${he(ex.label)}" placeholder="工種・業者名" oninput="ganttLegendSetExtra(${i},'label',this.value)"><button class="ghm-ic del" title="削除" onclick="ganttLegendRemoveExtra(${i})">×</button></div>`; });
+    html+=`<div class="ghm-sub">凡例ラベルの上書き・工種色の追加</div>`+li+`<button class="ghm-add" onclick="ganttLegendAddExtra()">＋ 凡例項目を追加（工種色分け等）</button>`;
   }
+  return html;
+}
+function ganttHeadDlgRefresh(){ if(!ganttHeadDlgOpen()||ganttHeadDlgEditing())return; const b=document.getElementById('ghm-body'); if(b) b.innerHTML=ganttHeadDlgBody(); }
+function ganttHeadDlgSetTitle(v){ onDiagramNameInput(v); const ni=document.getElementById('diagram-name'); if(ni&&document.activeElement!==ni) ni.value=v; }
+function openGanttHeadEditor(){
+  if(S.diagramType!=='gantt')return; ganttEnsureHeader();
+  if(!S.gantt.header.show) S.gantt.header.show=true;   // 編集できるよう見出しを表示に
+  _ghBackup=JSON.parse(JSON.stringify({header:S.gantt.header,legend:S.gantt.legend,name:exportDiagramName()}));
+  document.getElementById('ghm-body').innerHTML=ganttHeadDlgBody();
+  document.getElementById('gantt-head-modal').style.display='flex';
+  render();
+  setTimeout(()=>{const t=document.getElementById('ghm-title'); if(t){t.focus(); t.select&&t.select();}},40);
+}
+function closeGanttHeadEditor(commit){
+  if(commit){ snap(); }
+  else if(_ghBackup){ S.gantt.header=_ghBackup.header; S.gantt.legend=_ghBackup.legend;
+    S_diagramName=_ghBackup.name; const ni=document.getElementById('diagram-name'); if(ni)ni.value=_ghBackup.name; }
+  _ghBackup=null;
+  document.getElementById('gantt-head-modal').style.display='none';
+  render();
 }
 function hint(msg){const h=document.getElementById('hint');h.textContent=msg;h.style.display=msg?'':'none'}
 
