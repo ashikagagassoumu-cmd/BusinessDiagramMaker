@@ -2453,7 +2453,15 @@ function allocatePorts(){
     if(!fn||!tn) return;
     const aRef=nodeRef(fn,ed,'from'), bRef=nodeRef(tn,ed,'to');
     const exitSide=ed.fromPin?ed.fromPin.side:facingSide(aRef,bRef);
-    const entrySide=ed.toPin?ed.toPin.side:facingSide(bRef,aRef);
+    let entrySide=ed.toPin?ed.toPin.side:facingSide(bRef,aRef);
+    // v8.02追補: スイムレーン/フローチャート/BPMN で、相手が主軸方向に完全に離れている(縦モード=下/上、
+    //   横モード=右/左)非ピンの線は、入口を主軸の辺(上/下辺、横モードは左/右辺)に揃える。始点(exit)は従来のまま。
+    //   遠い相手が横辺から入って途中の箱を貫通する事態を防ぐ。真横・重なる相手・ひし形・戻り線は対象外。
+    if(!ed.toPin && ['swimlane','flowchart','bpmn'].includes(S.diagramType)
+       && !isDiamondShape(aRef.type) && !isDiamondShape(bRef.type) && !isReturnEdge(fn,tn)){
+      if(isV()){ if(bRef.y>=aRef.y+aRef.h) entrySide='top'; else if(bRef.y+bRef.h<=aRef.y) entrySide='bottom'; }
+      else     { if(bRef.x>=aRef.x+aRef.w) entrySide='left'; else if(bRef.x+bRef.w<=aRef.x) entrySide='right'; }
+    }
     asgn[ed.id]={exitSide,entrySide,aRef,bRef,fromId:fn.id,toId:tn.id};
     if(ed.fromPin)asgn[ed.id].exitFrac=ed.fromPin.frac;
     if(ed.toPin)asgn[ed.id].entryFrac=ed.toPin.frac;
@@ -2505,11 +2513,27 @@ function allocatePorts(){
     Object.keys(grp).forEach(gk=>{
       const eds=grp[gk], side=asgn[eds[0].id].exitSide, vertical=(side==='top'||side==='bottom');
       eds.forEach(ed=>{ const a=asgn[ed.id]; const ep=exitPt(a.aRef,a.exitSide,a.exitFrac,false); a._exX=ep[0]; a._exY=ep[1]; });
+      // v8.02追補: 直交群（例: 右/左出し → 上/下辺入り）＝遠い相手ほど出口辺の外側(手前=上/左)から出して
+      //   交差を回避し、入口は主軸辺の中央に。段違いトラック(midPos)は不要＝自然なL字に任せる。
+      const perp=eds.every(ed=>{ const es=asgn[ed.id].entrySide; return (es==='top'||es==='bottom')!==vertical; });
+      if(perp){
+        const g2=eds.filter(ed=>!ed.fromPin);
+        g2.forEach(ed=>{ const a=asgn[ed.id]; const tc=nc(a.bRef); a._far=vertical?Math.abs(tc[1]-a._exY):Math.abs(tc[0]-a._exX); });
+        g2.sort((p,q)=>asgn[p.id]._far-asgn[q.id]._far);              // 近い→遠い
+        const c=g2.length;
+        g2.forEach((ed,i)=>{ const a=asgn[ed.id];
+          a.exitFrac=(c-i)/(c+1);                                     // 近い=辺の外周(大frac=下/右)／遠い=手前(小frac=上/左)
+          const ek=pKey(a.toId,ed,'to')+'|'+a.entrySide;
+          if(!ed.toPin && !(entryN[ek]>1)) a.entryFrac=0.5;           // 入口は主軸辺の中央
+        });
+        return;
+      }
       // 終点：一直線にできれば一直線を優先（端が中央でなくても可）／できなければ辺の中央
       const bends=[];
       eds.forEach(ed=>{ const a=asgn[ed.id];
         const ek=pKey(a.toId,ed,'to')+'|'+a.entrySide;
         if(ed.toPin||entryN[ek]>1) return;                          // 相手にピン or 複数入線 → 扇状分散のまま
+        if((a.entrySide==='top'||a.entrySide==='bottom')!==vertical) return;   // v8.02追補: 出口と入口の軸が直交する線は整形対象外（自然なL字に任せる）
         const tn=a.bRef; let straight=false;
         if(vertical){ const lo=tn.x+tn.w*0.12, hi=tn.x+tn.w*0.88;
           if(a._exX>=lo&&a._exX<=hi){ a.entryFrac=(a._exX-tn.x)/tn.w; straight=true; } else a.entryFrac=0.5; }
