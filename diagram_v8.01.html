@@ -849,28 +849,83 @@ function applyColorTheme(key){
   snap(); render(); hint('配色テーマ「'+th.name+'」を適用しました（元に戻すはCtrl+Z）');
 }
 function _lidFor(type,x,y){ return (usesLanes()&&!isFreeShape(type)) ? (laneAt(isV()?x:y)?.id||(S.lanes[0]&&S.lanes[0].id)||VIRTUAL_LANE.id) : VIRTUAL_LANE.id; }
-// v8.01: 完成レイアウトの挿入（番号サークル / ピル / 矢羽）。作成したノードだけに配色を付ける。
+// v8.01: ステップ図の寸法と間隔（種類ごと）。gapH=横並び時の左端間隔／gapV=縦並び時の上端間隔
+function stepSpec(kind){
+  if(kind==='pill')    return {type:'terminal',w:140,h:42,gapH:188,gapV:84,badges:true};
+  if(kind==='chevron') return {type:'rect',    w:152,h:46,gapH:146,gapV:74,chevron:true};
+  return {type:'step_num',w:SD.step_num.w,h:SD.step_num.h,gapH:152,gapV:132};   // circle
+}
+function flowMembers(fid){ return S.nodes.filter(n=>n.flowId===fid); }
+function _flowDir(ordered){   // 並び方向を実座標から判定（回転・移動後も追従）
+  if(ordered.length<2) return isV()?'v':'h';
+  const a=ordered[0], b=ordered[ordered.length-1];
+  return Math.abs(b.x-a.x)>=Math.abs(b.y-a.y)?'h':'v';
+}
+// v8.01: 完成レイアウトの挿入（番号サークル / ピル / 矢羽）。現在の縦横モードに合わせて並べ、flowId で1つの列として管理。
 function insertStepFlow(kind){
-  const th=STEP_THEMES.vivid, count=4;
+  const th=STEP_THEMES.vivid, count=4, sp=stepSpec(kind), vert=isV();
+  const flowId=uid(), made=[];
   let x0=120, y0=160;
-  if(S.nodes.length) y0=Math.max(...S.nodes.map(n=>(n.y||0)+(n.h||0)))+56;
-  const made=[];
-  const push=(type,x,y,w,h,text,color,stroke)=>{ const n={id:uid(),type,x,y,w,h,text,lid:_lidFor(type,x,y),color,stroke}; S.nodes.push(n); made.push(n); return n; };
-  if(kind==='circle'){
-    const d=SD.step_num, gap=152;
-    for(let i=0;i<count;i++){ const c=th.cols[i%th.cols.length]; push('step_num',x0+i*gap,y0,d.w,d.h,'ステップ'+(i+1),'#ffffff',c[1]); }
-  } else if(kind==='pill'){
-    const w=140,h=42,gap=w+48;
-    for(let i=0;i<count;i++){ const c=th.cols[i%th.cols.length]; push('terminal',x0+i*gap,y0,w,h,'ステップ'+(i+1),c[0],c[1]); }
-    S.stepNums=true;
-  } else if(kind==='chevron'){
-    const w=152,h=46,gap=w-6;
-    for(let i=0;i<count;i++){ const c=th.cols[i%th.cols.length]; push('rect',x0+i*gap,y0,w,h,'ステップ'+(i+1),c[0],c[1]); }
-    S.style='chevron';
+  if(S.nodes.length){
+    if(vert){ x0=Math.max(...S.nodes.map(n=>(n.x||0)+(n.w||0)))+56; y0=headerSize()+30; }
+    else    { y0=Math.max(...S.nodes.map(n=>(n.y||0)+(n.h||0)))+56; }
+  } else if(usesLanes()){ y0=headerSize()+40; }
+  for(let i=0;i<count;i++){
+    const c=th.cols[i%th.cols.length];
+    const x=vert?x0:x0+i*sp.gapH, y=vert?y0+i*sp.gapV:y0;
+    const color=(sp.type==='step_num')?'#ffffff':c[0];
+    const n={id:uid(),type:sp.type,x,y,w:sp.w,h:sp.h,text:'ステップ'+(i+1),lid:_lidFor(sp.type,x,y),color,stroke:c[1],flowId,flowKind:kind};
+    S.nodes.push(n); made.push(n);
   }
+  if(sp.badges) S.stepNums=true;
+  if(sp.chevron) S.style='chevron';
   for(let i=0;i<made.length-1;i++) addEdge(made[i].id,made[i+1].id);
   S.sel=made.map(n=>n.id); snap(); render();
-  hint('レイアウトを挿入しました（各テキストはダブルクリックで編集・番号は自動）');
+  hint('レイアウトを挿入しました（＋/－で増減・ダブルクリックで文字編集・番号は自動）');
+}
+// ＋: フロー末尾に1ステップ追加（現在の並び方向を継続）
+function flowAddStep(fid){
+  const mem=flowMembers(fid); if(!mem.length)return;
+  const kind=mem[0].flowKind||'circle', sp=stepSpec(kind);
+  const ordered=stepOrder(mem), dir=_flowDir(ordered), last=ordered[ordered.length-1];
+  const idx=ordered.length, c=STEP_THEMES.vivid.cols[idx%STEP_THEMES.vivid.cols.length];
+  const x=dir==='v'?last.x:last.x+sp.gapH, y=dir==='v'?last.y+sp.gapV:last.y;
+  const color=(sp.type==='step_num')?'#ffffff':c[0];
+  const n={id:uid(),type:sp.type,x,y,w:sp.w,h:sp.h,text:'ステップ'+(idx+1),lid:_lidFor(sp.type,x,y),color,stroke:c[1],flowId:fid,flowKind:kind};
+  S.nodes.push(n); addEdge(last.id,n.id);
+  S.sel=[n.id]; snap(); render();
+}
+// －: フロー末尾の1ステップを削除（1個は残す）
+function flowRemoveStep(fid){
+  const ordered=stepOrder(flowMembers(fid));
+  if(ordered.length<=1){ hint('これ以上は減らせません'); return; }
+  const last=ordered[ordered.length-1];
+  S.nodes=S.nodes.filter(n=>n.id!==last.id);
+  S.edges=S.edges.filter(e=>e.from!==last.id&&e.to!==last.id);
+  S.sel=S.sel.filter(id=>id!==last.id);
+  snap(); render();
+}
+// フロー末尾の＋/－ボタンを描画（選択モード時のみ・エクスポートでは除外）
+function renderFlowControls(){
+  if(S.mode!=='select')return;
+  const g=document.getElementById('g-nodes');
+  const flows={}; S.nodes.forEach(n=>{ if(n.flowId){(flows[n.flowId]=flows[n.flowId]||[]).push(n);} });
+  Object.keys(flows).forEach(fid=>{
+    const ordered=stepOrder(flows[fid]); if(!ordered.length)return;
+    const dir=_flowDir(ordered), last=ordered[ordered.length-1];
+    let ax,ay; if(dir==='h'){ ax=last.x+last.w+20; ay=last.y+last.h/2; } else { ax=last.x+last.w/2; ay=last.y+last.h+20; }
+    const mk=(x,y,glyph,col,fn)=>{
+      const gg=e('g',{'class':'flow-ctrl',style:'cursor:pointer'});
+      gg.appendChild(e('circle',{cx:x,cy:y,r:11,fill:col,stroke:'#fff','stroke-width':1.5}));
+      const t=e('text',{x,y:y+1,'text-anchor':'middle','dominant-baseline':'middle','font-size':15,'font-weight':'700',fill:'#fff','pointer-events':'none'});
+      t.textContent=glyph; gg.appendChild(t);
+      gg.addEventListener('mousedown',ev=>ev.stopPropagation());
+      gg.addEventListener('click',ev=>{ev.stopPropagation();fn();});
+      g.appendChild(gg);
+    };
+    mk(ax,ay,'＋','#16a34a',()=>flowAddStep(fid));
+    if(dir==='h') mk(ax,ay+28,'－','#ef4444',()=>flowRemoveStep(fid)); else mk(ax+28,ay,'－','#ef4444',()=>flowRemoveStep(fid));
+  });
 }
 function toggleStepNums(){ S.stepNums=!S.stepNums; render(); hint(S.stepNums?'ステップ番号を表示しました（配置順で自動採番）':'ステップ番号を非表示にしました'); }
 
@@ -5531,6 +5586,8 @@ function renderNodes(){
   // org_group を先に描画（背面に配置）
   const sorted=[...S.nodes].sort((a,b)=>((a.type==='org_group'||a.type==='group_box')?0:1)-((b.type==='org_group'||b.type==='group_box')?0:1));
   const _badge=stepBadgeMap();   // v8.01: 番号バッジ（表示ONのとき）
+  const _flowDirs={};            // v8.01: フロー毎の並び方向（番号サークルのラベル位置＝縦並びは右／横並びは下）
+  { const fl={}; S.nodes.forEach(n=>{ if(n.flowId){(fl[n.flowId]=fl[n.flowId]||[]).push(n);} }); Object.keys(fl).forEach(f=>_flowDirs[f]=_flowDir(stepOrder(fl[f]))); }
   sorted.forEach(n=>{
     const sel=S.sel.includes(n.id);
     const ng=e('g',{'data-nid':n.id});
@@ -5550,9 +5607,13 @@ function renderNodes(){
       bt.textContent=_badge[n.id]; ng.appendChild(bt);
     }
     const [cx,cy]=nc(n);
-    if(n.type==='step_num'){   // v8.01: 番号サークルのラベルは円の下に表示（番号自体は shapeEl 側）
-      const lines=(n.text||'').split('\n'), by=n.y+n.h+3, lh=15;
-      lines.forEach((ln,i)=>{const t=e('text',{x:cx,y:by+i*lh,'text-anchor':'middle','dominant-baseline':'hanging','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});t.textContent=ln;ng.appendChild(t);});
+    if(n.type==='step_num'){   // v8.01: 番号サークルのラベル。縦並びフローは円の右／横並びは円の下（番号自体は shapeEl 側）
+      const lines=(n.text||'').split('\n'), lh=15, vSide=(n.flowId&&_flowDirs[n.flowId]==='v');
+      if(vSide){ const rx=n.x+n.w+8, ry=n.y+n.h/2-(lines.length-1)*lh/2;
+        lines.forEach((ln,i)=>{const t=e('text',{x:rx,y:ry+i*lh,'text-anchor':'start','dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});t.textContent=ln;ng.appendChild(t);});
+      } else { const by=n.y+n.h+3;
+        lines.forEach((ln,i)=>{const t=e('text',{x:cx,y:by+i*lh,'text-anchor':'middle','dominant-baseline':'hanging','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});t.textContent=ln;ng.appendChild(t);});
+      }
     } else if(n.sections&&n.sections.length){
       const offs=sectionOffsets(n);
       if(tV()){   // v7.00: 組織図は横向きでも横書き（職制一覧表の形）
@@ -5846,6 +5907,7 @@ function renderNodes(){
     ng.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[n.id];delSel()});
     g.appendChild(ng);
   });
+  renderFlowControls();   // v8.01: ステップ列の末尾に＋/－ボタン
 }
 
 // ── Mode ──
@@ -7385,6 +7447,7 @@ function buildExportSvg(skipTitle){
   const svg=document.getElementById('diagram-svg').cloneNode(true);
   svg.setAttribute('xmlns',NS);
   svg.style.transform='';
+  svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
   const name=(skipTitle||_ganttHdr)?'':exportDiagramName();   // v5.00: PDFはHTMLのタイトル行を毎ページ出すため、SVG内の帯は省く
   const W=SVG_W;
