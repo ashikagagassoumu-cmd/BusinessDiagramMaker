@@ -2456,9 +2456,10 @@ function allocatePorts(){
     let entrySide=ed.toPin?ed.toPin.side:facingSide(bRef,aRef);
     // v8.02追補: スイムレーン/フローチャート/BPMN で、相手が主軸方向に完全に離れている(縦モード=下/上、
     //   横モード=右/左)非ピンの線は、入口を主軸の辺(上/下辺、横モードは左/右辺)に揃える。始点(exit)は従来のまま。
-    //   遠い相手が横辺から入って途中の箱を貫通する事態を防ぐ。真横・重なる相手・ひし形・戻り線は対象外。
+    //   遠い相手が横辺から入って途中の箱を貫通する事態を防ぐ。真横・重なる相手・ひし形は対象外。
+    //   ※上向きの流れ(下→上)も対象。isReturnEdge(上向き=戻り線)で弾くと下→上が整形されないため除外しない。
     if(!ed.toPin && ['swimlane','flowchart','bpmn'].includes(S.diagramType)
-       && !isDiamondShape(aRef.type) && !isDiamondShape(bRef.type) && !isReturnEdge(fn,tn)){
+       && !isDiamondShape(aRef.type) && !isDiamondShape(bRef.type)){
       if(isV()){ if(bRef.y>=aRef.y+aRef.h) entrySide='top'; else if(bRef.y+bRef.h<=aRef.y) entrySide='bottom'; }
       else     { if(bRef.x>=aRef.x+aRef.w) entrySide='left'; else if(bRef.x+bRef.w<=aRef.x) entrySide='right'; }
     }
@@ -2495,62 +2496,78 @@ function allocatePorts(){
   //   同じ出口辺を共有する曲がる線は、近い相手＝相手寄り／遠い相手＝始点寄りの段違いトラックへ置き、
   //   横線の重なり・交差を防ぐ（角丸などの描き方は不変。ここでは経路の座標＝frac と段違い位置だけを決める）。
   if(['swimlane','flowchart','bpmn'].includes(S.diagramType)){
+    // v8.02追補2: 扇状の接続を「始点側/終点側どちらが束ねる中心(hub)でも」「上下左右どの向きでも」対称に整える。
+    //   hub=扇の中心のシェイプ辺、spoke=各相手。処理は role(exit/entry)・向きに依らず共通化する。
     const okEdge=ed=>{ const a=asgn[ed.id]; if(!a) return false;
-      if(ed.fromPin) return false;                                  // 始点ピンは位置固定＝対象外
       if(a.exitSide===a.entrySide) return false;                    // 同一辺Uターンは対象外
       if(isDiamondShape(a.aRef.type)||isDiamondShape(a.bRef.type)) return false;  // ひし形は頂点固定
-      const fn=S.nodes.find(n=>n.id===a.fromId), tn=S.nodes.find(n=>n.id===a.toId);
-      if(fn&&tn&&isReturnEdge(fn,tn)) return false;                 // 戻り線はブリッジ処理に委ねる
-      return true; };
-    // 相手(入口)辺ごとの本数（複数入る相手は従来の扇状分散を維持＝終点整形しない）
-    const entryN={};
-    S.edges.forEach(ed=>{ const a=asgn[ed.id]; if(!a||ed.toPin) return;
-      const k=pKey(a.toId,ed,'to')+'|'+a.entrySide; entryN[k]=(entryN[k]||0)+1; });
-    // 出口辺ごとにグループ化
-    const grp={};
-    S.edges.forEach(ed=>{ if(!okEdge(ed)) return; const a=asgn[ed.id];
-      const gk=pKey(a.fromId,ed,'from')+'|'+a.exitSide; (grp[gk]=grp[gk]||[]).push(ed); });
-    Object.keys(grp).forEach(gk=>{
-      const eds=grp[gk], side=asgn[eds[0].id].exitSide, vertical=(side==='top'||side==='bottom');
-      eds.forEach(ed=>{ const a=asgn[ed.id]; const ep=exitPt(a.aRef,a.exitSide,a.exitFrac,false); a._exX=ep[0]; a._exY=ep[1]; });
-      // v8.02追補: 直交群（例: 右/左出し → 上/下辺入り）＝遠い相手ほど出口辺の外側(手前=上/左)から出して
-      //   交差を回避し、入口は主軸辺の中央に。段違いトラック(midPos)は不要＝自然なL字に任せる。
-      const perp=eds.every(ed=>{ const es=asgn[ed.id].entrySide; return (es==='top'||es==='bottom')!==vertical; });
+      return true; };   // 上向き(戻り線)も整形対象。ブリッジ描画は renderEdges 側の別フラグで独立に処理される
+    // 各(シェイプ,辺)の接続本数（始点側=exitN／終点側=entryN。ピンは母数から除外）
+    const exitN={}, entryN={};
+    S.edges.forEach(ed=>{ const a=asgn[ed.id]; if(!a) return;
+      if(!ed.fromPin){ const k=pKey(a.fromId,ed,'from')+'|'+a.exitSide; exitN[k]=(exitN[k]||0)+1; }
+      if(!ed.toPin){ const k=pKey(a.toId,ed,'to')+'|'+a.entrySide; entryN[k]=(entryN[k]||0)+1; } });
+    // 役割アクセサ（role='exit':hub=始点／role='entry':hub=終点）
+    const hSide=(a,r)=> r==='exit'?a.exitSide:a.entrySide;
+    const hRef =(a,r)=> r==='exit'?a.aRef:a.bRef;
+    const sRef =(a,r)=> r==='exit'?a.bRef:a.aRef;
+    const sSide=(a,r)=> r==='exit'?a.entrySide:a.exitSide;
+    const hFrac=(a,r)=> r==='exit'?a.exitFrac:a.entryFrac;
+    const setH =(a,r,v)=>{ if(r==='exit')a.exitFrac=v; else a.entryFrac=v; };
+    const setS =(a,r,v)=>{ if(r==='exit')a.entryFrac=v; else a.exitFrac=v; };
+    const hPin =(ed,r)=> r==='exit'?!!ed.fromPin:!!ed.toPin;
+    const sPin =(ed,r)=> r==='exit'?!!ed.toPin:!!ed.fromPin;
+    const sMulti=(ed,a,r)=> r==='exit' ? (entryN[pKey(a.toId,ed,'to')+'|'+a.entrySide]>1)
+                                       : (exitN[pKey(a.fromId,ed,'from')+'|'+a.exitSide]>1);
+    function processFan(eds, role){
+      const hs=hSide(asgn[eds[0].id],role), hubV=(hs==='top'||hs==='bottom');
+      eds.forEach(ed=>{ const a=asgn[ed.id]; const hp=exitPt(hRef(a,role),hs,hFrac(a,role),false); a._hx=hp[0]; a._hy=hp[1]; });
+      const perp=eds.every(ed=>{ const ss=sSide(asgn[ed.id],role); return (ss==='top'||ss==='bottom')!==hubV; });
       if(perp){
-        const g2=eds.filter(ed=>!ed.fromPin);
-        g2.forEach(ed=>{ const a=asgn[ed.id]; const tc=nc(a.bRef); a._far=vertical?Math.abs(tc[1]-a._exY):Math.abs(tc[0]-a._exX); });
+        // 直交群（例: 右辺hub → 相手は上/下辺入り）＝遠い相手ほど hub 辺の外側(脚の向きと逆側)へ並べ替え交差回避。
+        //   spoke端は主軸辺の中央。段違い(midPos)は不要＝自然なL字。
+        const g2=eds.filter(ed=>!hPin(ed,role));
+        g2.forEach(ed=>{ const a=asgn[ed.id]; const sc=nc(sRef(a,role));
+          if(hubV){ a._far=Math.abs(sc[1]-a._hy); a._leg=Math.sign(sc[0]-a._hx); }   // hub上下辺: 走りY・脚X・fracX
+          else    { a._far=Math.abs(sc[0]-a._hx); a._leg=Math.sign(sc[1]-a._hy); } });// hub左右辺: 走りX・脚Y・fracY
         g2.sort((p,q)=>asgn[p.id]._far-asgn[q.id]._far);              // 近い→遠い
-        const c=g2.length;
+        const c=g2.length, leg=asgn[g2[0].id]._leg||1;
         g2.forEach((ed,i)=>{ const a=asgn[ed.id];
-          a.exitFrac=(c-i)/(c+1);                                     // 近い=辺の外周(大frac=下/右)／遠い=手前(小frac=上/左)
-          const ek=pKey(a.toId,ed,'to')+'|'+a.entrySide;
-          if(!ed.toPin && !(entryN[ek]>1)) a.entryFrac=0.5;           // 入口は主軸辺の中央
-        });
+          setH(a,role, leg>0?(c-i)/(c+1):(i+1)/(c+1));                // 近い=脚方向側／遠い=逆側(外周)
+          if(!sPin(ed,role)&&!sMulti(ed,a,role)) setS(a,role,0.5); });
         return;
       }
-      // 終点：一直線にできれば一直線を優先（端が中央でなくても可）／できなければ辺の中央
+      // 平行群：spoke端を「一直線にできれば一直線／できなければ中央」に。曲がる線は段違いトラックへ。
       const bends=[];
       eds.forEach(ed=>{ const a=asgn[ed.id];
-        const ek=pKey(a.toId,ed,'to')+'|'+a.entrySide;
-        if(ed.toPin||entryN[ek]>1) return;                          // 相手にピン or 複数入線 → 扇状分散のまま
-        if((a.entrySide==='top'||a.entrySide==='bottom')!==vertical) return;   // v8.02追補: 出口と入口の軸が直交する線は整形対象外（自然なL字に任せる）
-        const tn=a.bRef; let straight=false;
-        if(vertical){ const lo=tn.x+tn.w*0.12, hi=tn.x+tn.w*0.88;
-          if(a._exX>=lo&&a._exX<=hi){ a.entryFrac=(a._exX-tn.x)/tn.w; straight=true; } else a.entryFrac=0.5; }
-        else { const lo=tn.y+tn.h*0.12, hi=tn.y+tn.h*0.88;
-          if(a._exY>=lo&&a._exY<=hi){ a.entryFrac=(a._exY-tn.y)/tn.h; straight=true; } else a.entryFrac=0.5; }
+        if(sPin(ed,role)||sMulti(ed,a,role)) return;                 // 相手側がピン/複数扇 → 従来の分散を維持
+        const ss=sSide(a,role); if((ss==='top'||ss==='bottom')!==hubV) return;   // 軸が直交する線は対象外
+        const sp=sRef(a,role); let straight=false;
+        if(hubV){ const lo=sp.x+sp.w*0.12, hi=sp.x+sp.w*0.88;
+          if(a._hx>=lo&&a._hx<=hi){ setS(a,role,(a._hx-sp.x)/sp.w); straight=true; } else setS(a,role,0.5); }
+        else { const lo=sp.y+sp.h*0.12, hi=sp.y+sp.h*0.88;
+          if(a._hy>=lo&&a._hy<=hi){ setS(a,role,(a._hy-sp.y)/sp.h); straight=true; } else setS(a,role,0.5); }
         if(!straight) bends.push(ed); });
-      // 段違いトラック：曲がる線が2本以上 → 近い相手ほど相手寄り／遠い相手ほど始点寄り（縦線が相手の横線を突っ切らない）
       if(bends.length>=2){
-        bends.forEach(ed=>{ const a=asgn[ed.id]; const tc=nc(a.bRef);
-          a._far=vertical?Math.abs(tc[0]-a._exX):Math.abs(tc[1]-a._exY); });
+        bends.forEach(ed=>{ const a=asgn[ed.id]; const sc=nc(sRef(a,role));
+          a._far=hubV?Math.abs(sc[0]-a._hx):Math.abs(sc[1]-a._hy); });
         bends.sort((p,q)=>asgn[p.id]._far-asgn[q.id]._far);          // 近い→遠い
         const n=bends.length;
         bends.forEach((ed,i)=>{ const a=asgn[ed.id];
-          const ep=exitPt(a.bRef,a.entrySide,a.entryFrac,false), f=(n-i)/(n+1);   // i=0(近い)→相手寄り
-          a.autoMid=vertical?(a._exY+(ep[1]-a._exY)*f):(a._exX+(ep[0]-a._exX)*f); });
-      }
-    });
+          const spk=exitPt(sRef(a,role),sSide(a,role),(role==='exit'?a.entryFrac:a.exitFrac),false), f=(n-i)/(n+1);
+          a.autoMid=hubV?(a._hy+(spk[1]-a._hy)*f):(a._hx+(spk[0]-a._hx)*f); }); }   // 近い相手ほど相手寄りの棚
+    }
+    // 各辺をどちらの端で束ねるか決めてグループ化（終点側が扇＝多対1 も対称に処理）
+    const groups={};
+    S.edges.forEach(ed=>{ if(!okEdge(ed)) return; const a=asgn[ed.id];
+      const sk=pKey(a.fromId,ed,'from')+'|'+a.exitSide, tk=pKey(a.toId,ed,'to')+'|'+a.entrySide;
+      const srcFan=!ed.fromPin&&exitN[sk]>=2, tgtFan=!ed.toPin&&entryN[tk]>=2;
+      let role,key;
+      if(tgtFan&&!srcFan){ role='entry'; key='E|'+tk; }              // 多対1（終点が扇の中心）
+      else if(ed.fromPin){ return; }                                // 始点ピンでhub=始点 → 扇整形の対象外
+      else { role='exit'; key='X|'+sk; }
+      (groups[key]=groups[key]||{role,eds:[]}).eds.push(ed); });
+    Object.keys(groups).forEach(k=> processFan(groups[k].eds, groups[k].role));
   }
   return asgn;
 }
