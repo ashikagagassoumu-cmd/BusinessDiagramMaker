@@ -2,7 +2,8 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 
-const URL = 'http://localhost:8765/diagram_v4.01.html';
+// v8.00 マニュアル用の撮影対象。v8.00 が 99_旧バージョン へ退避された後は退避先パスに読み替える。
+const URL = 'http://localhost:8765/diagram_v8.00.html';
 const outDir = path.join(__dirname, 'screenshots');
 if (!fs.existsSync(outDir)) fs.mkdirSync(outDir);
 
@@ -305,6 +306,9 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => {
     window._reset('gantt');
     S.gantt.startDate = '2026-05-01'; S.gantt.scale = 'day'; S.gantt.colWidth = 22;
+    // 基本例（図20）は見出し欄・凡例を伏せてクラシックな工程表として見せる（見出し欄は図21以降で解説）
+    if (S.gantt.header) S.gantt.header.show = false;
+    if (S.gantt.legend) S.gantt.legend.show = false;
     const add = (o) => { S.nodes.push(Object.assign({ id: uid(), progress: 0, desc: '', assignee: '' }, o)); };
     add({ type: 'gantt_summary', row: 0, text: '設計フェーズ', startDate: '2026-05-04', endDate: '2026-05-15' });
     add({ type: 'gantt_task', row: 1, text: '要件定義', desc: '業務要件の整理', assignee: '山田', startDate: '2026-05-04', endDate: '2026-05-08', progress: 100 });
@@ -359,6 +363,103 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   });
   await page.screenshot({ path: shotPath('35_uml.png') });
   console.log('35 done');
+
+  // ============================================================
+  //  v8.00 新機能
+  // ============================================================
+
+  // 40: ガント見出し欄（表題部＋承認欄＋凡例）付きの工程表
+  //   見出しは工程表の全幅（時間軸の右端）に合わせて描画され、承認欄(右上)・凡例が右端に来るため、
+  //   ビューポートを一時的に広げて見出し全体を収める。
+  await page.setViewport({ width: 2000, height: 950 });
+  await page.evaluate(() => {
+    window._reset('gantt');
+    // 工事名＝図の名称（連動）。前工程の名称が残らないよう明示設定する。
+    const nameInp = document.getElementById('diagram-name');
+    if (nameInp) { nameInp.value = '○○ビル新築工事'; nameInp.dispatchEvent(new Event('input')); }
+    const g = S.gantt;
+    g.startDate = '2026-05-01'; g.endDate = '2026-05-29'; g.scale = 'day'; g.colWidth = 26; g.visibleUnits = 28;
+    g.header.show = true;
+    g.header.title = '○○ビル新築工事';
+    g.header.rows = [
+      { label: '工事場所', value: '東京都千代田区○○' },
+      { label: '発注者', value: '株式会社○○' },
+      { label: '工期', value: '2026/05/01〜2026/08/31' },
+      { label: '担当', value: '山田 太郎' },
+    ];
+    g.header.showDate = true;
+    g.header.approval = { show: true, slots: [{ role: '承認', name: '部長' }, { role: '確認', name: '課長' }, { role: '作成', name: '山田' }] };
+    g.legend = { show: true, auto: true, overrides: {}, extra: [] };
+    const add = (o) => { S.nodes.push(Object.assign({ id: uid(), progress: 0, desc: '', assignee: '' }, o)); };
+    add({ type: 'gantt_summary', row: 0, text: '基礎工事', startDate: '2026-05-04', endDate: '2026-05-15' });
+    add({ type: 'gantt_task', row: 1, text: '掘削', assignee: '佐藤', startDate: '2026-05-04', endDate: '2026-05-08', progress: 100 });
+    add({ type: 'gantt_task', row: 2, text: '配筋', assignee: '鈴木', startDate: '2026-05-11', endDate: '2026-05-15', progress: 60 });
+    add({ type: 'gantt_milestone', row: 3, text: '基礎完了', date: '2026-05-15' });
+    S.sel = []; render();
+  });
+  await wait(200);
+  // 描画内容の右端に合わせてクリップ（見出しの右端＝時間軸の右端。固定データのため約1330px）
+  await page.screenshot({ path: shotPath('40_gantt_header.png'), clip: { x: 0, y: 0, width: 1330, height: 950 } });
+  console.log('40 done');
+  // 以降のクリップ/モーダル撮影のため既定ビューポートに戻す
+  await page.setViewport({ width: 1200, height: 900 });
+  await wait(150);
+  await page.evaluate(() => { render(); });
+
+  // 41: サイドパネルの「見出し・凡例」セクション（クリップ）
+  const headBox = await page.evaluate(() => {
+    const ph = document.getElementById('gantt-head-ph');
+    const body = document.getElementById('gantt-head-body');
+    if (!ph) return null;
+    const r1 = ph.getBoundingClientRect();
+    const r2 = body ? body.getBoundingClientRect() : r1;
+    const top = Math.min(r1.y, r2.y), bottom = Math.max(r1.bottom, r2.bottom);
+    const left = Math.min(r1.x, r2.x), right = Math.max(r1.right, r2.right);
+    return { x: Math.max(0, left - 4), y: Math.max(0, top - 4), width: Math.min(right - left + 8, 340), height: Math.min(bottom - top + 8, 880) };
+  });
+  if (headBox && headBox.height > 20 && headBox.width > 20) {
+    await page.screenshot({ path: shotPath('41_gantt_header_panel.png'), clip: headBox });
+    console.log('41 done');
+  } else {
+    console.log('41 skipped (panel box not found)');
+  }
+
+  // 42: 「見出しを編集」ダイアログ
+  await page.evaluate(() => { openGanttHeadEditor(); });
+  await wait(350);
+  await page.screenshot({ path: shotPath('42_gantt_header_modal.png') });
+  console.log('42 done');
+  await page.evaluate(() => { closeGanttHeadEditor(); });
+
+  // 45: テキストから作図ダイアログ
+  await page.evaluate(() => {
+    window._reset('flowchart');
+    openText2Diagram();
+    const ta = document.getElementById('t2d-input');
+    if (ta) {
+      ta.value = 'flowchart TD\n  A[受付] --> B{在庫あり?}\n  B -->|はい| C[出荷]\n  B -->|いいえ| D[発注]';
+      ta.dispatchEvent(new Event('input'));
+    }
+  });
+  await wait(300);
+  await page.screenshot({ path: shotPath('45_textgen_modal.png') });
+  console.log('45 done');
+  await page.evaluate(() => { closeText2Diagram(); });
+
+  // 46: 検索・置換パネル
+  await page.evaluate(() => {
+    window._reset('flowchart');
+    addNode('rect', 150, 130, { text: '申請書作成' });
+    addNode('rect', 360, 130, { text: '申請内容確認' });
+    addNode('rect', 260, 280, { text: '申請却下' });
+    S.sel = []; render();
+    openSearch();
+    const inp = document.getElementById('search-input');
+    if (inp) { inp.value = '申請'; inp.dispatchEvent(new Event('input')); }
+  });
+  await wait(300);
+  await page.screenshot({ path: shotPath('46_search_panel.png') });
+  console.log('46 done');
 
   await browser.close();
   console.log('All screenshots captured successfully.');
