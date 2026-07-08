@@ -4851,7 +4851,7 @@ function renderMindNodes(hidden,dim){
     t.textContent=n.text||''; grp.appendChild(t);
     grp.style.cursor='move';
     grp.addEventListener('mousedown',ev=>{ev.stopPropagation();mindNodeMD(ev,n.id);});
-    grp.addEventListener('dblclick',ev=>{ev.stopPropagation();mindEditNode(n.id);});
+    grp.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}mindEditNode(n.id);});
     grp.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();
       if(n.type==='mind_root'){hint('中心トピックは削除できません');return;}
       S.sel=[n.id];delSel();});
@@ -4912,7 +4912,7 @@ function mindNodeMD(ev,id){
   const ids=[id,...mindDescendants(id)];
   const subtree=ids.map(i=>{const m=S.nodes.find(x=>x.id===i);return{id:i,ox:m.x,oy:m.y};});
   mindDragState={nid:id,sx:pt.x,sy:pt.y,subtree,moved:false,dropTarget:null};
-  render();
+  // 追補: mousedownで即renderしない（DOM作り替えでダブルクリック編集が不成立になるため・ガント/汎用ノードと同方式）
 }
 function mindEditNode(id){
   const n=S.nodes.find(x=>x.id===id); if(!n)return;
@@ -7346,9 +7346,14 @@ document.addEventListener('mouseup',()=>{
   // マインドマップ ノード移動完了（ドロップ先があれば再ペアレント）
   if(mindDragState){
     const ds=mindDragState; mindDragState=null;
-    if(ds.dropTarget){ mindReparent(ds.nid,ds.dropTarget); snap(); }
-    else if(ds.moved){ snap(); }
-    render(); return;
+    if(ds.dropTarget){ mindReparent(ds.nid,ds.dropTarget); snap(); render(); }
+    else if(ds.moved){ snap(); render(); }
+    else {
+      // 未移動（クリック）: 選択描画を220ms遅延（ダブルクリック編集と排他・ガント行と同方式）
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      nodeClickTimer=setTimeout(()=>{nodeClickTimer=null;render();},220);
+    }
+    return;
   }
   // v7.00: バス高さ調整完了
   if(busDragState){
