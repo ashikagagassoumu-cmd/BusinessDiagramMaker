@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const dir = __dirname;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const reqPath = req.url.split('?')[0].split('#')[0];   // クエリ/ハッシュ除去（?v=... でのキャッシュ回避を許可）
   const filePath = path.join(dir, decodeURIComponent(reqPath === '/' ? '/diagram_v8.04.html' : reqPath));
   const ext = path.extname(filePath);
@@ -12,4 +12,6 @@ http.createServer((req, res) => {
     res.writeHead(200, {'Content-Type': types[ext] || 'text/plain; charset=utf-8', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0'});
     res.end(data);
   });
-}).listen(8765, () => console.log('Server running on http://localhost:8765'));
+});
+const port = process.env.PORT || 8765;
+server.listen(port, () => console.log('Server running on http://localhost:' + port));

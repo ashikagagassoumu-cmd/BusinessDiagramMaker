@@ -4682,7 +4682,7 @@ function mindPlace(type,px,py){
   const n={id:uid(),type:type,text:d.text,x:px,y:py,w:d.w,h:d.h};
   S.nodes.push(n);
   S.edges.push({id:uid(),from:parent.id,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
-  S.sel=[n.id]; snap(); render();
+  S.sel=[parent.id]; snap(); render();   // 追補: 選択(=次の配置の起点)は親に残す＝連続配置で同じシェイプから分岐
 }
 // ── 描画 ──
 function renderMindmap(){
@@ -4851,7 +4851,7 @@ function renderMindNodes(hidden,dim){
     t.textContent=n.text||''; grp.appendChild(t);
     grp.style.cursor='move';
     grp.addEventListener('mousedown',ev=>{ev.stopPropagation();mindNodeMD(ev,n.id);});
-    grp.addEventListener('dblclick',ev=>{ev.stopPropagation();mindEditNode(n.id);});
+    grp.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}mindEditNode(n.id);});
     grp.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();
       if(n.type==='mind_root'){hint('中心トピックは削除できません');return;}
       S.sel=[n.id];delSel();});
@@ -4912,7 +4912,7 @@ function mindNodeMD(ev,id){
   const ids=[id,...mindDescendants(id)];
   const subtree=ids.map(i=>{const m=S.nodes.find(x=>x.id===i);return{id:i,ox:m.x,oy:m.y};});
   mindDragState={nid:id,sx:pt.x,sy:pt.y,subtree,moved:false,dropTarget:null};
-  render();
+  // 追補: mousedownで即renderしない（DOM作り替えでダブルクリック編集が不成立になるため・ガント/汎用ノードと同方式）
 }
 function mindEditNode(id){
   const n=S.nodes.find(x=>x.id===id); if(!n)return;
@@ -7346,9 +7346,14 @@ document.addEventListener('mouseup',()=>{
   // マインドマップ ノード移動完了（ドロップ先があれば再ペアレント）
   if(mindDragState){
     const ds=mindDragState; mindDragState=null;
-    if(ds.dropTarget){ mindReparent(ds.nid,ds.dropTarget); snap(); }
-    else if(ds.moved){ snap(); }
-    render(); return;
+    if(ds.dropTarget){ mindReparent(ds.nid,ds.dropTarget); snap(); render(); }
+    else if(ds.moved){ snap(); render(); }
+    else {
+      // 未移動（クリック）: 選択描画を220ms遅延（ダブルクリック編集と排他・ガント行と同方式）
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      nodeClickTimer=setTimeout(()=>{nodeClickTimer=null;render();},220);
+    }
+    return;
   }
   // v7.00: バス高さ調整完了
   if(busDragState){
