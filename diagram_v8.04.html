@@ -4682,7 +4682,7 @@ function mindPlace(type,px,py){
   const n={id:uid(),type:type,text:d.text,x:px,y:py,w:d.w,h:d.h};
   S.nodes.push(n);
   S.edges.push({id:uid(),from:parent.id,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
-  S.sel=[n.id]; snap(); render();
+  S.sel=[parent.id]; snap(); render();   // 追補: 選択(=次の配置の起点)は親に残す＝連続配置で同じシェイプから分岐
 }
 // ── 描画 ──
 function renderMindmap(){
