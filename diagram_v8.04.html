@@ -4666,11 +4666,13 @@ function mindNodeFont(n){   // v8.04: 種別＋重要度で文字サイズを決
   return (n.type!=='mind_root'&&n.importance==='high')?base+2:base;
 }
 function calcMindNodeSize(n){
-  const txt=n.text||'';
+  const lines=(n.text||'').split('\n');   // 追補: Alt+Enterの改行に対応（幅=最長行・高さ=行数で拡張）
   const hi=n.type!=='mind_root'&&n.importance==='high';   // v8.04: 重要度=高はシェイプ自体も拡大
   const fs=mindNodeFont(n);
-  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,[...txt].length*(fs*1.05)+(hi?36:26)+(n.type==='mind_action'?12:0)));
-  n.h=n.type==='mind_root'?46:Math.round((n.type==='mind_note'?28:32)*(hi?1.25:1));
+  const maxLen=lines.reduce((m,l)=>Math.max(m,[...l].length),0);
+  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,maxLen*(fs*1.05)+(hi?36:26)+(n.type==='mind_action'?12:0)));
+  const baseH=n.type==='mind_root'?46:Math.round((n.type==='mind_note'?28:32)*(hi?1.25:1));
+  n.h=baseH+(lines.length-1)*Math.round(fs*1.3);
 }
 // パレットからの追加: 選択ノード（なければ中心）の子として配置
 function mindPlace(type,px,py){
@@ -4845,10 +4847,16 @@ function renderMindNodes(hidden,dim){
     grp.appendChild(mindShapeEl(n,outAttrs,0));
     if(isNote)grp.appendChild(e('path',{d:`M${n.x+n.w-MIND_NOTE_FOLD},${n.y} v${MIND_NOTE_FOLD} h${MIND_NOTE_FOLD} Z`,
       fill:'#fde68a',stroke:SD.mind_note.stroke,'stroke-width':1.1,'pointer-events':'none'}));   // v8.04: 付箋の折れ角
-    const t=e('text',{x:n.x+(n.w-(isAction?MIND_ARROW_TIP:0))/2,y:n.y+n.h/2,'text-anchor':'middle','dominant-baseline':'middle',
-      'font-size':String(mindNodeFont(n)),'font-weight':isRoot?'700':(n.importance==='high'?'600':'500'),
+    const fs=mindNodeFont(n), tcx=n.x+(n.w-(isAction?MIND_ARROW_TIP:0))/2;
+    const t=e('text',{x:tcx,y:n.y+n.h/2,'text-anchor':'middle','dominant-baseline':'middle',
+      'font-size':String(fs),'font-weight':isRoot?'700':(n.importance==='high'?'600':'500'),
       fill:isRoot?'#f8fafc':(isNote?'#713f12':'#1e293b'),'pointer-events':'none'});
-    t.textContent=n.text||''; grp.appendChild(t);
+    // 追補: Alt+Enterの改行を複数行(tspan)で表示＝ライブSVGなのでPNG/SVG/印刷にも反映
+    const tls=(n.text||'').split('\n');
+    if(tls.length>1){ const lh=Math.round(fs*1.3);
+      tls.forEach((ln,i)=>{const ts=e('tspan',{x:tcx,y:n.y+n.h/2+(i-(tls.length-1)/2)*lh});ts.textContent=ln;t.appendChild(ts);});
+    } else t.textContent=n.text||'';
+    grp.appendChild(t);
     grp.style.cursor='move';
     grp.addEventListener('mousedown',ev=>{ev.stopPropagation();mindNodeMD(ev,n.id);});
     grp.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}mindEditNode(n.id);});
@@ -4916,7 +4924,8 @@ function mindNodeMD(ev,id){
 }
 function mindEditNode(id){
   const n=S.nodes.find(x=>x.id===id); if(!n)return;
-  openSvgEditor(n.x,n.y,Math.max(n.w,90),n.h,n.text||'',v=>{n.text=v.trim();snap();render();},'名称');
+  // 追補: 常に複数行エディタ（Alt+Enterで改行）。表示高さは最低46pxを確保
+  openSvgEditor(n.x,n.y,Math.max(n.w,90),Math.max(n.h,46),n.text||'',v=>{n.text=v.trim();snap();render();},'名称',{multiline:true});
 }
 // カーソル下の再ペアレント候補（ドラッグ中ノードとその子孫は除外）
 function mindDropTargetAt(px,py,draggedId){
@@ -5120,7 +5129,7 @@ function updateMindToolbar(){
 }
 
 // ── v8.03: マインドマップのテキスト出力（Markdown / OPML / FreeMind） ──
-function xmlEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function xmlEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\r?\n/g,'&#10;');}   // 追補: 属性内の改行を&#10;で保持（OPML/.mm往復用）
 // 全ノードをツリー化（collapsedは無視＝全データ書き出し）
 function mindExportTree(id){
   const n=S.nodes.find(x=>x.id===id);
@@ -5138,7 +5147,7 @@ function mindAttrTags(n){
 function mindToMarkdown(tree){
   const out=[];
   (function walk(t,depth){
-    out.push('  '.repeat(depth)+'- '+(t.n.text||'')+mindAttrTags(t.n));
+    out.push('  '.repeat(depth)+'- '+(t.n.text||'').replace(/\n/g,' ')+mindAttrTags(t.n));   // 追補: セル内改行はスペースに（アウトライン構造を保持）
     t.children.forEach(c=>walk(c,depth+1));
   })(tree,0);
   return out.join('\n')+'\n';
@@ -7668,7 +7677,7 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
   fo.id='svg-editor';
   fo.setAttribute('x',x); fo.setAttribute('y',y);
   fo.setAttribute('width',w); fo.setAttribute('height',h);
-  const isMulti=h>30;
+  const isMulti=h>30||!!(opts&&opts.multiline);   // 追補: opts.multiline=複数行エディタを強制（マインドマップ名称編集用）
   const inp=document.createElement(isMulti?'textarea':'input');
   if(!isMulti) inp.type='text';
   inp.style.cssText=`width:100%;height:100%;border:2px solid #3b82f6;border-radius:4px;`+
@@ -7694,6 +7703,11 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
     // v7.03: 日本語IMEの変換確定 Enter で編集が閉じてしまう不具合の修正＝変換中のキーは無視
     if(ev.isComposing||ev.keyCode===229)return;
     if(ev.key==='Escape'){ev.preventDefault();cancel();}
+    // 追補: Alt+Enter＝カーソル位置に改行を挿入（複数行エディタのみ。Enter確定と共存）
+    else if(ev.key==='Enter'&&ev.altKey&&isMulti){ev.preventDefault();
+      const ss=inp.selectionStart,se=inp.selectionEnd;
+      inp.value=inp.value.slice(0,ss)+'\n'+inp.value.slice(se);
+      inp.selectionStart=inp.selectionEnd=ss+1;}
     // v7.03: opts.enterNewline＝Enterで改行（行追加）・確定は枠外クリック（ミニ表エディタ用）
     else if(ev.key==='Enter'&&(!isMulti||(!ev.shiftKey&&!(opts&&opts.enterNewline)))){ev.preventDefault();commit();}
   });
