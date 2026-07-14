@@ -3506,6 +3506,7 @@ function ganttApplyPhaseRange(phaseId, top, bot){
     else if(n.phaseId===phaseId) n.phaseId=null;
   });
   ganttPruneEmptyPhases();
+  ganttSyncAllTaskColors();   // v8.05追補: 括り変更で所属が変わったタスクの色を追従
 }
 // ハンドルのドラッグ開始
 function ganttStartPhaseEdge(ev,phaseId,side){
@@ -4259,6 +4260,7 @@ function ganttReorderTo(movedId,order){
   }
   order.forEach((n,i)=>{n.row=i;});
   ganttPruneEmptyPhases();
+  ganttSyncAllTaskColors();   // v8.05追補: 並べ替えで所属フェーズが変わったタスクの色を追従
 }
 // 行並び替え: ドラッグ対象を targetRow 位置へ移動（フェーズ移動はブロック追従／タスクは付替え）
 function ganttReorderRow(nid,targetRow){
@@ -4434,6 +4436,17 @@ function ganttSyncPhaseTaskColors(phase){
   S.nodes.forEach(n=>{ if(n.type==='gantt_task'&&n.phaseId===phase.id){
     if(has){ n.color=fill; n.stroke=stroke; } else { delete n.color; delete n.stroke; }
   }});
+}
+// v8.05追補: フェーズの括り（タスクの所属フェーズ）が変わったら、各タスクの色を現在の所属フェーズ色へ
+//   自動追従させる。所属フェーズが色未設定なら標準色、どのフェーズにも属さないタスクは既定色へ戻す。
+function ganttSyncAllTaskColors(){
+  const byId={}; S.nodes.forEach(p=>{ if(p.type==='gantt_summary') byId[p.id]=p; });
+  S.nodes.forEach(n=>{
+    if(n.type!=='gantt_task') return;
+    const ph=n.phaseId?byId[n.phaseId]:null;
+    if(ph&&ph.color){ n.color=ganttLighten(ph.color,0.80); n.stroke=ph.color; }
+    else { delete n.color; delete n.stroke; }   // 無所属＝既定色に戻す
+  });
 }
 // ── ガント: タスク詳細編集モーダル ──
 let _ganttEditId=null, _ganttEditColor=null;
@@ -4613,6 +4626,14 @@ const MIND_ATTRS={
   effort:    {name:'工数',   vals:{high:{label:'大'},mid:{label:'中'},low:{label:'小'}}},
 };
 const MIND_IMP_LINEW={high:3.5,mid:2.2,low:1};   // v8.04: 重要度＝内側二重赤線の太さ（高はシェイプ拡大も）
+// v8.05追補: 重要度ごとのシェイプ大きさ（f=文字加算, pad=幅余白, hm=高さ倍率）。三段階でメリハリを付ける。
+//   重要度=中は基準より少し大きく、高はさらに大きく、低は小さく。重要度未設定のノードは基準サイズのまま。
+const MIND_IMP_SIZE={high:{f:4,pad:44,hm:1.35},mid:{f:1,pad:32,hm:1.1},low:{f:-2,pad:18,hm:0.82}};
+const MIND_IMP_DEFAULT={f:0,pad:26,hm:1.0};   // 重要度未設定＝基準サイズ
+function mindImpSize(n){
+  if(n.type==='mind_root') return MIND_IMP_DEFAULT;
+  return MIND_IMP_SIZE[n.importance]||MIND_IMP_DEFAULT;
+}
 // v8.03: 表示専用の状態（保存・undo対象外。図種切替でリセット）
 let mindFocusId=null;                 // フォーカスモード対象ノードid（null=無効）
 let mindEmphasisOpen=false;           // 未決・反対のみ強調
@@ -4661,17 +4682,17 @@ function mindCreateRoot(){
   const n={id:uid(),type:'mind_root',text:SD.mind_root.text,x:725,y:476,w:SD.mind_root.w,h:SD.mind_root.h};
   S.nodes.push(n); S.sel=[n.id];
 }
-function mindNodeFont(n){   // v8.04: 種別＋重要度で文字サイズを決定（補足情報は小さめ・重要度=高は+2px）
+function mindNodeFont(n){   // v8.05: 種別＋重要度で文字サイズを決定（補足情報は小さめ・重要度で三段階）
   const base=n.type==='mind_root'?15:(n.type==='mind_note'?11:12);
-  return (n.type!=='mind_root'&&n.importance==='high')?base+2:base;
+  return n.type==='mind_root'?base:base+mindImpSize(n).f;
 }
 function calcMindNodeSize(n){
   const lines=(n.text||'').split('\n');   // 追補: Alt+Enterの改行に対応（幅=最長行・高さ=行数で拡張）
-  const hi=n.type!=='mind_root'&&n.importance==='high';   // v8.04: 重要度=高はシェイプ自体も拡大
+  const sz=mindImpSize(n);   // v8.05: 重要度で大きさを三段階に（未設定は基準）
   const fs=mindNodeFont(n);
   const maxLen=lines.reduce((m,l)=>Math.max(m,[...l].length),0);
-  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,maxLen*(fs*1.05)+(hi?36:26)+(n.type==='mind_action'?12:0)));
-  const baseH=n.type==='mind_root'?46:Math.round((n.type==='mind_note'?28:32)*(hi?1.25:1));
+  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,maxLen*(fs*1.05)+sz.pad+(n.type==='mind_action'?12:0)));
+  const baseH=n.type==='mind_root'?46:Math.round((n.type==='mind_note'?28:32)*sz.hm);
   n.h=baseH+(lines.length-1)*Math.round(fs*1.3);
 }
 // パレットからの追加: 選択ノード（なければ中心）の子として配置
@@ -4804,7 +4825,7 @@ function renderMindBranches(hidden,dim){
     const es=mindSideToward(fn,tn), en=mindSideToward(tn,fn);
     const [sx,sy]=exitPt(fn,es), [ex,ey]=exitPt(tn,en);
     const isNote=tn.type==='mind_note';   // v8.04: 補足情報への枝＝細い点線（本筋の枝と区別）
-    const col=isNote?'#a8a29e':(mindBranchColor(tn.id)||{stroke:'#64748b'}).stroke;
+    const col=isNote?mindNodeColor(fn).stroke:(mindBranchColor(tn.id)||{stroke:'#64748b'}).stroke;   // v8.05: 補足情報の枝も属するシェイプ(親)の色
     const sw=isNote?1.3:Math.max(1.4,3.6-(mindDepth(tn.id)-1)*0.7);
     const pAttrs={d:mindBezier(sx,sy,ex,ey,es,en),stroke:col,'stroke-width':sw,fill:'none','stroke-linecap':'round','pointer-events':'none'};
     if(isNote)pAttrs['stroke-dasharray']='3 3';
@@ -4830,27 +4851,41 @@ function mindShapeEl(n,attrs,inset){
   attrs.x=x; attrs.y=y; attrs.width=w; attrs.height=h; attrs.rx=Math.max(4,(n.type==='mind_root'?14:10)-i*0.6);
   return e('rect',attrs);
 }
+// v8.05追補: マインドマップのノード表示色（手動色 > 枝色 > 既定）。補足情報の色決定にも流用。
+function mindNodeColor(n){
+  if(!n) return {fill:SD.mind_topic.fill,stroke:SD.mind_topic.stroke};
+  if(n.type==='mind_root') return {fill:SD.mind_root.fill,stroke:SD.mind_root.stroke};
+  if(n.color) return {fill:n.color,stroke:n.stroke||'#3b82f6'};
+  return mindBranchColor(n.id)||{fill:SD.mind_topic.fill,stroke:SD.mind_topic.stroke};
+}
+// v8.05追補: 補足情報(mind_note)が属するシェイプ（親ノード）の表示色。親が無ければ自身の枝色。
+function mindNoteOwnerColor(n){
+  const pid=mindParentId(n.id);
+  const pn=pid?S.nodes.find(x=>x.id===pid):null;
+  return pn?mindNodeColor(pn):mindNodeColor(n);
+}
 function renderMindNodes(hidden,dim){
   const g=document.getElementById('g-nodes');
   S.nodes.forEach(n=>{
     if(!isMindShape(n.type)||hidden.has(n.id))return;
     const sel=S.sel.includes(n.id), isRoot=n.type==='mind_root';
-    const bc=isRoot?{fill:SD.mind_root.fill,stroke:SD.mind_root.stroke}
-      :(n.color?{fill:n.color,stroke:n.stroke||'#3b82f6'}:(mindBranchColor(n.id)||{fill:SD.mind_topic.fill,stroke:SD.mind_topic.stroke}));
+    const bc=mindNodeColor(n);
     const grp=e('g',{'data-nid':n.id});
     if(dim&&dim.has(n.id))grp.setAttribute('class','mind-dim');   // v8.03: 強調表示の減光（画面のみ）
     const isNote=n.type==='mind_note', isAction=n.type==='mind_action';
-    const outAttrs={fill:isNote?SD.mind_note.fill:bc.fill,   // v8.04: 付箋は枝色に染まらず薄黄固定
-      stroke:sel?'#2563eb':(isNote?SD.mind_note.stroke:bc.stroke),'stroke-width':sel?3:(isNote?1.4:1.8)};
+    // v8.05追補: 付箋(補足情報)は「属するシェイプ(親)の色」に合わせる＝枠線・文字・折れ角は枝色、塗りは淡い枝色。
+    const nbc=isNote?mindNoteOwnerColor(n):bc;
+    const outAttrs={fill:isNote?ganttLighten(nbc.stroke,0.85):bc.fill,
+      stroke:sel?'#2563eb':(isNote?nbc.stroke:bc.stroke),'stroke-width':sel?3:(isNote?1.4:1.8)};
     if(n.confidence==='mid')outAttrs['stroke-dasharray']='7 4';            // v8.03: 確信度=中（破線）
     else if(n.confidence==='low')outAttrs['stroke-dasharray']='2.5 3.5';   // v8.03: 確信度=低（点線）
     grp.appendChild(mindShapeEl(n,outAttrs,0));
     if(isNote)grp.appendChild(e('path',{d:`M${n.x+n.w-MIND_NOTE_FOLD},${n.y} v${MIND_NOTE_FOLD} h${MIND_NOTE_FOLD} Z`,
-      fill:'#fde68a',stroke:SD.mind_note.stroke,'stroke-width':1.1,'pointer-events':'none'}));   // v8.04: 付箋の折れ角
+      fill:ganttLighten(nbc.stroke,0.45),stroke:nbc.stroke,'stroke-width':1.1,'pointer-events':'none'}));   // v8.05: 付箋の折れ角＝枝色系
     const fs=mindNodeFont(n), tcx=n.x+(n.w-(isAction?MIND_ARROW_TIP:0))/2;
     const t=e('text',{x:tcx,y:n.y+n.h/2,'text-anchor':'middle','dominant-baseline':'middle',
       'font-size':String(fs),'font-weight':isRoot?'700':(n.importance==='high'?'600':'500'),
-      fill:isRoot?'#f8fafc':(isNote?'#713f12':'#1e293b'),'pointer-events':'none'});
+      fill:isRoot?'#f8fafc':(isNote?nbc.stroke:'#1e293b'),'pointer-events':'none'});
     // 追補: Alt+Enterの改行を複数行(tspan)で表示＝ライブSVGなのでPNG/SVG/印刷にも反映
     const tls=(n.text||'').split('\n');
     if(tls.length>1){ const lh=Math.round(fs*1.3);
@@ -4915,11 +4950,16 @@ function mindNodeMD(ev,id){
   if(pasteMode){const r=document.getElementById('diagram-svg').getBoundingClientRect();pasteAt((ev.clientX-r.left)/zoomLevel,(ev.clientY-r.top)/zoomLevel);exitPasteMode();return;}
   const n=S.nodes.find(x=>x.id===id); if(!n)return;
   const pt=svgPt(ev);
-  S.sel=[id];
-  // 自身＋子孫の開始位置を退避（サブツリー連動移動）
-  const ids=[id,...mindDescendants(id)];
-  const subtree=ids.map(i=>{const m=S.nodes.find(x=>x.id===i);return{id:i,ox:m.x,oy:m.y};});
-  mindDragState={nid:id,sx:pt.x,sy:pt.y,subtree,moved:false,dropTarget:null};
+  // v8.05追補: 既に複数選択されていてその一部を掴んだら、選択を保ったまま選択全体をまとめて移動。
+  //   単独クリック（未選択 or 単一選択）はそのノードだけを選択して従来どおりサブツリー移動。
+  const multi=S.sel.length>1&&S.sel.includes(id);
+  if(!multi)S.sel=[id];
+  // 移動対象＝（複数選択なら選択中の全ノード／単独ならそのノード）＋各サブツリーの子孫（重複排除）
+  const roots=multi?S.sel.slice():[id];
+  const idset=new Set();
+  roots.forEach(rid=>{ idset.add(rid); mindDescendants(rid).forEach(d=>idset.add(d)); });
+  const subtree=[...idset].map(i=>{const m=S.nodes.find(x=>x.id===i);return m?{id:i,ox:m.x,oy:m.y}:null;}).filter(Boolean);
+  mindDragState={nid:id,sx:pt.x,sy:pt.y,subtree,moved:false,dropTarget:null,multi};
   // 追補: mousedownで即renderしない（DOM作り替えでダブルクリック編集が不成立になるため・ガント/汎用ノードと同方式）
 }
 function mindEditNode(id){
@@ -7123,7 +7163,7 @@ document.addEventListener('mousemove',ev=>{
       }
     }
     ds.subtree.forEach(s=>{const m=S.nodes.find(x=>x.id===s.id);if(m){m.x=s.ox+dx;m.y=s.oy+dy;}});
-    ds.dropTarget=mindDropTargetAt(pt.x,pt.y,ds.nid);
+    ds.dropTarget=ds.multi?null:mindDropTargetAt(pt.x,pt.y,ds.nid);   // v8.05追補: 複数まとめ移動時は付け替えしない（対象が曖昧なため単純移動）
     render(); return;
   }
   // v7.00: バス型接続線の横バス高さ調整（樹状図/組織図）
@@ -10049,7 +10089,7 @@ function confirmOrgEdit(){
   orgModalCollect();
   if(_orgEditPlain){
     let rows=_orgEditRows.map(r=>r.map(c=>(c==null?'':String(c)).trim()));
-    if(rows.length>1)rows=rows.filter(r=>r.some(c=>c!==''));
+    // v8.05追補: 追加した空行を消さない（列は空でも残るのに行だけ消える不整合の解消）。
     if(!rows.length)rows=[Array(_orgEditCols).fill('')];
     const single=rows.length===1&&_orgEditCols===1;
     if(single){
@@ -10064,7 +10104,7 @@ function confirmOrgEdit(){
     let ti=n.sections.findIndex(s=>s.style==='table');
     if(ti<0){n.sections.push({style:'table',cols:1,rows:[['']]});ti=n.sections.length-1;}
     let rows=_orgEditRows.map(r=>r.map(c=>(c==null?'':String(c)).trim()));
-    if(rows.length>1)rows=rows.filter(r=>r.some(c=>c!==''));
+    // v8.05追補: 追加した空行を消さない（列と挙動を揃える）。
     if(!rows.length)rows=[Array(_orgEditCols).fill('')];
     const allEmpty=rows.length===1&&_orgEditCols===1&&rows[0].every(c=>c==='');
     if(allEmpty){ n.sections.splice(ti,1); }
