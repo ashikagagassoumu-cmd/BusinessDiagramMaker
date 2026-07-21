@@ -8183,27 +8183,43 @@ function expPDF(){
   const tdt=e('text',{x:vbX+vbW-10,y:vbY-bandH/2,'dominant-baseline':'middle','text-anchor':'end','font-size':String(dateFs),fill:'#475569','font-family':'sans-serif'}); tdt.textContent=pdfTodayStr(); svg.appendChild(tdt);
   let bodyInner;
   if(S.diagramType==='gantt'){
-    // v5.00: 工程表ヘッダー（帯＋フェーズ/タスク列見出し＋年月・日付の時間軸）を <thead> に置き、各ページ
-    //   先頭で自動的に繰り返す。フェーズ行は <tbody> に並べ、page-break-inside:avoid で「収まらないときだけ
-    //   改ページ」（＝v4.30 と同じ自然改ページ。フェーズ毎の強制改ページはしない）。
+    // v8.06追補: 「日付・時間軸ヘッダーが2ページ目以降に出ない」不具合を修正。
+    //   原因＝本体を <tbody> の巨大な単一 <tr> にしていたため、1行が用紙高さを超えて分割されると
+    //     <thead>(display:table-header-group) が再描画されなかった（全スケール共通）。
+    //   対策＝(1) 各ページ先頭で繰り返すのは「時間軸＋列見出し」だけにし（表題部＝工事名/図面名帯は1ページ目のみ）、
+    //     (2) 本体を「フェーズのまとまり」または「1タスク=1行」に分割して <tr> 境界で必ず改ページが起きるようにし、
+    //     (3) フェーズの切れ目では page-break-before で必ず改ページ（ヘッダーは各ページ描画）。
     const _hdrOn=!!(S.gantt.header&&S.gantt.header.show);
-    const _hTop=_hdrOn?0:(-bandH), _hBot=ganttBodyTop();   // v8.00: 見出し表示時は表題＋時間軸を thead に内包（図面名帯は省く）
-    svg.setAttribute('viewBox','0 '+_hTop+' '+W+' '+(_hBot-_hTop));
+    const axisTop=ganttHeadH();               // 時間軸ヘッダー帯の上端（見出し欄の下）
+    const onceTop=_hdrOn?0:(-bandH);          // 1ページ目だけ出す表題部（見出し欄 or 図面名帯）の上端
+    // (1) 表題部（1ページ目のみ・表の外側に一度だけ描く）
+    let onceStr='';
+    if(axisTop>onceTop){
+      svg.setAttribute('viewBox','0 '+onceTop+' '+W+' '+(axisTop-onceTop));
+      onceStr='<div class="pg-svg pg-once">'+new XMLSerializer().serializeToString(svg)+'</div>';
+    }
+    // (2) 繰り返しヘッダー（時間軸＋列見出し）＝各ページ先頭で自動反復
+    svg.setAttribute('viewBox','0 '+axisTop+' '+W+' '+(ganttBodyTop()-axisTop));
     const headStr=new XMLSerializer().serializeToString(svg);
-    const L=ganttLayout(); let contentBottom=ganttBodyTop();
-    L.slots.forEach(s=>{ if(s.kind!=='empty') contentBottom=Math.max(contentBottom,s.top+s.height); });
-    let groups;
-    if(ganttHasPhases()){
-      groups=ganttPageGroups(0).filter(g=>g.top<contentBottom);
-      if(groups.length) groups[groups.length-1].bottom=Math.min(groups[groups.length-1].bottom,contentBottom);
-    } else { groups=[{top:ganttBodyTop(),bottom:contentBottom}]; }
-    let rows='';
-    groups.forEach(g=>{
-      const rowsTop=Math.max(g.top,ganttBodyTop()), h=Math.max(1,g.bottom-rowsTop);
-      svg.setAttribute('viewBox','0 '+rowsTop+' '+W+' '+h);
-      rows+='<tr><td><div class="pg-svg pg-rows">'+new XMLSerializer().serializeToString(svg)+'</div></td></tr>';
-    });
-    bodyInner='<table class="pgt"><thead><tr><th><div class="pg-svg">'+headStr+'</div></th></tr></thead><tbody>'+rows+'</tbody></table>';
+    // (3) 本体行のスライスを構築。emit(top,bottom,cls)=その y 範囲を1 <tr> として切り出す。
+    const bodyTop=ganttBodyTop();
+    const emit=(top,bottom,cls)=>{ const t=Math.max(top,bodyTop), h=Math.max(1,bottom-t);
+      svg.setAttribute('viewBox','0 '+t+' '+W+' '+h);
+      return '<tr class="'+cls+'"><td><div class="pg-svg pg-rows">'+new XMLSerializer().serializeToString(svg)+'</div></td></tr>'; };
+    const L=ganttLayout();
+    let rows='', curPhase=null, phaseTop=null, phaseBot=null, emittedAny=false, phaseBreak=false;
+    const flushPhase=()=>{ if(curPhase!==null){ rows+=emit(phaseTop,phaseBot, phaseBreak?'pg-phase pg-break':'pg-phase'); emittedAny=true; curPhase=null; } };
+    for(const s of L.slots){
+      if(s.kind==='empty') continue;                       // 末尾の空き行は印刷しない（従来どおり）
+      if(s.kind==='phase'){                                 // フェーズ見出し行＝新しいまとまりの開始
+        flushPhase(); curPhase=s.node.id; phaseTop=s.top; phaseBot=s.top+s.height; phaseBreak=emittedAny;
+      } else if(s.kind==='task'){
+        if(curPhase!==null && s.node && s.node.phaseId===curPhase){ phaseBot=s.top+s.height; }   // 同フェーズのタスクは束ねる
+        else { flushPhase(); rows+=emit(s.top,s.top+s.height,'pg-row'); emittedAny=true; }        // フェーズ外タスクは1行=1<tr>
+      }
+    }
+    flushPhase();
+    bodyInner=onceStr+'<table class="pgt"><thead><tr><th><div class="pg-svg">'+headStr+'</div></th></tr></thead><tbody>'+rows+'</tbody></table>';
   } else {
     svg.setAttribute('viewBox',vbX+' '+(vbY-bandH)+' '+vbW+' '+(vbH+bandH));
     bodyInner='<div class="pg-center"><div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div></div>';
@@ -8211,13 +8227,16 @@ function expPDF(){
   const win=window.open('','_blank');
   if(!win){ hint('ポップアップがブロックされました。PDF出力にはこのサイトのポップアップを許可してください'); return; }
   // v4.30(方式B): @page に size を指定せず、印刷ダイアログで用紙サイズ（A4/A3等）と向きを自由に選べる。倍率: svg{width:scale%}。
-  //   v5.00: <thead> を各ページ先頭で繰り返し、<tbody tr> は page-break-inside:avoid で「収まらないときだけ改ページ」。
+  //   v5.00: <thead>（時間軸＋列見出し）を各ページ先頭で繰り返し。v8.06追補: 本体を行/フェーズ単位の <tr> に分割して
+  //   改ページを行境界に落とし、全ページでヘッダーが再描画されるようにした（表題部は pg-once で1ページ目のみ）。
   const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+esc(winTitle)+'</title>'+
     '<style>@page{margin:10mm 10mm 10mm 25mm;}html,body{margin:0;padding:0;}'+
     '.pgt{width:100%;border-collapse:collapse;}'+
     '.pgt thead{display:table-header-group;}'+
     '.pgt th,.pgt td{padding:0;margin:0;}'+
     '.pgt tbody tr{page-break-inside:avoid;break-inside:avoid;}'+
+    '.pgt tbody tr.pg-break{page-break-before:always;break-before:page;}'+   // v8.06追補: フェーズの切れ目で必ず改ページ
+    '.pg-once{width:100%;text-align:center;font-size:0;}'+                    // v8.06追補: 表題部は1ページ目のみ
     '.pg-svg{width:100%;text-align:center;font-size:0;}'+
     '.pg-svg svg{width:'+scale+'%;max-width:none;height:auto;display:block;margin:0 auto;}'+
     '.pg-center{display:flex;flex-direction:column;justify-content:safe center;min-height:100vh;box-sizing:border-box;}'+'.pg-rows{margin-top:-1px;}'+
