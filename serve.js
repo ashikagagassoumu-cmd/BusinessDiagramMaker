@@ -4,7 +4,7 @@ const path = require('path');
 const dir = __dirname;
 const server = http.createServer((req, res) => {
   const reqPath = req.url.split('?')[0].split('#')[0];   // クエリ/ハッシュ除去（?v=... でのキャッシュ回避を許可）
-  const filePath = path.join(dir, decodeURIComponent(reqPath === '/' ? '/diagram_v8.05.html' : reqPath));
+  const filePath = path.join(dir, decodeURIComponent(reqPath === '/' ? '/diagram_v8.06.html' : reqPath));
   const ext = path.extname(filePath);
   const types = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.jpg':'image/jpeg'};
   fs.readFile(filePath, (err, data) => {
