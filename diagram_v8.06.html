@@ -8202,23 +8202,39 @@ function expPDF(){
     svg.setAttribute('viewBox','0 '+axisTop+' '+W+' '+(ganttBodyTop()-axisTop));
     const headStr=new XMLSerializer().serializeToString(svg);
     // (3) 本体行のスライスを構築。emit(top,bottom,cls)=その y 範囲を1 <tr> として切り出す。
+    //   ※各 <tr> は SVG 全体を1回直列化する。行ごとに <tr> を作るとタスク数の二乗コストで印刷が固まるため、
+    //     フェーズ外タスクは「1ページに収まる高さ」ごとのチャンクにまとめる（＝直列化回数=ページ数程度に抑える）。
     const bodyTop=ganttBodyTop();
     const emit=(top,bottom,cls)=>{ const t=Math.max(top,bodyTop), h=Math.max(1,bottom-t);
       svg.setAttribute('viewBox','0 '+t+' '+W+' '+h);
       return '<tr class="'+cls+'"><td><div class="pg-svg pg-rows">'+new XMLSerializer().serializeToString(svg)+'</div></td></tr>'; };
+    // 1チャンクの最大高さ(SVG座標)。倍率100%では svg 幅=用紙内容幅にフィットするため、W×(用紙縦横比)以下なら
+    //   おおむね1ページに収まる。0.7=A系横向き(1/1.414)を下限に、倍率ぶんは反比例で縮める。チャートが横長(W大)の
+    //   ときは縦に短く=チャンクは大きく=ページ数少。行が支配的(W小)なら小さく=ページごとに分割されヘッダーが反復。
+    const scaleFrac=Math.max(0.1,scale/100);
+    const maxChunkPx=Math.max(300,(W/scaleFrac)*0.7);
     const L=ganttLayout();
-    let rows='', curPhase=null, phaseTop=null, phaseBot=null, emittedAny=false, phaseBreak=false;
+    let rows='', emittedAny=false;
+    let chunkTop=null, chunkBot=null;                       // フェーズ外タスクの現在チャンク
+    const flushChunk=()=>{ if(chunkTop!==null){ rows+=emit(chunkTop,chunkBot,'pg-row'); emittedAny=true; chunkTop=null; } };
+    let curPhase=null, phaseTop=null, phaseBot=null, phaseBreak=false;
     const flushPhase=()=>{ if(curPhase!==null){ rows+=emit(phaseTop,phaseBot, phaseBreak?'pg-phase pg-break':'pg-phase'); emittedAny=true; curPhase=null; } };
     for(const s of L.slots){
-      if(s.kind==='empty') continue;                       // 末尾の空き行は印刷しない（従来どおり）
-      if(s.kind==='phase'){                                 // フェーズ見出し行＝新しいまとまりの開始
-        flushPhase(); curPhase=s.node.id; phaseTop=s.top; phaseBot=s.top+s.height; phaseBreak=emittedAny;
+      if(s.kind==='empty') continue;                        // 末尾の空き行は印刷しない（従来どおり）
+      if(s.kind==='phase'){                                  // フェーズ見出し行＝新しいまとまりの開始
+        flushChunk(); flushPhase(); curPhase=s.node.id; phaseTop=s.top; phaseBot=s.top+s.height; phaseBreak=emittedAny;
       } else if(s.kind==='task'){
         if(curPhase!==null && s.node && s.node.phaseId===curPhase){ phaseBot=s.top+s.height; }   // 同フェーズのタスクは束ねる
-        else { flushPhase(); rows+=emit(s.top,s.top+s.height,'pg-row'); emittedAny=true; }        // フェーズ外タスクは1行=1<tr>
+        else {                                              // フェーズ外タスク: 高さ maxChunkPx ごとのチャンクに束ねる
+          flushPhase();
+          const b=s.top+s.height;
+          if(chunkTop===null){ chunkTop=s.top; chunkBot=b; }
+          else if(b-chunkTop<=maxChunkPx){ chunkBot=b; }
+          else { flushChunk(); chunkTop=s.top; chunkBot=b; }
+        }
       }
     }
-    flushPhase();
+    flushChunk(); flushPhase();
     bodyInner=onceStr+'<table class="pgt"><thead><tr><th><div class="pg-svg">'+headStr+'</div></th></tr></thead><tbody>'+rows+'</tbody></table>';
   } else {
     svg.setAttribute('viewBox',vbX+' '+(vbY-bandH)+' '+vbW+' '+(vbH+bandH));
