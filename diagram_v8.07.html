@@ -32,7 +32,9 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .tbtn.red:hover{background:#dc2626;color:#fff}
 .gantt-hol-chk{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:#cbd5e1;cursor:pointer;padding:2px 5px;border-radius:4px;user-select:none;white-space:nowrap}
 .gantt-hol-chk:hover{background:#334155}
-.gantt-hol-chk input{margin:0;cursor:pointer;accent-color:#38bdf8}
+.gantt-hol-chk:has(input:checked){background:#2563eb;color:#fff}
+.gantt-hol-chk:has(input:checked):hover{background:#1d4ed8}
+.gantt-hol-chk input{margin:0;cursor:pointer;accent-color:#fff}
 .sep{width:1px;height:26px;background:#334155;margin:0 3px;flex-shrink:0}
 
 .mind-dim{opacity:.15}
@@ -327,10 +329,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="tbtn gantt-scale" data-scale="day" onclick="ganttSetScale('day')">日</button>
     <button class="tbtn gantt-scale" data-scale="week" onclick="ganttSetScale('week')">週</button>
     <button class="tbtn gantt-scale" data-scale="month" onclick="ganttSetScale('month')">月</button>
-    <span style="font-size:11px;color:#94a3b8;margin-left:8px" title="チェックした曜日・祝日を終日グレーアウト（時モードの夜間20:00〜翌6:00はチェックに関係なく常時グレー）">休日</span>
-    <label class="gantt-hol-chk" title="土曜を終日グレーアウト"><input type="checkbox" id="gantt-hol-sat" onchange="ganttSetHoliday('sat',this.checked)">土</label>
-    <label class="gantt-hol-chk" title="日曜を終日グレーアウト"><input type="checkbox" id="gantt-hol-sun" onchange="ganttSetHoliday('sun',this.checked)">日</label>
-    <label class="gantt-hol-chk" title="日本の祝日を自動判定して終日グレーアウト"><input type="checkbox" id="gantt-hol-jp" onchange="ganttSetHoliday('jp',this.checked)">祝</label>
+    <span style="font-size:11px;color:#cbd5e1;margin-left:8px;font-weight:600" title="チェックした曜日・祝日を『休日』として0:00〜24:00を終日グレー表示します（時モードの夜間20:00〜翌6:00はチェックに関係なく常時グレー）">休日（終日グレー）:</span>
+    <label class="gantt-hol-chk" title="土曜を休日（終日グレー）にする"><input type="checkbox" id="gantt-hol-sat" onchange="ganttSetHoliday('sat',this.checked)">土曜</label>
+    <label class="gantt-hol-chk" title="日曜を休日（終日グレー）にする"><input type="checkbox" id="gantt-hol-sun" onchange="ganttSetHoliday('sun',this.checked)">日曜</label>
+    <label class="gantt-hol-chk" title="日本の祝日を自動判定して休日（終日グレー）にする"><input type="checkbox" id="gantt-hol-jp" onchange="ganttSetHoliday('jp',this.checked)">祝日</label>
   </span>
   <div class="sep" id="mind-sep" style="display:none"></div>
   <span id="mind-tools" style="display:none;align-items:center;gap:6px">
