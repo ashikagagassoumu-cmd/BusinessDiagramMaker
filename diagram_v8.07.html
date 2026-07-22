@@ -8256,7 +8256,8 @@ function expPDF(){
     //     <thead>(display:table-header-group) が再描画されなかった（全スケール共通）。
     //   対策＝(1) 各ページ先頭で繰り返すのは「時間軸＋列見出し」だけにし（表題部＝工事名/図面名帯は1ページ目のみ）、
     //     (2) 本体を「フェーズのまとまり」または「1タスク=1行」に分割して <tr> 境界で必ず改ページが起きるようにし、
-    //     (3) フェーズの切れ目では page-break-before で必ず改ページ（ヘッダーは各ページ描画）。
+    //     (3) 各<tr>は page-break-inside:avoid ＝フェーズ/チャンクがページ境界で途切れる時だけ改ページ（ヘッダーは各ページ描画）。
+//         ※v8.07追補: 当初(v8.06追補)は「フェーズの切れ目で必ず改ページ」だったが、基本は1ページにまとめる方針へ変更。
     const _hdrOn=!!(S.gantt.header&&S.gantt.header.show);
     const axisTop=ganttHeadH();               // 時間軸ヘッダー帯の上端（見出し欄の下）
     const onceTop=_hdrOn?0:(-bandH);          // 1ページ目だけ出す表題部（見出し欄 or 図面名帯）の上端
@@ -8290,7 +8291,7 @@ function expPDF(){
     for(const s of L.slots){
       if(s.kind==='empty') continue;                        // 末尾の空き行は印刷しない（従来どおり）
       if(s.kind==='phase'){                                  // フェーズ見出し行＝新しいまとまりの開始
-        flushChunk(); flushPhase(); curPhase=s.node.id; phaseTop=s.top; phaseBot=s.top+s.height; phaseBreak=emittedAny;
+        flushChunk(); flushPhase(); curPhase=s.node.id; phaseTop=s.top; phaseBot=s.top+s.height; phaseBreak=false;   // v8.07追補: フェーズ毎の強制改ページを廃止。基本は1ページにまとめ、page-break-inside:avoid でフェーズがページ境界で途切れる時だけ改ページ
       } else if(s.kind==='task'){
         if(curPhase!==null && s.node && s.node.phaseId===curPhase){ phaseBot=s.top+s.height; }   // 同フェーズのタスクは束ねる
         else {                                              // フェーズ外タスク: 高さ maxChunkPx ごとのチャンクに束ねる
@@ -8319,7 +8320,7 @@ function expPDF(){
     '.pgt thead{display:table-header-group;}'+
     '.pgt th,.pgt td{padding:0;margin:0;}'+
     '.pgt tbody tr{page-break-inside:avoid;break-inside:avoid;}'+
-    '.pgt tbody tr.pg-break{page-break-before:always;break-before:page;}'+   // v8.06追補: フェーズの切れ目で必ず改ページ
+    '.pgt tbody tr.pg-break{page-break-before:always;break-before:page;}'+   // v8.06追補→v8.07追補で不使用化（pg-break は付与しない。フェーズは上の page-break-inside:avoid のみ＝途切れる時だけ改ページ）
     '.pg-once{width:100%;text-align:center;font-size:0;}'+                    // v8.06追補: 表題部は1ページ目のみ
     '.pg-svg{width:100%;text-align:center;font-size:0;}'+
     '.pg-svg svg{width:'+scale+'%;max-width:none;height:auto;display:block;margin:0 auto;}'+
