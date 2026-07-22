@@ -8224,12 +8224,33 @@ function expSVG(){
 // 図SVGを印刷用ウィンドウに展開し、ブラウザの印刷→「PDFとして保存」で出力する。
 // v5.00: PDFタイトル帯に出す日付（出力日＝今日）。yyyy年m月d日。
 function pdfTodayStr(){ const d=new Date(); return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'; }
-function expPDF(){
+// v8.07追補②: SVGの現在ビュー（viewBox）を高解像度PNG(dataURL)へラスタ化する。
+//   反復ヘッダー(<thead>)専用。複雑なガントSVGを table-header-group に直接置くと Chromium が
+//   2ページ目以降でヘッダーを反復描画しないため、ラスタ<img>に置き換えて確実に全ページへ出す。
+function svgViewToPngURL(svgEl,W,hSvg){
+  return new Promise((resolve,reject)=>{
+    const clone=svgEl.cloneNode(true);
+    clone.setAttribute('width',W); clone.setAttribute('height',hSvg);   // viewBox＋実寸で確実な内因サイズを与える
+    const s=new XMLSerializer().serializeToString(clone);
+    const img=new Image();
+    const targetW=Math.min(6000,Math.max(1600,Math.round(W*2)));        // 印刷十分な解像度へ拡大（上限で暴走防止）
+    const cw=targetW, ch=Math.max(1,Math.round(targetW*hSvg/W));
+    img.onload=()=>{ try{ const c=document.createElement('canvas'); c.width=cw; c.height=ch;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,cw,ch); resolve(c.toDataURL('image/png')); }catch(err){ reject(err); } };
+    img.onerror=()=>reject(new Error('svg raster failed'));
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(s);
+  });
+}
+async function expPDF(){
   const name=exportDiagramName();
   const winTitle=name||(getDT&&getDT().name)||'diagram';
   // v4.30: PDF出力倍率（%）。100%=用紙幅にフィット。10〜400% にクランプ。
   const scale=Math.max(10,Math.min(400,parseFloat((document.getElementById('pdf-scale')||{}).value)||100));
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // v8.07追補②: ヘッダーのラスタ化(await)を挟むため、ポップアップは同期のうちに開いておく（ブロック回避）。
+  const win=window.open('','_blank');
+  if(!win){ hint('ポップアップがブロックされました。PDF出力にはこのサイトのポップアップを許可してください'); return; }
+  try{ win.document.open(); win.document.write('<!DOCTYPE html><meta charset="utf-8"><title>'+esc(winTitle)+'</title><p style="font-family:sans-serif;color:#475569;padding:12px">PDF出力を生成しています…</p>'); win.document.close(); }catch(_){}
   // v5.00: 図のクローン（タイトル帯なし）。上部(負y)に「図面名＋日付」帯を描き、SVGごと倍率%で拡縮させる
   //   （HTML文字ではなくSVG内に置くことで、タイトル・日付・工程表ヘッダーがすべて倍率に追従する）。
   const {svg,W}=buildExportSvg(true);
@@ -8267,9 +8288,16 @@ function expPDF(){
       svg.setAttribute('viewBox','0 '+onceTop+' '+W+' '+(axisTop-onceTop));
       onceStr='<div class="pg-svg pg-once">'+new XMLSerializer().serializeToString(svg)+'</div>';
     }
-    // (2) 繰り返しヘッダー（時間軸＋列見出し）＝各ページ先頭で自動反復
-    svg.setAttribute('viewBox','0 '+axisTop+' '+W+' '+(ganttBodyTop()-axisTop));
-    const headStr=new XMLSerializer().serializeToString(svg);
+    // (2) 繰り返しヘッダー（時間軸＋列見出し）＝各ページ先頭で反復。
+    //   v8.07追補②(ヘッダー欠落バグ修正): 要素数の多いガントSVG(≈860要素)を <thead>(display:table-header-group)
+    //     に直接置くと Chromium が2ページ目以降でヘッダーを反復描画しない（filter/marker等の有無に依らず再現。
+    //     同じ複雑さの本体SVGは通常フローなので各ページ正常描画される＝反復ヘッダー特有の不具合）。対策＝ヘッダー
+    //     だけを高解像度PNGにラスタ化して <img> で置く（ラスタ<img>は反復描画が確実）。本体はSVGのまま。
+    const _headTop=axisTop, _headH=ganttBodyTop()-axisTop;
+    svg.setAttribute('viewBox','0 '+_headTop+' '+W+' '+_headH);
+    let headHtml;
+    try{ const _u=await svgViewToPngURL(svg,W,_headH); headHtml='<div class="pg-svg"><img class="pg-hdr" src="'+_u+'"></div>'; }
+    catch(_e){ svg.setAttribute('viewBox','0 '+_headTop+' '+W+' '+_headH); headHtml='<div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div>'; }   // 失敗時は従来のSVG反復にフォールバック
     // (3) 本体行のスライスを構築。emit(top,bottom,cls)=その y 範囲を1 <tr> として切り出す。
     //   ※各 <tr> は SVG 全体を1回直列化する。行ごとに <tr> を作るとタスク数の二乗コストで印刷が固まるため、
     //     フェーズ外タスクは「1ページに収まる高さ」ごとのチャンクにまとめる（＝直列化回数=ページ数程度に抑える）。
@@ -8278,10 +8306,16 @@ function expPDF(){
       svg.setAttribute('viewBox','0 '+t+' '+W+' '+h);
       return '<tr class="'+cls+'"><td><div class="pg-svg pg-rows">'+new XMLSerializer().serializeToString(svg)+'</div></td></tr>'; };
     // 1チャンクの最大高さ(SVG座標)。倍率100%では svg 幅=用紙内容幅にフィットするため、W×(用紙縦横比)以下なら
-    //   おおむね1ページに収まる。0.7=A系横向き(1/1.414)を下限に、倍率ぶんは反比例で縮める。チャートが横長(W大)の
-    //   ときは縦に短く=チャンクは大きく=ページ数少。行が支配的(W小)なら小さく=ページごとに分割されヘッダーが反復。
+    //   おおむね1ページに収まる。倍率ぶんは反比例で縮める。チャートが横長(W大)のときは縦に短く=チャンクは大きく
+    //   =ページ数少。行が支配的(W小)なら小さく=ページごとに分割されヘッダーが反復。
+    // v8.07追補②(ヘッダー欠落バグ修正): 1つの<tr>が用紙1ページの高さを超えると、その続きページで
+    //   <thead>(display:table-header-group)が反復されず2ページ目以降の時間軸ヘッダーが消える（Chromiumの仕様）。
+    //   従来は係数0.7だが、各ページ先頭で反復するヘッダー高さ(headerPx)を差し引いていなかったため
+    //   「ヘッダー＋1チャンク」が用紙(A/B系横向き 内容比≒0.707)を僅かに超過→続きページでヘッダーが消えていた。
+    //   対策＝ヘッダー高さを差し引き、係数を0.60へ下げて安全余裕を確保（横向き用紙で必ず1ページに収まる）。
     const scaleFrac=Math.max(0.1,scale/100);
-    const maxChunkPx=Math.max(300,(W/scaleFrac)*0.7);
+    const headerPx=Math.max(0,bodyTop-axisTop);                    // 各ページ先頭で反復する時間軸ヘッダーの高さ(SVG座標)
+    const maxChunkPx=Math.max(300,(W/scaleFrac)*0.60-headerPx);
     const L=ganttLayout();
     let rows='', emittedAny=false;
     let chunkTop=null, chunkBot=null;                       // フェーズ外タスクの現在チャンク
@@ -8307,13 +8341,11 @@ function expPDF(){
       }
     }
     flushChunk(); flushPhase();
-    bodyInner=onceStr+'<table class="pgt"><thead><tr><th><div class="pg-svg">'+headStr+'</div></th></tr></thead><tbody>'+rows+'</tbody></table>';
+    bodyInner=onceStr+'<table class="pgt"><thead><tr><th>'+headHtml+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
   } else {
     svg.setAttribute('viewBox',vbX+' '+(vbY-bandH)+' '+vbW+' '+(vbH+bandH));
     bodyInner='<div class="pg-center"><div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div></div>';
   }
-  const win=window.open('','_blank');
-  if(!win){ hint('ポップアップがブロックされました。PDF出力にはこのサイトのポップアップを許可してください'); return; }
   // v4.30(方式B): @page に size を指定せず、印刷ダイアログで用紙サイズ（A4/A3等）と向きを自由に選べる。倍率: svg{width:scale%}。
   //   v5.00: <thead>（時間軸＋列見出し）を各ページ先頭で繰り返し。v8.06追補: 本体を行/フェーズ単位の <tr> に分割して
   //   改ページを行境界に落とし、全ページでヘッダーが再描画されるようにした（表題部は pg-once で1ページ目のみ）。
@@ -8327,6 +8359,7 @@ function expPDF(){
     '.pg-once{width:100%;text-align:center;font-size:0;}'+                    // v8.06追補: 表題部は1ページ目のみ
     '.pg-svg{width:100%;text-align:center;font-size:0;}'+
     '.pg-svg svg{width:'+scale+'%;max-width:none;height:auto;display:block;margin:0 auto;}'+
+    '.pg-hdr{width:'+scale+'%;max-width:none;height:auto;display:block;margin:0 auto;}'+   // v8.07追補②: ラスタ化した反復ヘッダー画像（各ページ先頭）
     '.pg-center{display:flex;flex-direction:column;justify-content:safe center;min-height:100vh;box-sizing:border-box;}'+'.pg-rows{margin-top:-1px;}'+
     '.hint{font-family:sans-serif;font-size:13px;color:#475569;padding:8px 12px;}'+
     '@media print{.hint{display:none;}}</style></head><body>'+
