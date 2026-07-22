@@ -8287,7 +8287,10 @@ function expPDF(){
     let chunkTop=null, chunkBot=null;                       // フェーズ外タスクの現在チャンク
     const flushChunk=()=>{ if(chunkTop!==null){ rows+=emit(chunkTop,chunkBot,'pg-row'); emittedAny=true; chunkTop=null; } };
     let curPhase=null, phaseTop=null, phaseBot=null, phaseBreak=false;
-    const flushPhase=()=>{ if(curPhase!==null){ rows+=emit(phaseTop,phaseBot, phaseBreak?'pg-phase pg-break':'pg-phase'); emittedAny=true; curPhase=null; } };
+    // v8.07追補: フェーズも1ページ相当(maxChunkPx)ごとに分割し、各<tr>が用紙高さを超えないようにする
+    //   （<tr>が用紙高さを超えると <thead> の日付ヘッダーが反復されず2ページ目以降で消えるため）。
+    //   強制改ページ(pg-break)はしない＝基本は1ページにまとめ、フェーズがページ境界で途切れる時だけ改ページ。
+    const flushPhase=()=>{ if(curPhase!==null){ let a=phaseTop; while(a<phaseBot){ const b=Math.min(phaseBot,a+maxChunkPx); rows+=emit(a,b,'pg-phase'); a=b; } emittedAny=true; curPhase=null; } };
     for(const s of L.slots){
       if(s.kind==='empty') continue;                        // 末尾の空き行は印刷しない（従来どおり）
       if(s.kind==='phase'){                                  // フェーズ見出し行＝新しいまとまりの開始
