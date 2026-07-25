@@ -3634,11 +3634,16 @@ function ganttSetCell(n,colId,row,label,val){ ganttSetColLabel(colId,row,label);
 // セルの折返し行配列（本文のみ。空なら ['']）。ぶら下げ用に列幅からラベル幅を控除。
 function ganttCellLines(n,col,row){ const val=ganttCellVal(n,col.id,row); if(!val||!String(val).trim()) return ['']; const wrapW=Math.max(20,(col.width||120)-GANTT_DESC_INDENT-8); const bodyW=Math.max(24, wrapW-ganttLabelW(ganttCellLabel(n,col.id,row))); return wrapText(String(val),bodyW,11); }
 function ganttCellLineCount(n,col,row){ return ganttCellLines(n,col,row).length; }
-function ganttRowMaxLines(n,row){ let m=1; ganttColList().forEach(c=>{ m=Math.max(m,ganttCellLineCount(n,c,row)); }); return m; }
+// そのセルが実際に何か描かれるか（本文がある／追加列で項目名がある）。描画側の表示条件と同じ判定をここに集約。
+function ganttCellShown(n,col,row){ const lab=ganttColLabel(col.id,row); return !!(ganttCellVal(n,col.id,row).trim()||(col.id!=='c0'&&lab&&lab.trim())); }
+// v8.08追補④: 行3（既定=概要）は何も描かれないなら0行＝空白を作らない（ユーザー要望）。
+//   行4（既定=担当）は空でも1行残す＝タスクをまたいで担当欄の縦位置が揃う（ユーザー選択）。
+function ganttRowMaxLines(n,row){ let m=(row==='r3')?0:1; ganttColList().forEach(c=>{ if(ganttCellShown(n,c,row)) m=Math.max(m,ganttCellLineCount(n,c,row)); }); return m; }
 // タスク帯の高さ = 上下padding + (名称1 + 工程1 + 行3最大行数 + 行4最大行数)*行高
 function ganttRowHeight(n){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*(2 + ganttRowMaxLines(n,'r3') + ganttRowMaxLines(n,'r4')); } // v5.00 列モデル／v5.01: 行3上の余白GAPを加算
-// v5.03(微修正): 空欄行も「空のタスク行」と同じ高さ（既定タスク行＝r3/r4各1行）にする
-function ganttEmptyRowHeight(){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*4; }
+// v5.03(微修正): 空欄行も「空のタスク行」と同じ高さにする
+//   v8.08追補④: 概要が空なら詰めるようにしたので、空のタスク行＝名称＋工程＋担当の3行。
+function ganttEmptyRowHeight(){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*3; }
 // 行スロット（タスク帯＋末尾の空き行）。top/height を累積で算出。
 let _ganttLayout=null;
 let _ganttHeadModel=null;   // v8.00: 見出しブロックのレイアウト（高さ等）キャッシュ
@@ -4540,11 +4545,11 @@ function renderGanttNameCol(){
     cols.forEach((col,ci)=>{
       const cw=col.width;
       [['r3',r3Top,r3n],['r4',r4Top,r4n]].forEach(([row,ry,rn])=>{
-        addHit(n,'cell:'+col.id+':'+row,colx,ry,cw,lh*rn);
+        if(rn>0) addHit(n,'cell:'+col.id+':'+row,colx,ry,cw,lh*rn);   // v8.08追補④: 0行のセル（詰めた概要）には当たり判定を置かない
         const lab=ganttCellLabel(n,col.id,row);
         // 微修正(v8.00据置): 追加列は項目名(ラベル)だけでも表示する（本文が空でも項目名が見えるように）。
         //   c0(概要/担当)は従来どおり本文が空なら既定ラベルも非表示＝空タスクで「概要：/担当：」を出さない。
-        if(ganttCellVal(n,col.id,row).trim() || (col.id!=='c0' && lab && lab.trim())){
+        if(ganttCellShown(n,col,row)){
           const hang=ganttLabelW(lab);
           ganttCellLines(n,col,row).forEach((ln,li)=>addText(colx+di+(li?hang:0), ry+li*lh+lh/2, (li?ln:(lab?lab+'：':'')+ln), {sel,fs:11,noClip:true}));
         }
