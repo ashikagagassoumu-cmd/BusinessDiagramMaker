@@ -777,6 +777,7 @@ const GANTT_BAR_H={gantt_task:30.24,gantt_milestone:20,gantt_summary:21.6}; // �
 const GANTT_SCALE_COL_W={hour:24,day:32,week:48,month:80}; // スケール別の既定列幅（v8.06: hour=1時間=24px）
 const GANTT_SHADE_NIGHT='#f3f6f9';  // v8.07: 時モードの夜間帯（20:00〜翌6:00）の薄グレー
 const GANTT_SHADE_FULL='#eef2f6';   // v8.07: 休日の終日グレー（従来の土日網掛けと同トーン）
+const GANTT_HEAD_MIN_W=1120; // 見出し欄（承認欄＋凡例）が収まる最小キャンバス幅（v8.00）。v8.08追補②: 折り返しONはこの幅まで列幅を広げる
 const GANTT_BAND_LABEL_H=22;  // v8.08: 折り返し時の段見出し（帯）の高さ
 const GANTT_BAND_GAP=14;      // v8.08: 段と段のあいだの余白
 
@@ -1251,6 +1252,14 @@ let _ganttColW=null;
 function ganttColW(){ return _ganttColW!=null?_ganttColW:S.gantt.colWidth; }
 function ganttComputeColW(){
   const g=S.gantt, base=g.colWidth;
+  // v8.08追補②: 折り返しONは横スクロールを無くすモード。見出し欄ONでキャンバスが最小幅
+  //   (GANTT_HEAD_MIN_W) まで広がるとき、1段が狭いままだと右に大きな余白が残る。列幅を広げて
+  //   段を幅いっぱいに使う（v5.02 の「画面いっぱいに拡大」と同じ考え方。ズーム値 colWidth は下限）。
+  if(ganttWrapOn()){
+    if(!(g.header&&g.header.show)) return base;
+    const avail=GANTT_HEAD_MIN_W-ganttLeftW(), mx=ganttWrapMaxBandSpan();
+    return (avail>0&&mx>0)? Math.max(base,Math.ceil(avail/mx)) : base;
+  }
   if((g.scale!=='week'&&g.scale!=='month')||!g.endDate) return base;
   const wrap=document.getElementById('canvas-wrap');
   if(!wrap||!wrap.clientWidth) return base;
@@ -1400,6 +1409,12 @@ function ganttLayer(id){
 // 折り返し中の「1段の帯幅／行の下端」。通常描画ではキャンバス全体を返す。
 function ganttStripW(){ return ganttWrapOn()? (ganttLeftW()+ganttTotalUnits()*ganttColW()) : SVG_W; }
 function ganttStripBottom(){ return ganttWrapOn()? ganttLayout().bottom : SVG_H; }
+// v8.08追補②: 「描画してよい右端」。折り返し中は段の右端（＝区間の終わり）、通常はキャンバス右端。
+//   段より右は次の段のための余白なので、横線・フェーズ帯・はみ出し文字はここで止める。
+function ganttRightEdge(){ return ganttWrapOn()? Math.min(ganttStripW(),ganttBandEndX()) : SVG_W; }
+// v8.08追補②: 実際に描く段のうち最も長い段の正味の長さ（単位数・小数可）。キャンバス幅と列幅の自動拡大に使う。
+//   列数（切り上げ）ではなく正味の長さを使う＝週目盛り＋月ごとで切り上げたぶんが右の空白にならない。
+function ganttWrapMaxBandSpan(){ let mx=0.01; ganttBands().forEach(b=>{ mx=Math.max(mx,ganttWrapBandUnitsExact(b.i)); }); return mx; }
 function ganttBandLabelText(k){
   const g=S.gantt, bs=ganttBands(), b=bs[k];
   const s=ganttParseDate(ganttWrapBandStart(b?b.i:0)), W='日月火水木金土';
@@ -1848,10 +1863,8 @@ function calcCanvasSize(){
     const g=S.gantt;
     if(ganttWrapOn()){
       // v8.08: 折り返し=幅は「最も列数の多い段」に合わせ、高さは段数ぶん積む（横スクロールを不要にする）
-      const bs=ganttBands(); let mx=1;
-      bs.forEach(b=>{ mx=Math.max(mx,ganttWrapBandUnits(b.i)); });
-      SVG_W=ganttLeftW()+mx*ganttColW();
-      if(g.header&&g.header.show) SVG_W=Math.max(SVG_W,1120);
+      SVG_W=ganttLeftW()+ganttWrapMaxBandSpan()*ganttColW();
+      if(g.header&&g.header.show) SVG_W=Math.max(SVG_W,GANTT_HEAD_MIN_W);
       SVG_H=Math.max(400, ganttHeadH()+ganttBandsTotalH()+8);
       return;
     }
@@ -1871,7 +1884,7 @@ function calcCanvasSize(){
       SVG_W=Math.max(MIN_CANVAS, ganttLeftW()+Math.ceil(maxUnit)*ganttColW()+40);
     }
     // v8.00: 見出し表示時は右ゾーン（承認欄＋凡例）が収まる最小幅を確保（狭い図でも見出しが崩れない）
-    if(S.gantt.header&&S.gantt.header.show) SVG_W=Math.max(SVG_W, 1120);
+    if(S.gantt.header&&S.gantt.header.show) SVG_W=Math.max(SVG_W, GANTT_HEAD_MIN_W);
     SVG_H=Math.max(400, ganttLayout().bottom+GANTT_ROW_H);   // v4.04: 可変行高の累積高さ＋余白
     return;
   }
@@ -4100,7 +4113,7 @@ function renderGanttGrid(){
   ganttLayout().slots.forEach(s=>{
     if(s.kind==='phase'){
       const fill=ganttLighten((s.node&&s.node.color)||SD.gantt_summary.fill,0.82);
-      gg.appendChild(e('rect',{x:x0,y:s.top,width:Math.max(0,SVG_W-x0),height:s.height,fill,'pointer-events':'none'}));
+      gg.appendChild(e('rect',{x:x0,y:s.top,width:Math.max(0,ganttRightEdge()-x0),height:s.height,fill,'pointer-events':'none'}));
     }
   });
   ganttRowBoundaries().forEach(y=>{ if(y>top) gg.appendChild(e('line',{x1:leftW,y1:y,x2:ganttStripW(),y2:y,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'})); });
@@ -4205,7 +4218,7 @@ function renderGanttHeader(){
     }
     drawTopCell(x0+groupStart*cw,(units-groupStart)*cw,groupKey);
   }
-  gg.appendChild(e('line',{x1:0,y1:topH,x2:SVG_W,y2:topH,stroke:'#334155','stroke-width':1,'pointer-events':'none'}));
+  gg.appendChild(e('line',{x1:0,y1:topH,x2:ganttRightEdge(),y2:topH,stroke:'#334155','stroke-width':1,'pointer-events':'none'}));
   // v6.10: 月境界をヘッダー（黒背景）内では白線にして目立たせる（全スケール・月初位置 y=0〜ヘッダー下端）。
   //   ボディ側は薄いグレー(renderGanttGrid)。背景に応じて色を切替＝黒ヘッダーは白・白ボディは薄灰。
   {
@@ -4338,7 +4351,7 @@ function renderGanttTaskBar(gg,n,sel){
   if(label && S.gantt.endDate){
     const startX=inside? n.x+8 : n.x;
     const approxW=label.length*fs;            // 全角想定の概算幅
-    if(startX+approxW > SVG_W){ t.setAttribute('text-anchor','end'); t.setAttribute('x', SVG_W-4); }
+    if(startX+approxW > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
   }
   t.textContent=label; grp.appendChild(t);
   attachGanttNodeHandlers(grp,n);
@@ -4366,7 +4379,7 @@ function renderGanttMilestone(gg,n,sel){
     // v4.30: マイルストーンの文字はシェイプの上に中央揃えで表示（旧: 右横・縦中央）
     const t=e('text',{x:cx,y:n.y-3,'text-anchor':'middle','dominant-baseline':'auto','font-size':'12',fill:'#1e293b','pointer-events':'none'});
     // v5.00 ②: 完了日で表示範囲を区切ったとき、右端(SVG_W)からはみ出すマイルストーン文字も右詰めに。
-    if(S.gantt.endDate && cx + n.text.length*12/2 > SVG_W){ t.setAttribute('text-anchor','end'); t.setAttribute('x', SVG_W-4); }
+    if(S.gantt.endDate && cx + n.text.length*12/2 > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
     t.textContent=n.text; grp.appendChild(t);
   }
   attachGanttNodeHandlers(grp,n);
@@ -4381,14 +4394,27 @@ function renderGanttPhaseBars(){
     const slot=ganttSlotOf(p.id); if(!slot) return;     // フェーズ専用ヘッダー行スロット
     const r=ganttPhaseRange(p); if(!r) return;
     // v4.20: 終端+1日で実期間幅。v8.06: 時モードは終了時刻を排他的に扱う（+0）。
-    const x=ganttDateToX(r.start), ex=(g.scale==='hour')?ganttDateToX(r.end):ganttDateToX(ganttAddUnit(r.end,1,'day'));
+    let x=ganttDateToX(r.start), ex=(g.scale==='hour')?ganttDateToX(r.end):ganttDateToX(ganttAddUnit(r.end,1,'day'));
+    // v8.08追補②: 折り返しONではロールアップバーもこの段の帯で切る（タスクバーと同じ扱い）。
+    //   切らないと段の右外まで伸びて次の段の領域を横切ってしまう。はみ出す側は矢羽根で「続く」を示す。
+    let cutL=false, cutR=false;
+    if(ganttWrapOn()){
+      const w0=ganttLeftW(), w1=ganttBandEndX();
+      if(ex<=w0+0.01||x>=w1-0.01) return;   // この段には現れないフェーズ
+      if(x<w0){ x=w0; cutL=true; }
+      if(ex>w1){ ex=w1; cutR=true; }
+    }
     const w=Math.max(6,ex-x);
     const sel=S.sel.includes(p.id);
     const fill=p.color||SD.gantt_summary.fill, stroke=sel?'#2563eb':(p.stroke||SD.gantt_summary.stroke);
     const grp=e('g'); grp.style.cursor='pointer';
     // 左の縦ブラケットと同じ形状を横向きに（上にスパイン本体＋左右端が下へ脚＝下のタスクを包む）
     const yTop=slot.top+2, bodyH=15, depth=Math.min(slot.height-3,25), cap=Math.min(11,Math.max(5,w*0.22));
-    const d=`M${x},${yTop} L${x},${yTop+depth} L${x+cap},${yTop+bodyH} L${x+w-cap},${yTop+bodyH} L${x+w},${yTop+depth} L${x+w},${yTop} Z`;
+    // v8.08追補②: 段をまたぐ側は「脚」を出さず矢羽根にする（切らない側は従来と同じ形）。
+    const chv=Math.min(GANTT_CHEV_W,w/2);
+    const dL=cutL?`M${x+chv},${yTop} L${x},${yTop+bodyH/2} L${x+chv},${yTop+bodyH}`:`M${x},${yTop} L${x},${yTop+depth} L${x+cap},${yTop+bodyH}`;
+    const dR=cutR?`L${x+w},${yTop+bodyH/2} L${x+w-chv},${yTop}`:`L${x+w},${yTop+depth} L${x+w},${yTop}`;
+    const d=`${dL} L${cutR?x+w-chv:x+w-cap},${yTop+bodyH} ${dR} Z`;
     grp.appendChild(e('path',{d,fill,stroke,'stroke-width':sel?2:1.4,'stroke-linejoin':'round'}));
     // フェーズ名（スパイン上に白で。バーが狭ければ右側に濃色で）
     const label=p.text||'';
@@ -4399,6 +4425,8 @@ function renderGanttPhaseBars(){
         t.textContent=ganttClip(label,w-14,11); grp.appendChild(t);
       } else {
         const t=e('text',{x:x+w+6,y:ty,'dominant-baseline':'middle','font-size':'11','font-weight':'700',fill:'#334155','pointer-events':'none'});
+        // v8.08追補②: バー右のフェーズ名が段からはみ出すときは右詰めにして段内へ収める
+        if(ganttWrapOn()&&x+w+6+label.length*11>ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x',ganttRightEdge()-4); }
         t.textContent=label; grp.appendChild(t);
       }
     }
@@ -4592,6 +4620,7 @@ function renderGanttEdges(){
   S.edges.forEach(ed=>{
     const fn=S.nodes.find(n=>n.id===ed.from), tn=S.nodes.find(n=>n.id===ed.to);
     if(!fn||!tn||!isGanttShape(fn.type)||!isGanttShape(tn.type))return;
+    if(ganttWrapOn()&&(!ganttSlotOf(fn.id)||!ganttSlotOf(tn.id)))return;   // v8.08追補②: この段に出ていない行への線は描かない（n.x/n.y が段外で線が飛ぶ）
     const dep=ed.depType||'FS';
     // 端点: dep種別ごとに from/to の左端(start)・右端(end)を選択
     const fromRight=(dep==='FS'||dep==='FF');   // from終了側=右端
