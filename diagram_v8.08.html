@@ -3636,14 +3636,13 @@ function ganttCellLines(n,col,row){ const val=ganttCellVal(n,col.id,row); if(!va
 function ganttCellLineCount(n,col,row){ return ganttCellLines(n,col,row).length; }
 // そのセルが実際に何か描かれるか（本文がある／追加列で項目名がある）。描画側の表示条件と同じ判定をここに集約。
 function ganttCellShown(n,col,row){ const lab=ganttColLabel(col.id,row); return !!(ganttCellVal(n,col.id,row).trim()||(col.id!=='c0'&&lab&&lab.trim())); }
-// v8.08追補④: 行3（既定=概要）は何も描かれないなら0行＝空白を作らない（ユーザー要望）。
-//   行4（既定=担当）は空でも1行残す＝タスクをまたいで担当欄の縦位置が揃う（ユーザー選択）。
-function ganttRowMaxLines(n,row){ let m=(row==='r3')?0:1; ganttColList().forEach(c=>{ if(ganttCellShown(n,c,row)) m=Math.max(m,ganttCellLineCount(n,c,row)); }); return m; }
+// v8.08追補④: 何も描かれない項目は行を作らない＝空白を詰める（行3=概要／行4=担当のどちらも／ユーザー要望）。
+function ganttRowMaxLines(n,row){ let m=0; ganttColList().forEach(c=>{ if(ganttCellShown(n,c,row)) m=Math.max(m,ganttCellLineCount(n,c,row)); }); return m; }
 // タスク帯の高さ = 上下padding + (名称1 + 工程1 + 行3最大行数 + 行4最大行数)*行高
 function ganttRowHeight(n){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*(2 + ganttRowMaxLines(n,'r3') + ganttRowMaxLines(n,'r4')); } // v5.00 列モデル／v5.01: 行3上の余白GAPを加算
 // v5.03(微修正): 空欄行も「空のタスク行」と同じ高さにする
-//   v8.08追補④: 概要が空なら詰めるようにしたので、空のタスク行＝名称＋工程＋担当の3行。
-function ganttEmptyRowHeight(){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*3; }
+//   v8.08追補④: 概要・担当が空なら詰めるようにしたので、空のタスク行＝名称＋工程の2行。
+function ganttEmptyRowHeight(){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*2; }
 // 行スロット（タスク帯＋末尾の空き行）。top/height を累積で算出。
 let _ganttLayout=null;
 let _ganttHeadModel=null;   // v8.00: 見出しブロックのレイアウト（高さ等）キャッシュ
