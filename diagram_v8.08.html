@@ -777,6 +777,7 @@ const GANTT_BAR_H={gantt_task:30.24,gantt_milestone:20,gantt_summary:21.6}; // �
 const GANTT_SCALE_COL_W={hour:24,day:32,week:48,month:80}; // スケール別の既定列幅（v8.06: hour=1時間=24px）
 const GANTT_SHADE_NIGHT='#f3f6f9';  // v8.07: 時モードの夜間帯（20:00〜翌6:00）の薄グレー
 const GANTT_SHADE_FULL='#eef2f6';   // v8.07: 休日の終日グレー（従来の土日網掛けと同トーン）
+const GANTT_HEAD_MIN_W=1120; // 見出し欄（承認欄＋凡例）が収まる最小キャンバス幅（v8.00）。v8.08追補②: 折り返しONはこの幅まで列幅を広げる
 const GANTT_BAND_LABEL_H=22;  // v8.08: 折り返し時の段見出し（帯）の高さ
 const GANTT_BAND_GAP=14;      // v8.08: 段と段のあいだの余白
 
@@ -1211,6 +1212,7 @@ function ganttAddUnit(date,n,scale){
   else if(scale==='week') d.setDate(d.getDate()+n*7);
   else if(scale==='month') d.setMonth(d.getMonth()+n);
   else if(scale==='hour') d.setHours(d.getHours()+n);   // v8.06: 1時間モード
+  else if(scale==='year') d.setFullYear(d.getFullYear()+n);   // v8.08: 折り返し単位「年ごと」用
   return d;
 }
 // d1 から d2 までの単位数（scale）。週は7日単位、月は暦月差、v8.06: 時は3600秒単位で算出
@@ -1235,7 +1237,7 @@ function ganttLeftW(){return ganttPhaseColW()+ganttColsTotalW();}   // v4.04: �
 // 時間軸の原点（v4.20: 週=開始日が属する週の月曜／月=開始月の1日 に揃え、列と日付ラベル・
 // シェイプ位置を一致させる。日スケールは従来どおり開始日そのもの）
 function ganttAxisOrigin(){
-  if(_gwBand!=null) return ganttWrapBandStart(_gwBand);   // v8.08: 折り返し中は段の先頭が原点
+  { const b=ganttCurBand(); if(b) return ganttWrapBandStart(b.i); }   // v8.08: 折り返し中は段の先頭が原点
   const g=S.gantt, d=ganttParseDate(g.startDate);
   if(g.scale==='hour') return ganttFmtDate(d);   // v8.07: 時モードは初日0:00始まり（開始日の時刻を切り捨てて当日00:00を原点に）
   if(g.scale==='week') return ganttFmtDate(ganttMonday(d));
@@ -1250,6 +1252,14 @@ let _ganttColW=null;
 function ganttColW(){ return _ganttColW!=null?_ganttColW:S.gantt.colWidth; }
 function ganttComputeColW(){
   const g=S.gantt, base=g.colWidth;
+  // v8.08追補②: 折り返しONは横スクロールを無くすモード。見出し欄ONでキャンバスが最小幅
+  //   (GANTT_HEAD_MIN_W) まで広がるとき、1段が狭いままだと右に大きな余白が残る。列幅を広げて
+  //   段を幅いっぱいに使う（v5.02 の「画面いっぱいに拡大」と同じ考え方。ズーム値 colWidth は下限）。
+  if(ganttWrapOn()){
+    if(!(g.header&&g.header.show)) return base;
+    const avail=GANTT_HEAD_MIN_W-ganttLeftW(), mx=ganttWrapMaxBandSpan();
+    return (avail>0&&mx>0)? Math.max(base,Math.ceil(avail/mx)) : base;
+  }
   if((g.scale!=='week'&&g.scale!=='month')||!g.endDate) return base;
   const wrap=document.getElementById('canvas-wrap');
   if(!wrap||!wrap.clientWidth) return base;
@@ -1270,21 +1280,34 @@ function ganttXToDate(x){
   return ganttFmt(ganttAddUnit(ganttAxisOrigin(),units,g.scale),g.scale);   // v8.06: hour は時刻付きで返す
 }
 // ── v8.08: 折り返し表示（時間軸を一定の区切りごとに次の段へ折り返す）──
-//   S.gantt.wrap: 'off'（既定・従来どおり右へ一直線）/ 'day' / 'week' / 'month' = 折り返しの単位。
-//   考え方は「折り返し単位は目盛り単位より1段上」。列が段の境界にぴったり揃う組み合わせだけを許す:
-//     目盛り=時 → 日ごと（1段=24列） / 目盛り=日 → 週ごと（1段=7列・日曜始まり）または月ごと（1段=その月の日数）。
-//   週/月目盛りは1列が粗く境界に揃わないため対象外（休日グレーアウトが非対象なのと同じ理由）。
+//   S.gantt.wrap: 'off'（既定・従来どおり右へ一直線）/ 'day' / 'week' / 'month' / 'year' = 折り返しの単位。
+//   考え方は「折り返し単位は目盛り単位より1段上」:
+//     目盛り=時 → 日ごと(1段24列) ／ 目盛り=日 → 週ごと(1段7列・日曜始まり)・月ごと(1段=その月の日数)
+//     目盛り=週 → 月ごと(1日〜月末を表示) ／ 目盛り=月 → 年ごと(1段12列)
+//   1段=1カレンダー区間。週目盛り＋月ごとのように列数が割り切れない場合は列を切り上げて描くが、
+//   バーは区間の終わり（月末）で切る＝次の月のバーが前の段に漏れない。
 //   描画は「段ごとに軸原点を段の先頭へ差し替え、Yは平行移動グループでずらす」方式。これにより
-//   既存の各描画関数の座標計算（段0のローカル座標）をそのまま再利用できる。
-let _gwBand=null;   // 描画中の段index（null=折り返しOFF／通常描画）
-let _gwDY=0;        // その段のY平行移動量
-function ganttWrapChoices(scale){ return scale==='hour'?['day']:(scale==='day'?['week','month']:[]); }
+//   既存の各描画関数の座標計算（段のローカル座標）をそのまま再利用できる。
+//   v8.08追補: 段ごとに「その段に工程がある行」だけを出す（無い行は隠す／工程が1つも無い段は段ごと省略）。
+//     このため段の高さは段ごとに変わる。段の一覧は ganttBands() が [{i,dy,H,layout}] を返す形でキャッシュする
+//     （i=カレンダー上の何番目の区間か／dy=Y平行移動量／H=段の高さ／layout=その段の行レイアウト）。
+let _gwBand=null;    // 描画中の段（ganttBands() の添字。null=折り返しOFF／通常描画）
+let _gwDY=0;         // その段のY平行移動量
+let _gwBands=null;   // 段一覧キャッシュ（renderGantt 冒頭で作り直す）
+function ganttWrapChoices(scale){
+  if(scale==='hour') return ['day'];
+  if(scale==='day')  return ['week','month'];
+  if(scale==='week') return ['month'];
+  if(scale==='month')return ['year'];
+  return [];
+}
 function ganttWrapOn(){ const g=S.gantt; if(!g)return false; const w=g.wrap; return !!w&&w!=='off'&&ganttWrapChoices(g.scale).indexOf(w)>=0; }
-// 折り返し単位の境界へ切り下げた日付（週=その週の日曜／月=月初／日=その日）
+// 折り返し単位の境界へ切り下げた日付（週=その週の日曜／月=月初／年=1月1日／日=その日）
 function ganttWrapAlignDown(dateStr,w){
   const d=ganttParseDate(dateStr);
-  if(w==='week'){ const s=new Date(d.getFullYear(),d.getMonth(),d.getDate()-d.getDay()); return ganttFmtDate(s); }
+  if(w==='week') return ganttFmtDate(new Date(d.getFullYear(),d.getMonth(),d.getDate()-d.getDay()));
   if(w==='month') return ganttFmtDate(new Date(d.getFullYear(),d.getMonth(),1));
+  if(w==='year') return ganttFmtDate(new Date(d.getFullYear(),0,1));
   return ganttFmtDate(d);
 }
 function ganttWrapBandStart(i){ const g=S.gantt; return ganttFmtDate(ganttAddUnit(ganttWrapAlignDown(g.startDate,g.wrap),i,g.wrap)); }
@@ -1298,27 +1321,58 @@ function ganttWrapEndDate(){
   if(g.endDate){ const ed=ganttParseDate(g.endDate); if(ed>maxD)maxD=ed; }
   return maxD;
 }
-function ganttWrapBandCount(){
+// カレンダー上の区間数（工程が無い区間も含む。実際に描く段は ganttBands() で間引く）
+function ganttWrapBandCountRaw(){
   const end=ganttWrapEndDate(); let n=1;
   while(n<400 && ganttParseDate(ganttWrapBandStart(n))<=end) n++;   // 400段で打ち切り（暴走防止）
   return n;
 }
-// その段の列数（月ごとは月によって28〜31と変わるので段ごとに算出）
-function ganttWrapBandUnits(i){ return Math.max(1,Math.round(ganttDiffUnit(ganttWrapBandStart(i),ganttWrapBandStart(i+1),S.gantt.scale))); }
-// 1段ぶんの高さ＝段見出し＋時間軸ヘッダー＋行の総高さ＋段間の余白
-function ganttBandContentH(){ const L=ganttLayout(); return GANTT_BAND_LABEL_H+GANTT_HEADER_H+Math.max(0,L.bottom-ganttBodyTop())+GANTT_BAND_GAP; }
-function ganttBandAtY(y){
-  if(!ganttWrapOn()) return 0;
-  const h=ganttBandContentH(), top=ganttHeadH();
-  if(!(h>0)) return 0;
-  return Math.max(0,Math.min(ganttWrapBandCount()-1,Math.floor((y-top)/h)));
+// その段の正味の単位数（割り切れない場合は小数。バーを切る位置＝区間の終わりに使う）
+function ganttWrapBandUnitsExact(i){ return Math.max(0.01,ganttDiffUnit(ganttWrapBandStart(i),ganttWrapBandStart(i+1),S.gantt.scale)); }
+// その段の列数（列は必ず整数本＝切り上げ。月ごとは月によって28〜31と変わるので段ごとに算出）
+function ganttWrapBandUnits(i){ return Math.max(1,Math.ceil(ganttWrapBandUnitsExact(i)-1e-9)); }
+function ganttCurBand(){ if(_gwBand==null||!_gwBands) return null; return _gwBands[_gwBand]||null; }   // 構築中の再入を避けるためキャッシュだけを見る
+// 段の右端X（バーを切る位置）。列が割り切れない段では最後の列の途中＝区間の終わりで切る。
+function ganttBandEndX(){ const b=ganttCurBand(); return ganttLeftW()+(b?ganttWrapBandUnitsExact(b.i):ganttTotalUnits())*ganttColW(); }
+// その行（タスク/マイルストーン）が段 i の期間に工程を持つか
+function ganttNodeInBand(n,i){
+  const g=S.gantt, a=ganttParseDate(ganttWrapBandStart(i)), b=ganttParseDate(ganttWrapBandStart(i+1));
+  if(n.type==='gantt_milestone'){ const d=ganttParseDate(n.date||g.startDate); return d>=a&&d<b; }
+  const ds=ganttParseDate(n.startDate||g.startDate);
+  const de=(g.scale==='hour')? ganttParseDate(n.endDate||n.startDate||g.startDate)
+                             : ganttAddUnit(n.endDate||n.startDate||g.startDate,1,'day');   // 終了日は包括
+  return de>a && ds<b;
 }
-// 画面のY座標を「段0のローカルY」へ畳み込む（行判定・当たり判定用）
+// 実際に描く段の一覧。段ごとに「その段に工程がある行」だけのレイアウトを持つ。
+function ganttBands(){
+  if(_gwBands) return _gwBands;
+  const out=[];
+  if(!ganttWrapOn()){ _gwBands=out; return out; }
+  const total=ganttWrapBandCountRaw();
+  let dy=0;
+  for(let i=0;i<total;i++){
+    const keep=new Set();
+    S.nodes.forEach(n=>{ if(ganttIsRowNode(n.type)&&ganttNodeInBand(n,i)) keep.add(n.id); });
+    if(!keep.size) continue;                       // その段に工程が1つも無い＝段ごと省略
+    const L=ganttRowSlots(keep);
+    const H=GANTT_BAND_LABEL_H+GANTT_HEADER_H+Math.max(0,L.bottom-ganttBodyTop())+GANTT_BAND_GAP;
+    out.push({i,dy,H,layout:L});
+    dy+=H;
+  }
+  _gwBands=out; return out;
+}
+function ganttBandsTotalH(){ const bs=ganttBands(); return bs.length?(bs[bs.length-1].dy+bs[bs.length-1].H):0; }
+function ganttBandAtY(y){
+  const bs=ganttBands(); if(!bs.length) return 0;
+  const t=y-ganttHeadH();
+  for(let k=0;k<bs.length;k++){ if(t<bs[k].dy+bs[k].H) return k; }
+  return bs.length-1;
+}
+// 画面のY座標を「その段のローカルY」へ直す（行判定・当たり判定用）
 function ganttLocalY(y){
   if(!ganttWrapOn()) return y;
-  const h=ganttBandContentH(), top=ganttHeadH();
-  if(!(h>0)||y<top) return y;
-  return top+((y-top)%h);
+  const bs=ganttBands(); if(!bs.length) return y;
+  return y-bs[ganttBandAtY(y)].dy;
 }
 // 画面座標 → 日付。折り返しONでは Y から段を求め、その段の原点を基準にXを単位換算する。
 function ganttPosToDate(x,y){
@@ -1326,31 +1380,56 @@ function ganttPosToDate(x,y){
   const sv=_gwBand; _gwBand=ganttBandAtY(y);
   const d=ganttXToDate(x); _gwBand=sv; return d;
 }
-// 描画先レイヤー。折り返し中は段ごとの平行移動グループを返す（各描画関数の座標は段0のまま）。
+// v8.08追補: 列が割り切れない段（週目盛り＋月ごと）は、区間の終わり（月末）で段の内容を切る。
+//   これで最後の列のはみ出しや、次の月のヘッダーラベルが段に混ざるのを防ぐ（＝1日から月末までを表示）。
+function ganttBandClipId(){
+  const b=ganttCurBand(); if(!b) return null;
+  const ex=ganttWrapBandUnitsExact(b.i);
+  if(Math.abs(ex-ganttWrapBandUnits(b.i))<0.01) return null;   // ぴったり割り切れる段は切らない
+  const id='gw-clip-'+_gwBand;
+  if(!document.getElementById(id)){
+    const cp=e('clipPath',{id});
+    cp.appendChild(e('rect',{x:0,y:0,width:ganttLeftW()+ex*ganttColW(),height:1000000}));
+    document.getElementById('diagram-svg').appendChild(cp);
+  }
+  return id;
+}
 function ganttLayer(id){
   const root=document.getElementById(id);
-  if(!_gwDY) return root;
+  if(_gwBand==null) return root;
   const key='gw'+_gwBand+'_'+id;
   let g=root.querySelector('g[data-gw="'+key+'"]');
-  if(!g){ g=e('g',{transform:'translate(0,'+_gwDY+')','data-gw':key}); root.appendChild(g); }
+  if(!g){
+    const at={transform:'translate(0,'+_gwDY+')','data-gw':key};
+    const cid=ganttBandClipId(); if(cid) at['clip-path']='url(#'+cid+')';
+    g=e('g',at); root.appendChild(g);
+  }
   return g;
 }
 // 折り返し中の「1段の帯幅／行の下端」。通常描画ではキャンバス全体を返す。
 function ganttStripW(){ return ganttWrapOn()? (ganttLeftW()+ganttTotalUnits()*ganttColW()) : SVG_W; }
 function ganttStripBottom(){ return ganttWrapOn()? ganttLayout().bottom : SVG_H; }
-function ganttBandLabelText(i){
-  const g=S.gantt, s=ganttParseDate(ganttWrapBandStart(i)), W='日月火水木金土';
+// v8.08追補②: 「描画してよい右端」。折り返し中は段の右端（＝区間の終わり）、通常はキャンバス右端。
+//   段より右は次の段のための余白なので、横線・フェーズ帯・はみ出し文字はここで止める。
+function ganttRightEdge(){ return ganttWrapOn()? Math.min(ganttStripW(),ganttBandEndX()) : SVG_W; }
+// v8.08追補②: 実際に描く段のうち最も長い段の正味の長さ（単位数・小数可）。キャンバス幅と列幅の自動拡大に使う。
+//   列数（切り上げ）ではなく正味の長さを使う＝週目盛り＋月ごとで切り上げたぶんが右の空白にならない。
+function ganttWrapMaxBandSpan(){ let mx=0.01; ganttBands().forEach(b=>{ mx=Math.max(mx,ganttWrapBandUnitsExact(b.i)); }); return mx; }
+function ganttBandLabelText(k){
+  const g=S.gantt, bs=ganttBands(), b=bs[k];
+  const s=ganttParseDate(ganttWrapBandStart(b?b.i:0)), W='日月火水木金土';
   if(g.wrap==='day') return s.getFullYear()+'年'+(s.getMonth()+1)+'月'+s.getDate()+'日（'+W[s.getDay()]+'）';
   if(g.wrap==='month') return s.getFullYear()+'年'+(s.getMonth()+1)+'月';
+  if(g.wrap==='year') return s.getFullYear()+'年';
   const e2=new Date(s.getFullYear(),s.getMonth(),s.getDate()+6);
   return s.getFullYear()+'年'+(s.getMonth()+1)+'月'+s.getDate()+'日（日）〜 '+(e2.getMonth()+1)+'月'+e2.getDate()+'日（土）';
 }
-function renderGanttBandLabel(i){
+function renderGanttBandLabel(k){
   const gg=ganttLayer('g-dividers'), y=ganttHeadH(), w=ganttStripW();
   gg.appendChild(e('rect',{x:0,y,width:w,height:GANTT_BAND_LABEL_H,fill:'#e8eef5','pointer-events':'none'}));
   gg.appendChild(e('line',{x1:0,y1:y+GANTT_BAND_LABEL_H,x2:w,y2:y+GANTT_BAND_LABEL_H,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'}));
   const t=e('text',{x:9,y:y+GANTT_BAND_LABEL_H/2,fill:'#334155','font-size':11,'dominant-baseline':'middle','pointer-events':'none'});
-  t.textContent=ganttBandLabelText(i); gg.appendChild(t);
+  t.textContent=ganttBandLabelText(k); gg.appendChild(t);
 }
 // ── v6.06: 休工期間（タスクごとの suspensions=[{start,end}]）──
 // 休工区間を正規化して返す: start>end は入替／両端含む／重なり・隣接は統合／開始昇順。
@@ -1784,11 +1863,9 @@ function calcCanvasSize(){
     const g=S.gantt;
     if(ganttWrapOn()){
       // v8.08: 折り返し=幅は「最も列数の多い段」に合わせ、高さは段数ぶん積む（横スクロールを不要にする）
-      const bands=ganttWrapBandCount(); let mx=1;
-      for(let b=0;b<bands;b++) mx=Math.max(mx,ganttWrapBandUnits(b));
-      SVG_W=ganttLeftW()+mx*ganttColW();
-      if(g.header&&g.header.show) SVG_W=Math.max(SVG_W,1120);
-      SVG_H=Math.max(400, ganttHeadH()+bands*ganttBandContentH()+8);
+      SVG_W=ganttLeftW()+ganttWrapMaxBandSpan()*ganttColW();
+      if(g.header&&g.header.show) SVG_W=Math.max(SVG_W,GANTT_HEAD_MIN_W);
+      SVG_H=Math.max(400, ganttHeadH()+ganttBandsTotalH()+8);
       return;
     }
     let maxUnit;
@@ -1807,7 +1884,7 @@ function calcCanvasSize(){
       SVG_W=Math.max(MIN_CANVAS, ganttLeftW()+Math.ceil(maxUnit)*ganttColW()+40);
     }
     // v8.00: 見出し表示時は右ゾーン（承認欄＋凡例）が収まる最小幅を確保（狭い図でも見出しが崩れない）
-    if(S.gantt.header&&S.gantt.header.show) SVG_W=Math.max(SVG_W, 1120);
+    if(S.gantt.header&&S.gantt.header.show) SVG_W=Math.max(SVG_W, GANTT_HEAD_MIN_W);
     SVG_H=Math.max(400, ganttLayout().bottom+GANTT_ROW_H);   // v4.04: 可変行高の累積高さ＋余白
     return;
   }
@@ -3557,16 +3634,22 @@ function ganttSetCell(n,colId,row,label,val){ ganttSetColLabel(colId,row,label);
 // セルの折返し行配列（本文のみ。空なら ['']）。ぶら下げ用に列幅からラベル幅を控除。
 function ganttCellLines(n,col,row){ const val=ganttCellVal(n,col.id,row); if(!val||!String(val).trim()) return ['']; const wrapW=Math.max(20,(col.width||120)-GANTT_DESC_INDENT-8); const bodyW=Math.max(24, wrapW-ganttLabelW(ganttCellLabel(n,col.id,row))); return wrapText(String(val),bodyW,11); }
 function ganttCellLineCount(n,col,row){ return ganttCellLines(n,col,row).length; }
-function ganttRowMaxLines(n,row){ let m=1; ganttColList().forEach(c=>{ m=Math.max(m,ganttCellLineCount(n,c,row)); }); return m; }
+// そのセルが実際に何か描かれるか（本文がある／追加列で項目名がある）。描画側の表示条件と同じ判定をここに集約。
+function ganttCellShown(n,col,row){ const lab=ganttColLabel(col.id,row); return !!(ganttCellVal(n,col.id,row).trim()||(col.id!=='c0'&&lab&&lab.trim())); }
+// v8.08追補④: 何も描かれない項目は行を作らない＝空白を詰める（行3=概要／行4=担当のどちらも／ユーザー要望）。
+function ganttRowMaxLines(n,row){ let m=0; ganttColList().forEach(c=>{ if(ganttCellShown(n,c,row)) m=Math.max(m,ganttCellLineCount(n,c,row)); }); return m; }
 // タスク帯の高さ = 上下padding + (名称1 + 工程1 + 行3最大行数 + 行4最大行数)*行高
 function ganttRowHeight(n){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*(2 + ganttRowMaxLines(n,'r3') + ganttRowMaxLines(n,'r4')); } // v5.00 列モデル／v5.01: 行3上の余白GAPを加算
-// v5.03(微修正): 空欄行も「空のタスク行」と同じ高さ（既定タスク行＝r3/r4各1行）にする
-function ganttEmptyRowHeight(){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*4; }
+// v5.03(微修正): 空欄行も「空のタスク行」と同じ高さにする
+//   v8.08追補④: 概要・担当が空なら詰めるようにしたので、空のタスク行＝名称＋工程の2行。
+function ganttEmptyRowHeight(){ return GANTT_ROW_PAD*2 + GANTT_CELL_TOP_GAP + GANTT_LINE_H*2; }
 // 行スロット（タスク帯＋末尾の空き行）。top/height を累積で算出。
 let _ganttLayout=null;
 let _ganttHeadModel=null;   // v8.00: 見出しブロックのレイアウト（高さ等）キャッシュ
-function ganttRowSlots(){
-  const list=ganttNodesSorted();   // タスク／マイルストーンのみ（行）
+function ganttRowSlots(keepIds){
+  // v8.08追補: keepIds を渡すとその集合の行だけでレイアウトを組む（折り返しの段ごとの行間引き用）。
+  //   フェーズ見出し行は配下メンバーが1つも残らなければ出ない（下の headerAt が自然にそうなる）。
+  const list=ganttNodesSorted().filter(n=>!keepIds||keepIds.has(n.id));   // タスク／マイルストーンのみ（行）
   // 各フェーズの先頭メンバー(task index)→ そのフェーズ（直上に専用ヘッダー行を挿入）v4.19
   const headerAt={};
   S.nodes.filter(n=>n.type==='gantt_summary').forEach(p=>{
@@ -3579,18 +3662,19 @@ function ganttRowSlots(){
   });
   // 末尾の空き行（視覚的に最低8スロット＋余白1行ぶん）
   // v8.08: 折り返し時は段ごとに空き行が繰り返されて縦に膨れるため、末尾の空き行は1行だけにする
-  const extra=ganttWrapOn()?1:(Math.max(0,8-list.length)+1);
+  const extra=ganttWrapOn()?0:(Math.max(0,8-list.length)+1);
   const eh=ganttEmptyRowHeight();   // v5.03: 空欄行はタスク行と同じ高さ
   for(let k=0;k<extra;k++){ slots.push({top:y,height:eh,node:null,kind:'empty'}); y+=eh; }
   return {list,slots,bottom:y};
 }
-function ganttLayout(){ return _ganttLayout||(_ganttLayout=ganttRowSlots()); }
+function ganttLayout(){ const b=ganttCurBand(); if(b) return b.layout;   // v8.08: 折り返し中はその段の行レイアウト
+  return _ganttLayout||(_ganttLayout=ganttRowSlots()); }
 // v5.02(微修正): 横区切り線のY一覧＝各スロット上端＋末尾フィル行の上端。
 //   renderGanttRows の末尾フィル（while y<SVG_H, GANTT_ROW_H刻み）と一致させ、
 //   「最終スロット下端〜SVG_H のフィル行に線が無く、最終行の手前だけ線が欠落」を解消する。
 function ganttRowBoundaries(){
   const L=ganttLayout(), ys=L.slots.map(s=>s.top);
-  for(let y=L.bottom; y<SVG_H; y+=GANTT_ROW_H) ys.push(y);
+  for(let y=L.bottom; y<ganttStripBottom(); y+=GANTT_ROW_H) ys.push(y);   // v8.08: 折り返し中は段の下端まで
   return ys;
 }
 function ganttSlotOf(id){ const L=ganttLayout(); return L.slots.find(s=>s.node&&s.node.id===id)||null; }
@@ -3601,19 +3685,29 @@ function ganttTaskSlot(taskIdx){
   return null;
 }
 // Y座標 → タスク行 index（ヘッダー/空き行はスキップし、直後のタスク行に丸める）v4.19
+// v8.08: 折り返し時はYから段を決め、その段のローカルY・その段の行レイアウトで判定する。段ごとに行を
+//   間引くため、戻り値は全体のタスク一覧（ganttNodesSorted）での index に直して返す。
 function ganttSlotIndexAtY(y){
-  y=ganttLocalY(y);   // v8.08: 折り返し時は段0のローカルYへ畳んで行判定
-  const L=ganttLayout(); let taskIdx=-1;
+  if(ganttWrapOn()){
+    const sv=_gwBand; _gwBand=ganttBandAtY(y);
+    const r=ganttSlotIndexAtYCore(ganttLocalY(y)); _gwBand=sv; return r;
+  }
+  return ganttSlotIndexAtYCore(y);
+}
+function ganttSlotIndexAtYCore(y){
+  const L=ganttLayout(), all=ganttNodesSorted(), last=Math.max(0,all.length-1);
+  const gi=nd=>{ const k=all.indexOf(nd); return k<0?0:k; };
+  let prev=-1;
   for(const s of L.slots){
     const inSlot=(y>=s.top&&y<s.top+s.height);
-    if(s.kind==='task'){ taskIdx++; if(inSlot) return taskIdx; }
-    else if(inSlot) return Math.max(0,Math.min(L.list.length-1, taskIdx+1));
+    if(s.kind==='task'){ if(inSlot) return gi(s.node); prev=gi(s.node); }
+    else if(inSlot) return Math.max(0,Math.min(last, prev+1));
   }
-  return Math.max(0,L.list.length-1);
+  return last;
 }
 // 表示単位数（キャンバス幅から算出）
 function ganttTotalUnits(){
-  if(_gwBand!=null) return ganttWrapBandUnits(_gwBand);   // v8.08: 折り返し中はその段の列数
+  { const b=ganttCurBand(); if(b) return ganttWrapBandUnits(b.i); }   // v8.08: 折り返し中はその段の列数
   return Math.max(1,Math.ceil((SVG_W-ganttLeftW())/ganttColW()));
 }
 // 簡易週番号（年初からの通算週）
@@ -3797,7 +3891,7 @@ function ganttLegendItems(){
       if(S.nodes.some(n=>n.type==='gantt_task'&&(n.progress||0)>0)) items.push({key:'progress',label:lab('progress','進捗（実績）'),kind:'progress',fill:SD.gantt_task.fill,stroke:SD.gantt_task.stroke});
     }
     if(has('gantt_milestone')) items.push({key:'milestone',label:lab('milestone','マイルストーン'),kind:'diamond',fill:SD.gantt_milestone.fill,stroke:SD.gantt_milestone.stroke});
-    if(has('gantt_summary')) items.push({key:'summary',label:lab('summary','フェーズ（工程）'),kind:'phase',fill:SD.gantt_summary.fill});
+    if(has('gantt_summary')) items.push({key:'summary',label:lab('summary','フェーズ（工程）'),kind:'phase',fill:SD.gantt_summary.fill,stroke:SD.gantt_summary.stroke});   // v8.08追補⑤: 実バーと同じ縁取り
     if(S.nodes.some(n=>n.type==='gantt_task'&&n.suspensions&&n.suspensions.length)) items.push({key:'suspend',label:lab('suspend','休工'),kind:'shade'});
     items.push({key:'weekend',label:lab('weekend','土日・休工日'),kind:'shade'});
   }
@@ -3813,18 +3907,34 @@ function ganttHeadModel(){
   const leftBottom = rows.length? (titleBottom+8+rpc*infoRowH) : titleBottom;
   const appOn=!!(h.approval&&h.approval.show), lgItems=ganttLegendItems(), lgOn=lg.show!==false&&lgItems.length>0;
   const appBottom=appOn?96:0;
-  const lgTop=appOn?104:24, lgRows=lgOn?Math.max(1,Math.ceil(lgItems.length/3)):0, lgH=lgOn?(18+lgRows*20):0, lgBottom=lgOn?(lgTop+lgH):0;
+  // v8.08追補⑤: 折り返しONは1段の幅に合わせてキャンバスが狭くなるため、右上に縦積みした凡例（幅392）が
+  //   見出しの情報行と横に重なる（A4/A3の縦向きで顕著）。折り返し時は凡例を横一列にして
+  //   「見出しの下（表題・情報行・承認欄より下）に右詰め」で置く＝幅を情報行と取り合わないので
+  //   項目が増えても文字を縮めずに済み、見出しの右ゾーンも低くなる。折り返しOFFは従来の縦積み。
+  const lgInline=lgOn&&ganttWrapOn();
+  const lgRows=lgOn?(lgInline?1:Math.max(1,Math.ceil(lgItems.length/3))):0;
+  const lgH=lgOn?(lgInline?22:(18+lgRows*20)):0;
+  const lgTopStacked=appOn?104:24;
   const dateBottom=h.showDate?18:0;
-  const rightBottom=Math.max(dateBottom,appBottom,lgBottom);
-  const H=Math.max(leftBottom,rightBottom)+14;
-  _ganttHeadModel={H,rpc,infoRowH,titleBottom,appOn,lgItems,lgOn,lgTop,lgRows,lgH};
+  const rightBottom=Math.max(dateBottom,appBottom,lgInline?0:(lgOn?lgTopStacked+lgH:0));
+  const baseH=Math.max(leftBottom,rightBottom)+14;   // 表題・情報行・承認欄までの高さ（情報行の下詰めの基準）
+  const lgTop=lgInline?(baseH+2):lgTopStacked;
+  const H=lgInline?(lgTop+lgH+6):baseH;
+  _ganttHeadModel={H,baseH,rpc,infoRowH,titleBottom,appOn,lgItems,lgOn,lgInline,lgTop,lgRows,lgH};
   return _ganttHeadModel;
 }
 // 凡例の色見本（種類別）
 function ganttLegendSwatch(gg,it,x,y){
   if(it.kind==='diamond'){ gg.appendChild(e('path',{d:`M${x+10} ${y} l6 6 l-6 6 l-6 -6 z`,fill:it.fill,stroke:it.stroke,'stroke-width':1.2,'pointer-events':'none'})); return; }
   if(it.kind==='shade'){ gg.appendChild(e('rect',{x,y:y-1,width:18,height:13,fill:'#eef2f6',stroke:'#e2e8f0','pointer-events':'none'})); return; }
-  if(it.kind==='phase'){ gg.appendChild(e('rect',{x,y:y+1,width:22,height:9,rx:2,fill:it.fill,'pointer-events':'none'})); return; }
+  // v8.08追補⑤: フェーズは実際のロールアップバーの形（上のスパイン＋左右端が下へ伸びる脚）に寄せる。
+  //   角丸の帯だとタスクバーと見分けが付かず、図中の形と結び付かない（ユーザー指摘）。比率は実バー（本体15:脚25）に合わせる。
+  if(it.kind==='phase'){
+    const t=y, w=22, bh=6, dp=11, cap=4;   // 本体:脚の深さ=6:11（実バー 15:25 と同比）。脚の幅は見えるよう実バーより誇張
+    gg.appendChild(e('path',{d:`M${x},${t} L${x},${t+dp} L${x+cap},${t+bh} L${x+w-cap},${t+bh} L${x+w},${t+dp} L${x+w},${t} Z`,
+      fill:it.fill,stroke:it.stroke||'none','stroke-width':it.stroke?0.9:0,'stroke-linejoin':'round','pointer-events':'none'}));
+    return;
+  }
   gg.appendChild(e('rect',{x,y,width:22,height:11,rx:2,fill:it.fill,stroke:it.stroke,'pointer-events':'none'}));
   if(it.kind==='progress') gg.appendChild(e('rect',{x,y,width:11,height:11,rx:2,fill:it.stroke,opacity:.45,'pointer-events':'none'}));
 }
@@ -3850,7 +3960,7 @@ function renderGanttTitleBlock(){
   gg.appendChild(e('line',{x1:padX,y1:52,x2:Math.min(700,W*0.62),y2:52,stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
   // 情報行（2列・下詰め）
   const rows=(h.rows||[]).filter(r=>r), rpc=m.rpc;
-  const lastBase=m.H-14, firstBase=lastBase-(rpc-1)*m.infoRowH;
+  const lastBase=(m.baseH||m.H)-14, firstBase=lastBase-(rpc-1)*m.infoRowH;   // v8.08追補⑤: 凡例の行ぶんは含めない
   const col2X=Math.min(430, Math.max(220, W*0.40));
   rows.forEach((r,i)=>{
     const col=i<rpc?0:1, rowI=i%rpc, lx=col?col2X:padX, by=firstBase+rowI*m.infoRowH, lb=(r.label||'')+'：';
@@ -3871,7 +3981,31 @@ function renderGanttTitleBlock(){
       else gg.appendChild(e('circle',{cx,cy:ay0+46,r:12,fill:'none',stroke:'#cbd5e1','stroke-width':1,'stroke-dasharray':'3 3','pointer-events':'none'}));
     });
   }
-  if(m.lgOn){
+  if(m.lgOn&&m.lgInline){
+    // v8.08追補⑤: 横一列の凡例を見出しの下（＝表題・情報行・承認欄より下）に右詰めで置く。
+    //   幅は 固定部（余白＋色見本＋項目間）＋ 文字幅（フォントサイズに比例）なので、入る文字サイズは
+    //   線形に解いて求める（倍率で概算すると固定部が縮まないぶん収まらない）。下限7pxまで縮め、
+    //   それでも足りなければ項目間を詰め、最後はラベル末尾を…で切って必ず1列を保つ。
+    const sw=22, lpad=9; let lgap=14, sgap=6;
+    const xR=rEdge, avail=Math.max(80,xR-padX);
+    const unit=m.lgItems.reduce((a,it)=>a+ganttTextW(it.label,1),ganttTextW('凡例',1));   // フォント1pxあたりの文字幅
+    const fixed=()=>lpad*2+m.lgItems.length*(sw+sgap+lgap);
+    let fs=Math.min(11,(avail-fixed())/Math.max(0.01,unit));
+    if(fs<8){ lgap=6; sgap=4; fs=Math.min(11,(avail-fixed())/Math.max(0.01,unit)); }   // まず項目間を詰める
+    fs=Math.max(7,Math.min(11,fs));
+    const over=Math.max(0,fixed()+unit*fs-avail);   // 7pxでも入らないぶんは各ラベルから均等に削る
+    const lw=Math.min(fixed()+unit*fs,avail), lx0=xR-lw, ly0=m.lgTop, lh=m.lgH, by=ly0+lh/2+4;
+    gg.appendChild(e('rect',{x:lx0,y:ly0,width:lw,height:lh,rx:5,fill:'#ffffff',stroke:'#1e293b','stroke-width':1.4,'pointer-events':'none'}));
+    let cx=lx0+lpad;
+    gg.appendChild(e('text',{x:cx,y:by,'font-size':String(fs),'font-weight':'700',fill:'#334155','pointer-events':'none'})).textContent='凡例';
+    cx+=ganttTextW('凡例',fs)+lgap;
+    m.lgItems.forEach(it=>{
+      const lb=over>0? ganttClip(it.label,Math.max(fs,ganttTextW(it.label,fs)-over/m.lgItems.length),fs) : it.label;
+      ganttLegendSwatch(gg,it,cx,by-10);
+      gg.appendChild(e('text',{x:cx+sw+sgap,y:by,'font-size':String(fs),fill:'#1e293b','pointer-events':'none'})).textContent=lb;
+      cx+=sw+sgap+ganttTextW(lb,fs)+lgap;
+    });
+  } else if(m.lgOn){
     const lw=392, lx0=rEdge-lw, ly0=m.lgTop, lh=m.lgH;
     gg.appendChild(e('rect',{x:lx0,y:ly0,width:lw,height:lh,rx:6,fill:'#ffffff',stroke:'#1e293b','stroke-width':1.6,'pointer-events':'none'}));
     gg.appendChild(e('text',{x:lx0+10,y:ly0+16,'font-size':'12','font-weight':'700',fill:'#334155','pointer-events':'none'})).textContent='凡例';
@@ -3887,7 +4021,7 @@ function renderGanttTitleBlock(){
 function renderGantt(){
   ganttEnsureHeader();            // v8.00: 旧ファイル後方互換（header/legend 補完）
   _ganttHeadModel=null;           // v8.00: 見出し寸法を再計算（行数・承認/凡例トグルに追従）
-  _gwBand=null; _gwDY=0;          // v8.08: 段の状態を先に戻す（ganttBodyTop が段見出しを見込むため）
+  _gwBand=null; _gwDY=0; _gwBands=null;   // v8.08: 段の状態と段一覧キャッシュを先に戻す（ganttBodyTop が段見出しを見込むため）
   _ganttLayout=ganttRowSlots();   // v4.04: 可変行高レイアウトを毎フレーム再構築（以降の各描画が参照）
   _ganttColW=ganttComputeColW();  // v5.02: 実効列幅（週/月で完了日までが短いとき画面いっぱいに拡大）を先に確定
   calcGanttPositions();
@@ -3895,11 +4029,13 @@ function renderGantt(){
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
   ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers'].forEach(id=>{document.getElementById(id).innerHTML='';});
+  Array.from(document.querySelectorAll('#diagram-svg clipPath')).forEach(el=>{ if((el.id||'').indexOf('gw-clip-')===0) el.remove(); });   // v8.08追補: 段のクリップ定義を作り直す
   if(ganttWrapOn()){
     // v8.08: 段ごとに「軸原点＝段の先頭」へ差し替え、Yは平行移動グループでずらして同じ描画関数を再利用する。
-    const bands=ganttWrapBandCount(), dh=ganttBandContentH();
-    for(let b=0;b<bands;b++){
-      _gwBand=b; _gwDY=b*dh;
+    //   v8.08追補: 段の一覧と行レイアウトは ganttBands() が段ごとに持つ（工程が無い行／工程が1つも無い段は出さない）。
+    const bs=ganttBands();
+    for(let k=0;k<bs.length;k++){
+      _gwBand=k; _gwDY=bs[k].dy;
       calcGanttPositions();   // その段の原点でバー座標を再計算（段外のバーは描画側で除外）
       renderGanttRows();
       renderGanttGrid();
@@ -3909,10 +4045,10 @@ function renderGantt(){
       renderGanttNameCol();
       renderGanttPhases();
       renderGanttHeader();
-      renderGanttBandLabel(b);
+      renderGanttBandLabel(k);
     }
+    if(bs.length){ _gwBand=0; _gwDY=bs[0].dy; calcGanttPositions(); }   // n.x/n.y は先頭の段の位置に揃えておく
     _gwBand=null; _gwDY=0;
-    calcGanttPositions();   // ドラッグ等が参照する座標は段0基準に戻す
   } else {
     renderGanttRows();
     renderGanttGrid();
@@ -4021,18 +4157,19 @@ function renderGanttGrid(){
   ganttLayout().slots.forEach(s=>{
     if(s.kind==='phase'){
       const fill=ganttLighten((s.node&&s.node.color)||SD.gantt_summary.fill,0.82);
-      gg.appendChild(e('rect',{x:x0,y:s.top,width:Math.max(0,SVG_W-x0),height:s.height,fill,'pointer-events':'none'}));
+      gg.appendChild(e('rect',{x:x0,y:s.top,width:Math.max(0,ganttRightEdge()-x0),height:s.height,fill,'pointer-events':'none'}));
     }
   });
-  ganttRowBoundaries().forEach(y=>{ if(y>top) gg.appendChild(e('line',{x1:leftW,y1:y,x2:SVG_W,y2:y,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'})); });
+  ganttRowBoundaries().forEach(y=>{ if(y>top) gg.appendChild(e('line',{x1:leftW,y1:y,x2:ganttStripW(),y2:y,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'})); });
 }
 // 時間軸ヘッダー（2段）
 function renderGanttHeader(){
   const g=S.gantt, _gd=ganttLayer('g-dividers'), _oy=ganttHeadH()+(ganttWrapOn()?GANTT_BAND_LABEL_H:0);   // v8.08: 折り返し時は段見出しぶんも下げる
   const gg=_oy?e('g',{transform:'translate(0,'+_oy+')'}):_gd;   // v8.00: 見出しぶん時間軸ヘッダーを下げる（座標は不変・グループ平行移動）
   const cw=ganttColW(), x0=ganttLeftW(), units=ganttTotalUnits(), topH=GANTT_HEADER_H/2;
-  gg.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:GANTT_HEADER_H,fill:'#1e293b','pointer-events':'none'}));
+  gg.appendChild(e('rect',{x:0,y:0,width:ganttStripW(),height:GANTT_HEADER_H,fill:'#1e293b','pointer-events':'none'}));
   const drawTopCell=(x,w,label)=>{
+    if(ganttWrapOn()&&!(w>=1)) return;   // v8.08追補: 折り返し時のみ、幅0のセルは描かない（段の終わりに次区間のラベルが半分出るのを防ぐ）
     gg.appendChild(e('line',{x1:x,y1:0,x2:x,y2:topH,stroke:'#475569','stroke-width':1,'pointer-events':'none'}));
     const t=e('text',{x:x+Math.min(w/2,90),y:topH/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'700',fill:'#f1f5f9','pointer-events':'none'});
     t.textContent=label; gg.appendChild(t);
@@ -4050,7 +4187,7 @@ function renderGanttHeader(){
       bt.textContent=lbl; gg.appendChild(bt);
       gg.appendChild(e('line',{x1:x,y1:topH,x2:x,y2:GANTT_HEADER_H,stroke:'#334155','stroke-width':.5,'pointer-events':'none'}));
     }
-    const o=ganttParseDate(origin), endX=x0+units*cw;
+    const o=ganttParseDate(origin), endX=ganttWrapOn()?ganttBandEndX():(x0+units*cw);   // v8.08追補: 折り返し時は区間の終わり（月末）で止める＝次月のラベルを出さない
     let prevX=x0, prevLabel=o.getFullYear()+'年'+(o.getMonth()+1)+'月';
     let m=new Date(o.getFullYear(),o.getMonth()+1,1);
     for(let guard=0;guard<240;guard++){
@@ -4064,7 +4201,7 @@ function renderGanttHeader(){
     // v6.05: 月表示の二段ヘッダー（週表示と同様の構成）。
     //   上段＝年月（実際の月境で区切る）／下段＝各月内の日付ラベル(1/10/20/30)＋目盛り線。
     //   日付の x位置は本体グリッド・タスクバーと同じ按分((day-1)/30)で算出し完全一致させる。
-    const o=ganttParseDate(origin), endX=x0+units*cw;
+    const o=ganttParseDate(origin), endX=ganttWrapOn()?ganttBandEndX():(x0+units*cw);   // v8.08追補: 同上
     let m=new Date(o.getFullYear(),o.getMonth(),1);
     for(let guard=0;guard<480;guard++){
       const mx0=ganttDateToX(ganttFmtDate(m)); if(mx0>endX) break;
@@ -4125,11 +4262,11 @@ function renderGanttHeader(){
     }
     drawTopCell(x0+groupStart*cw,(units-groupStart)*cw,groupKey);
   }
-  gg.appendChild(e('line',{x1:0,y1:topH,x2:SVG_W,y2:topH,stroke:'#334155','stroke-width':1,'pointer-events':'none'}));
+  gg.appendChild(e('line',{x1:0,y1:topH,x2:ganttRightEdge(),y2:topH,stroke:'#334155','stroke-width':1,'pointer-events':'none'}));
   // v6.10: 月境界をヘッダー（黒背景）内では白線にして目立たせる（全スケール・月初位置 y=0〜ヘッダー下端）。
   //   ボディ側は薄いグレー(renderGanttGrid)。背景に応じて色を切替＝黒ヘッダーは白・白ボディは薄灰。
   {
-    const obh=ganttParseDate(origin), endXh=x0+units*cw;
+    const obh=ganttParseDate(origin), endXh=ganttWrapOn()?ganttBandEndX():(x0+units*cw);   // v8.08追補: 同上
     let mh=new Date(obh.getFullYear(),obh.getMonth(),1); if(mh<obh) mh=new Date(obh.getFullYear(),obh.getMonth()+1,1);
     for(let gh=0;gh<600;gh++){
       const mx=ganttDateToX(ganttFmtDate(mh)); if(mx>endXh) break;
@@ -4210,7 +4347,7 @@ function renderGanttTaskBar(gg,n,sel){
   // v8.08: 折り返しONではこの段の帯（軸の左端〜列数ぶん）でバーを切り、はみ出す側は矢羽根で「続く」ことを示す。
   let _cutL=false, _cutR=false;
   if(ganttWrapOn()){
-    const _w0=ganttLeftW(), _w1=_w0+ganttTotalUnits()*ganttColW();
+    const _w0=ganttLeftW(), _w1=ganttBandEndX();   // v8.08: 列が割り切れない段（週目盛り＋月ごと）は区間の終わりで切る
     if(_bx1<=_w0+0.01||_bx0>=_w1-0.01) return;   // この段には現れないタスク
     if(_bx0<_w0){ _bx0=_w0; _cutL=true; }
     if(_bx1>_w1){ _bx1=_w1; _cutR=true; }
@@ -4237,28 +4374,31 @@ function renderGanttTaskBar(gg,n,sel){
   });
   const label=n.text||'';
   const t=e('text',{fill:'#1e293b','pointer-events':'none'});
+  // v8.08追補③: 折り返しONで段をまたぐバーは、ラベルも「その段に出ている部分」に合わせる。
+  //   n.x/n.w は切る前の座標なので、そのまま使うと段の左外＝左情報欄の上に文字が乗る。
+  const _lx=ganttWrapOn()?_bx0:n.x, _lw=ganttWrapOn()?(_bx1-_bx0):n.w;
   // v4.30: バー内に収まるようフォントを自動縮小（基準fs=12時の所要幅 = len*13+12）。
   //        ただし8px未満になる場合は縮小せず、シェイプの上に左揃えで12pxで表示。
   let fs=12, inside=true;
   if(label){
-    const fitFs=(n.w-12)*12/(label.length*13);   // バー内に収まる最大フォントサイズ
+    const fitFs=(_lw-12)*12/(label.length*13);   // バー内に収まる最大フォントサイズ
     if(fitFs>=8){ fs=Math.min(12,fitFs); inside=true; }
     else { fs=12; inside=false; }
   }
   t.setAttribute('font-size',String(fs));
   t.setAttribute('text-anchor','start');
   if(inside){
-    t.setAttribute('x', n.x+8); t.setAttribute('y', n.y+n.h/2); t.setAttribute('dominant-baseline','middle');
+    t.setAttribute('x', _lx+8); t.setAttribute('y', n.y+n.h/2); t.setAttribute('dominant-baseline','middle');
   } else {
     // 収まらない場合: シェイプ上に左揃え（バー左端に合わせ、上辺の少し上）
-    t.setAttribute('x', n.x); t.setAttribute('y', n.y-3); t.setAttribute('dominant-baseline','auto');
+    t.setAttribute('x', _lx); t.setAttribute('y', n.y-3); t.setAttribute('dominant-baseline','auto');
   }
   // v5.00 ②: 完了日で表示範囲を区切ったとき、右端(SVG_W)からはみ出すバー文字は右詰めに
   //   切り替えて枠内に収める（バー位置・列幅・レイアウトは変えない＝変えるのは文字だけ）。
-  if(label && S.gantt.endDate){
-    const startX=inside? n.x+8 : n.x;
+  if(label && (S.gantt.endDate||ganttWrapOn())){   // v8.08追補③: 折り返しONは完了日の指定に関係なく段の右端で収める
+    const startX=inside? _lx+8 : _lx;
     const approxW=label.length*fs;            // 全角想定の概算幅
-    if(startX+approxW > SVG_W){ t.setAttribute('text-anchor','end'); t.setAttribute('x', SVG_W-4); }
+    if(startX+approxW > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
   }
   t.textContent=label; grp.appendChild(t);
   attachGanttNodeHandlers(grp,n);
@@ -4286,7 +4426,7 @@ function renderGanttMilestone(gg,n,sel){
     // v4.30: マイルストーンの文字はシェイプの上に中央揃えで表示（旧: 右横・縦中央）
     const t=e('text',{x:cx,y:n.y-3,'text-anchor':'middle','dominant-baseline':'auto','font-size':'12',fill:'#1e293b','pointer-events':'none'});
     // v5.00 ②: 完了日で表示範囲を区切ったとき、右端(SVG_W)からはみ出すマイルストーン文字も右詰めに。
-    if(S.gantt.endDate && cx + n.text.length*12/2 > SVG_W){ t.setAttribute('text-anchor','end'); t.setAttribute('x', SVG_W-4); }
+    if(S.gantt.endDate && cx + n.text.length*12/2 > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
     t.textContent=n.text; grp.appendChild(t);
   }
   attachGanttNodeHandlers(grp,n);
@@ -4301,20 +4441,38 @@ function renderGanttPhaseBars(){
     const slot=ganttSlotOf(p.id); if(!slot) return;     // フェーズ専用ヘッダー行スロット
     const r=ganttPhaseRange(p); if(!r) return;
     // v4.20: 終端+1日で実期間幅。v8.06: 時モードは終了時刻を排他的に扱う（+0）。
-    const x=ganttDateToX(r.start), ex=(g.scale==='hour')?ganttDateToX(r.end):ganttDateToX(ganttAddUnit(r.end,1,'day'));
+    let x=ganttDateToX(r.start), ex=(g.scale==='hour')?ganttDateToX(r.end):ganttDateToX(ganttAddUnit(r.end,1,'day'));
+    // v8.08追補②: 折り返しONではロールアップバーもこの段の帯で切る（タスクバーと同じ扱い）。
+    //   切らないと段の右外まで伸びて次の段の領域を横切ってしまう。はみ出す側は矢羽根で「続く」を示す。
+    let cutL=false, cutR=false;
+    if(ganttWrapOn()){
+      const w0=ganttLeftW(), w1=ganttBandEndX();
+      if(ex<=w0+0.01||x>=w1-0.01) return;   // この段には現れないフェーズ
+      if(x<w0){ x=w0; cutL=true; }
+      if(ex>w1){ ex=w1; cutR=true; }
+    }
     const w=Math.max(6,ex-x);
     const sel=S.sel.includes(p.id);
     const fill=p.color||SD.gantt_summary.fill, stroke=sel?'#2563eb':(p.stroke||SD.gantt_summary.stroke);
     const grp=e('g'); grp.style.cursor='pointer';
     // 左の縦ブラケットと同じ形状を横向きに（上にスパイン本体＋左右端が下へ脚＝下のタスクを包む）
     const yTop=slot.top+2, bodyH=15, depth=Math.min(slot.height-3,25), cap=Math.min(11,Math.max(5,w*0.22));
-    const d=`M${x},${yTop} L${x},${yTop+depth} L${x+cap},${yTop+bodyH} L${x+w-cap},${yTop+bodyH} L${x+w},${yTop+depth} L${x+w},${yTop} Z`;
+    // v8.08追補②: 段をまたぐ側は「脚」を出さず矢羽根にする（切らない側は従来と同じ形）。
+    const chv=Math.min(GANTT_CHEV_W,w/2);
+    const dL=cutL?`M${x+chv},${yTop} L${x},${yTop+bodyH/2} L${x+chv},${yTop+bodyH}`:`M${x},${yTop} L${x},${yTop+depth} L${x+cap},${yTop+bodyH}`;
+    const dR=cutR?`L${x+w},${yTop+bodyH/2} L${x+w-chv},${yTop}`:`L${x+w},${yTop+depth} L${x+w},${yTop}`;
+    const d=`${dL} L${cutR?x+w-chv:x+w-cap},${yTop+bodyH} ${dR} Z`;
     grp.appendChild(e('path',{d,fill,stroke,'stroke-width':sel?2:1.4,'stroke-linejoin':'round'}));
     // フェーズ名（スパイン上に白で。バーが狭ければ右側に濃色で）
     const label=p.text||'';
     if(label){
       const ty=yTop+bodyH/2, fits=w>label.length*12+12;
       if(fits){
+        const t=e('text',{x:x+8,y:ty,'dominant-baseline':'middle','font-size':'11','font-weight':'700',fill:ganttTextOn(fill),'pointer-events':'none'});
+        t.textContent=ganttClip(label,w-14,11); grp.appendChild(t);
+      } else if(ganttWrapOn()&&x+w+6+ganttTextW(label,11)>ganttRightEdge()){
+        // v8.08追補③: 段の右にラベルを置く余地が無い場合はバーの中に白字で入れる
+        //   （右詰めにするとバーに重なって読めない。折り返しONは段の幅が限られるため起きやすい）。
         const t=e('text',{x:x+8,y:ty,'dominant-baseline':'middle','font-size':'11','font-weight':'700',fill:ganttTextOn(fill),'pointer-events':'none'});
         t.textContent=ganttClip(label,w-14,11); grp.appendChild(t);
       } else {
@@ -4351,8 +4509,10 @@ function renderGanttNameCol(){
     t.textContent=ganttClip(p.text||'(無題フェーズ)', nw-14, 12); gg.appendChild(t);
     const pr=ganttPhaseRange(p);
     if(pr){
-      const dt=e('text',{x:bx+8,y:s.top+s.height*0.72,'dominant-baseline':'middle','font-size':'11','fill':'#475569','pointer-events':'none'});
-      dt.textContent=ganttClip('工程：'+ganttDispDate(pr.start)+'～'+ganttDispDate(pr.end), nw-14, 11); gg.appendChild(dt);
+      // v8.08追補③: 時モードは日付＋時刻で長くなるため、列に収まるフォントへ落としてから収める
+      const _ds='工程：'+ganttDispDate(pr.start)+'～'+ganttDispDate(pr.end), _dfs=ganttFitFs(_ds,nw-14,11,9);
+      const dt=e('text',{x:bx+8,y:s.top+s.height*0.72,'dominant-baseline':'middle','font-size':String(_dfs),'fill':'#475569','pointer-events':'none'});
+      dt.textContent=ganttClip(_ds, nw-14, _dfs); gg.appendChild(dt);
     }
     // クリックで選択・ダブルクリックで名称編集・右クリック削除（他のフェーズ表現と連動）
     const hit=e('rect',{x:bx,y:s.top,width:nw,height:s.height,fill:'transparent',cursor:'pointer'});
@@ -4408,8 +4568,9 @@ function renderGanttNameCol(){
     dhit.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}openGanttEditor(n.id);});
     dhit.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[n.id];delSel();});
     gg.appendChild(dhit);
-    const dtt=e('text',{x:bx+di,y:dateTop+lh/2,'dominant-baseline':'middle','font-size':'11',fill:sel?'#1d4ed8':'#475569','pointer-events':'none'});
-    dtt.textContent=ganttClip(dateStr,nw-di-6,11); gg.appendChild(dtt);
+    const _tfs=ganttFitFs(dateStr,nw-di-6,11,9);   // v8.08追補③: 同上（時モードの工程行）
+    const dtt=e('text',{x:bx+di,y:dateTop+lh/2,'dominant-baseline':'middle','font-size':String(_tfs),fill:sel?'#1d4ed8':'#475569','pointer-events':'none'});
+    dtt.textContent=ganttClip(dateStr,nw-di-6,_tfs); gg.appendChild(dtt);
     // 行3・行4: 列ごとの自由セル「項目名：本文」（v5.00 列モデル）。既定列 c0 は概要/担当。
     //   折返し＋ぶら下げを維持し、列幅に応じて自動再折返し。各列の高さは行3最大・行4最大行数で揃える。
     const cols=ganttColList();
@@ -4423,11 +4584,11 @@ function renderGanttNameCol(){
     cols.forEach((col,ci)=>{
       const cw=col.width;
       [['r3',r3Top,r3n],['r4',r4Top,r4n]].forEach(([row,ry,rn])=>{
-        addHit(n,'cell:'+col.id+':'+row,colx,ry,cw,lh*rn);
+        if(rn>0) addHit(n,'cell:'+col.id+':'+row,colx,ry,cw,lh*rn);   // v8.08追補④: 0行のセル（詰めた概要）には当たり判定を置かない
         const lab=ganttCellLabel(n,col.id,row);
         // 微修正(v8.00据置): 追加列は項目名(ラベル)だけでも表示する（本文が空でも項目名が見えるように）。
         //   c0(概要/担当)は従来どおり本文が空なら既定ラベルも非表示＝空タスクで「概要：/担当：」を出さない。
-        if(ganttCellVal(n,col.id,row).trim() || (col.id!=='c0' && lab && lab.trim())){
+        if(ganttCellShown(n,col,row)){
           const hang=ganttLabelW(lab);
           ganttCellLines(n,col,row).forEach((ln,li)=>addText(colx+di+(li?hang:0), ry+li*lh+lh/2, (li?ln:(lab?lab+'：':'')+ln), {sel,fs:11,noClip:true}));
         }
@@ -4512,6 +4673,7 @@ function renderGanttEdges(){
   S.edges.forEach(ed=>{
     const fn=S.nodes.find(n=>n.id===ed.from), tn=S.nodes.find(n=>n.id===ed.to);
     if(!fn||!tn||!isGanttShape(fn.type)||!isGanttShape(tn.type))return;
+    if(ganttWrapOn()&&(!ganttSlotOf(fn.id)||!ganttSlotOf(tn.id)))return;   // v8.08追補②: この段に出ていない行への線は描かない（n.x/n.y が段外で線が飛ぶ）
     const dep=ed.depType||'FS';
     // 端点: dep種別ごとに from/to の左端(start)・右端(end)を選択
     const fromRight=(dep==='FS'||dep==='FF');   // from終了側=右端
@@ -4638,11 +4800,29 @@ function ganttConnClick(id){
 }
 // タスク名インライン編集（名前列上）
 // テキストをセル幅に合わせて省略（…付き）
+// v8.08追補③: 文字の描画幅を「全角=fontPx／半角=fontPx*0.55」で積み上げて測る（見出し欄の mLab と同じ基準）。
+//   従来 ganttClip は一律 fontPx*0.62 の概算で、全角が多い文字列を短く見積もっていた。そのため
+//   時モードの「工程：2026年8月12日 0時～2026年8月30日 0時」のような行が切られずに列の枠を越えていた。
+function ganttTextW(str,fontPx){ let w=0; for(const ch of String(str==null?'':str)) w+=(ch.charCodeAt(0)>255?fontPx:fontPx*0.55); return w; }
+// v8.08追補③: 文字列が maxW に収まる最大フォントサイズ（fontPx 以下・minPx 以上）。
+//   時モードの工程行のように「日付＋時刻」で長くなる行を、末尾を…で切らずに収めるために使う。
+function ganttFitFs(str,maxW,fontPx,minPx){
+  const w=ganttTextW(str,fontPx);
+  if(!(w>maxW)||!(w>0)) return fontPx;
+  return Math.max(minPx||8, Math.floor(fontPx*maxW/w*10)/10);
+}
 function ganttClip(str,maxW,fontPx){
   str=String(str==null?'':str);
   if(!str)return '';
-  const per=fontPx*0.62, max=Math.max(1,Math.floor(maxW/per));
-  return str.length>max ? str.slice(0,Math.max(1,max-1))+'…' : str;
+  if(ganttTextW(str,fontPx)<=maxW) return str;
+  const eW=ganttTextW('…',fontPx);
+  let w=0, out='';
+  for(const ch of str){
+    const cw=(ch.charCodeAt(0)>255?fontPx:fontPx*0.55);
+    if(w+cw+eW>maxW) break;
+    out+=ch; w+=cw;
+  }
+  return (out||str.slice(0,1))+'…';
 }
 // 名前列の各セル（タスク名/概要/担当者）をインライン編集（v4.01）
 function ganttEditField(id,field){
@@ -8525,12 +8705,12 @@ async function expPDF(){
       // v8.08: 折り返し表示＝「1段＝1<tr>」で切る。段の中に時間軸ヘッダーが含まれるので反復ヘッダーは不要。
       //   page-break-inside:avoid により、段がページ境界で途切れるときだけ改ページされる。
       //   1段が用紙1ページより高い場合だけ、さらに maxChunkPx ごとに分割して <tr> が用紙を超えないようにする。
-      const bands=ganttWrapBandCount(), dh=ganttBandContentH(), top0=ganttHeadH();
-      for(let b=0;b<bands;b++){
-        let a=top0+b*dh; const bot=a+dh;
+      const bs=ganttBands(), top0=ganttHeadH();
+      bs.forEach(bd=>{
+        let a=top0+bd.dy; const bot=a+bd.H;
         while(a<bot-0.5){ const t=Math.min(bot,a+maxChunkPx); rows+=emit(a,t,'pg-phase'); a=t; }
-      }
-      emittedAny=bands>0;
+      });
+      emittedAny=bs.length>0;
     } else {
     let chunkTop=null, chunkBot=null;                       // フェーズ外タスクの現在チャンク
     const flushChunk=()=>{ if(chunkTop!==null){ rows+=emit(chunkTop,chunkBot,'pg-row'); emittedAny=true; chunkTop=null; } };
@@ -9974,7 +10154,7 @@ function ganttToggleWrap(){
   const w=(sel&&ch.indexOf(sel.value)>=0)?sel.value:ch[0];
   ganttSetWrap(w);
 }
-const GANTT_WRAP_NAME={day:'日ごと',week:'週ごと（日曜始まり）',month:'月ごと'};
+const GANTT_WRAP_NAME={day:'日ごと',week:'週ごと（日曜始まり）',month:'月ごと',year:'年ごと'};
 function ganttSyncWrapUI(){
   const g=S.gantt, ch=ganttWrapChoices(g.scale), on=ganttWrapOn();
   const btn=document.getElementById('gantt-wrap-btn'), sel=document.getElementById('gantt-wrap-unit');
