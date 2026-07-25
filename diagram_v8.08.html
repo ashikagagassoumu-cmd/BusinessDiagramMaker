@@ -3891,7 +3891,7 @@ function ganttLegendItems(){
       if(S.nodes.some(n=>n.type==='gantt_task'&&(n.progress||0)>0)) items.push({key:'progress',label:lab('progress','進捗（実績）'),kind:'progress',fill:SD.gantt_task.fill,stroke:SD.gantt_task.stroke});
     }
     if(has('gantt_milestone')) items.push({key:'milestone',label:lab('milestone','マイルストーン'),kind:'diamond',fill:SD.gantt_milestone.fill,stroke:SD.gantt_milestone.stroke});
-    if(has('gantt_summary')) items.push({key:'summary',label:lab('summary','フェーズ（工程）'),kind:'phase',fill:SD.gantt_summary.fill});
+    if(has('gantt_summary')) items.push({key:'summary',label:lab('summary','フェーズ（工程）'),kind:'phase',fill:SD.gantt_summary.fill,stroke:SD.gantt_summary.stroke});   // v8.08追補⑤: 実バーと同じ縁取り
     if(S.nodes.some(n=>n.type==='gantt_task'&&n.suspensions&&n.suspensions.length)) items.push({key:'suspend',label:lab('suspend','休工'),kind:'shade'});
     items.push({key:'weekend',label:lab('weekend','土日・休工日'),kind:'shade'});
   }
@@ -3907,18 +3907,30 @@ function ganttHeadModel(){
   const leftBottom = rows.length? (titleBottom+8+rpc*infoRowH) : titleBottom;
   const appOn=!!(h.approval&&h.approval.show), lgItems=ganttLegendItems(), lgOn=lg.show!==false&&lgItems.length>0;
   const appBottom=appOn?96:0;
-  const lgTop=appOn?104:24, lgRows=lgOn?Math.max(1,Math.ceil(lgItems.length/3)):0, lgH=lgOn?(18+lgRows*20):0, lgBottom=lgOn?(lgTop+lgH):0;
+  // v8.08追補⑤: 折り返しONは1段の幅に合わせてキャンバスが狭くなるため、縦に積んだ凡例（幅392）が
+  //   見出しの情報行と横に重なる（A4/A3の縦向きで顕著）。折り返し時は凡例を横一列にして最上段
+  //   （作成日の左）へ置く＝右ゾーンの高さを使わないので重ならず、見出し全体も低くなる。
+  const lgInline=lgOn&&ganttWrapOn();
+  const lgTop=lgInline?4:(appOn?104:24), lgRows=lgOn?(lgInline?1:Math.max(1,Math.ceil(lgItems.length/3))):0,
+        lgH=lgOn?(lgInline?18:(18+lgRows*20)):0, lgBottom=lgOn?(lgTop+lgH):0;
   const dateBottom=h.showDate?18:0;
   const rightBottom=Math.max(dateBottom,appBottom,lgBottom);
   const H=Math.max(leftBottom,rightBottom)+14;
-  _ganttHeadModel={H,rpc,infoRowH,titleBottom,appOn,lgItems,lgOn,lgTop,lgRows,lgH};
+  _ganttHeadModel={H,rpc,infoRowH,titleBottom,appOn,lgItems,lgOn,lgInline,lgTop,lgRows,lgH};
   return _ganttHeadModel;
 }
 // 凡例の色見本（種類別）
 function ganttLegendSwatch(gg,it,x,y){
   if(it.kind==='diamond'){ gg.appendChild(e('path',{d:`M${x+10} ${y} l6 6 l-6 6 l-6 -6 z`,fill:it.fill,stroke:it.stroke,'stroke-width':1.2,'pointer-events':'none'})); return; }
   if(it.kind==='shade'){ gg.appendChild(e('rect',{x,y:y-1,width:18,height:13,fill:'#eef2f6',stroke:'#e2e8f0','pointer-events':'none'})); return; }
-  if(it.kind==='phase'){ gg.appendChild(e('rect',{x,y:y+1,width:22,height:9,rx:2,fill:it.fill,'pointer-events':'none'})); return; }
+  // v8.08追補⑤: フェーズは実際のロールアップバーの形（上のスパイン＋左右端が下へ伸びる脚）に寄せる。
+  //   角丸の帯だとタスクバーと見分けが付かず、図中の形と結び付かない（ユーザー指摘）。比率は実バー（本体15:脚25）に合わせる。
+  if(it.kind==='phase'){
+    const t=y, w=22, bh=6, dp=11, cap=4;   // 本体:脚の深さ=6:11（実バー 15:25 と同比）。脚の幅は見えるよう実バーより誇張
+    gg.appendChild(e('path',{d:`M${x},${t} L${x},${t+dp} L${x+cap},${t+bh} L${x+w-cap},${t+bh} L${x+w},${t+dp} L${x+w},${t} Z`,
+      fill:it.fill,stroke:it.stroke||'none','stroke-width':it.stroke?0.9:0,'stroke-linejoin':'round','pointer-events':'none'}));
+    return;
+  }
   gg.appendChild(e('rect',{x,y,width:22,height:11,rx:2,fill:it.fill,stroke:it.stroke,'pointer-events':'none'}));
   if(it.kind==='progress') gg.appendChild(e('rect',{x,y,width:11,height:11,rx:2,fill:it.stroke,opacity:.45,'pointer-events':'none'}));
 }
@@ -3965,7 +3977,34 @@ function renderGanttTitleBlock(){
       else gg.appendChild(e('circle',{cx,cy:ay0+46,r:12,fill:'none',stroke:'#cbd5e1','stroke-width':1,'stroke-dasharray':'3 3','pointer-events':'none'}));
     });
   }
-  if(m.lgOn){
+  if(m.lgOn&&m.lgInline){
+    // v8.08追補⑤: 横一列の凡例を「表題（工事名）の右〜作成日の左」に収める。
+    //   幅は 固定部（余白＋色見本＋項目間）＋ 文字幅（フォントサイズに比例）なので、入る文字サイズは
+    //   線形に解いて求める（倍率で概算すると固定部が縮まないぶん収まらない）。下限7pxまで縮め、
+    //   それでも足りなければラベル末尾を…で切って必ず1列を保つ。表題の右側に置くのは、最上段に
+    //   置いた箱が表題（26px）の上端と縦に触れるのを構造的に防ぐため。
+    const dateW=h.showDate? ganttTextW('作成日：'+((h.dateText||'').trim()||pdfTodayStr()),12)+14 : 0;
+    const sw=22, lpad=9; let lgap=12, sgap=6;
+    const xR=rEdge-dateW, xL=padX+ganttTextW(_ttl||'（工事名）',26)+16;
+    const avail=Math.max(80,xR-xL);
+    const unit=m.lgItems.reduce((a,it)=>a+ganttTextW(it.label,1),ganttTextW('凡例',1));   // フォント1pxあたりの文字幅
+    const fixed=()=>lpad*2+m.lgItems.length*(sw+sgap+lgap);
+    let fs=Math.min(11,(avail-fixed())/Math.max(0.01,unit));
+    if(fs<8){ lgap=6; sgap=4; fs=Math.min(11,(avail-fixed())/Math.max(0.01,unit)); }   // まず項目間を詰める
+    fs=Math.max(7,Math.min(11,fs));
+    const over=Math.max(0,fixed()+unit*fs-avail);   // 7pxでも入らないぶんは各ラベルから均等に削る
+    const lw=Math.min(fixed()+unit*fs,avail), lx0=xR-lw, ly0=m.lgTop, lh=m.lgH, by=ly0+lh/2+4;
+    gg.appendChild(e('rect',{x:lx0,y:ly0,width:lw,height:lh,rx:5,fill:'#ffffff',stroke:'#1e293b','stroke-width':1.4,'pointer-events':'none'}));
+    let cx=lx0+lpad;
+    gg.appendChild(e('text',{x:cx,y:by,'font-size':String(fs),'font-weight':'700',fill:'#334155','pointer-events':'none'})).textContent='凡例';
+    cx+=ganttTextW('凡例',fs)+lgap;
+    m.lgItems.forEach(it=>{
+      const lb=over>0? ganttClip(it.label,Math.max(fs,ganttTextW(it.label,fs)-over/m.lgItems.length),fs) : it.label;
+      ganttLegendSwatch(gg,it,cx,by-10);
+      gg.appendChild(e('text',{x:cx+sw+sgap,y:by,'font-size':String(fs),fill:'#1e293b','pointer-events':'none'})).textContent=lb;
+      cx+=sw+sgap+ganttTextW(lb,fs)+lgap;
+    });
+  } else if(m.lgOn){
     const lw=392, lx0=rEdge-lw, ly0=m.lgTop, lh=m.lgH;
     gg.appendChild(e('rect',{x:lx0,y:ly0,width:lw,height:lh,rx:6,fill:'#ffffff',stroke:'#1e293b','stroke-width':1.6,'pointer-events':'none'}));
     gg.appendChild(e('text',{x:lx0+10,y:ly0+16,'font-size':'12','font-weight':'700',fill:'#334155','pointer-events':'none'})).textContent='凡例';
