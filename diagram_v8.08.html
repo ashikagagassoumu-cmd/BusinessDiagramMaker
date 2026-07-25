@@ -329,6 +329,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="tbtn gantt-scale" data-scale="day" onclick="ganttSetScale('day')">日</button>
     <button class="tbtn gantt-scale" data-scale="week" onclick="ganttSetScale('week')">週</button>
     <button class="tbtn gantt-scale" data-scale="month" onclick="ganttSetScale('month')">月</button>
+    <span style="font-size:11px;color:#94a3b8;margin-left:8px">折り返し</span>
+    <button class="tbtn" id="gantt-wrap-btn" onclick="ganttToggleWrap()">OFF</button>
+    <select id="gantt-wrap-unit" onchange="ganttSetWrap(this.value)" style="font-size:11px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e293b"></select>
     <span style="font-size:11px;color:#cbd5e1;margin-left:8px;font-weight:600" title="チェックした曜日・祝日を『休日』として0:00〜24:00を終日グレー表示します（時モードの夜間20:00〜翌6:00はチェックに関係なく常時グレー）">休日（終日グレー）:</span>
     <label class="gantt-hol-chk" title="土曜を休日（終日グレー）にする"><input type="checkbox" id="gantt-hol-sat" onchange="ganttSetHoliday('sat',this.checked)">土曜</label>
     <label class="gantt-hol-chk" title="日曜を休日（終日グレー）にする"><input type="checkbox" id="gantt-hol-sun" onchange="ganttSetHoliday('sun',this.checked)">日曜</label>
@@ -774,6 +777,8 @@ const GANTT_BAR_H={gantt_task:30.24,gantt_milestone:20,gantt_summary:21.6}; // �
 const GANTT_SCALE_COL_W={hour:24,day:32,week:48,month:80}; // スケール別の既定列幅（v8.06: hour=1時間=24px）
 const GANTT_SHADE_NIGHT='#f3f6f9';  // v8.07: 時モードの夜間帯（20:00〜翌6:00）の薄グレー
 const GANTT_SHADE_FULL='#eef2f6';   // v8.07: 休日の終日グレー（従来の土日網掛けと同トーン）
+const GANTT_BAND_LABEL_H=22;  // v8.08: 折り返し時の段見出し（帯）の高さ
+const GANTT_BAND_GAP=14;      // v8.08: 段と段のあいだの余白
 
 // ── 図種定義 ──
 const DIAGRAM_TYPES={
@@ -1040,7 +1045,7 @@ let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],
 function ganttFirstOfThisMonth(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';}
 // v5.00: 完了日の既定＝開始から旧既定の表示幅（約 visibleUnits 日）に達する月の末日（キリ良く月末・画面いっぱい相当）
 function ganttDefaultEnd(start){ const d=ganttParseDate(start), far=new Date(d.getFullYear(),d.getMonth(),d.getDate()+60); return ganttFmtDate(new Date(far.getFullYear(),far.getMonth()+1,0)); }
-function defaultGantt(){const s=ganttFirstOfThisMonth();return{startDate:s,scale:'day',colWidth:32,visibleUnits:60,nameW:GANTT_NAME_W,descW:GANTT_DESC_W,assigneeW:GANTT_ASSIGNEE_W,endDate:ganttDefaultEnd(s),header:defaultGanttHeader(),legend:defaultGanttLegend(),holidays:{sat:true,sun:true,jp:true}};}  // v5.00 ①/既定完了日 ・v8.07: 休日設定(holidays): endDate=月末（空=自動延長も可）/ v8.00: 見出し欄(header)・凡例(legend)
+function defaultGantt(){const s=ganttFirstOfThisMonth();return{startDate:s,scale:'day',colWidth:32,visibleUnits:60,nameW:GANTT_NAME_W,descW:GANTT_DESC_W,assigneeW:GANTT_ASSIGNEE_W,endDate:ganttDefaultEnd(s),header:defaultGanttHeader(),legend:defaultGanttLegend(),holidays:{sat:true,sun:true,jp:true},wrap:'off'};}  // v5.00 ①/既定完了日 ・v8.07: 休日設定(holidays): endDate=月末（空=自動延長も可）/ v8.00: 見出し欄(header)・凡例(legend)
 // v8.00: 工程表の見出し欄（表題部）。工事名＋自由な「ラベル：値」行＋作成日＋承認欄（押印枠）。
 //   approval.slots は描画順（左→右）に格納＝[承認,確認,作成]（紙面では右から作成・確認・承認）。
 function defaultGanttHeader(){return{
@@ -1230,6 +1235,7 @@ function ganttLeftW(){return ganttPhaseColW()+ganttColsTotalW();}   // v4.04: �
 // 時間軸の原点（v4.20: 週=開始日が属する週の月曜／月=開始月の1日 に揃え、列と日付ラベル・
 // シェイプ位置を一致させる。日スケールは従来どおり開始日そのもの）
 function ganttAxisOrigin(){
+  if(_gwBand!=null) return ganttWrapBandStart(_gwBand);   // v8.08: 折り返し中は段の先頭が原点
   const g=S.gantt, d=ganttParseDate(g.startDate);
   if(g.scale==='hour') return ganttFmtDate(d);   // v8.07: 時モードは初日0:00始まり（開始日の時刻を切り捨てて当日00:00を原点に）
   if(g.scale==='week') return ganttFmtDate(ganttMonday(d));
@@ -1262,6 +1268,89 @@ function ganttXToDate(x){
   const g=S.gantt;
   const units=Math.round((x-ganttLeftW())/ganttColW());
   return ganttFmt(ganttAddUnit(ganttAxisOrigin(),units,g.scale),g.scale);   // v8.06: hour は時刻付きで返す
+}
+// ── v8.08: 折り返し表示（時間軸を一定の区切りごとに次の段へ折り返す）──
+//   S.gantt.wrap: 'off'（既定・従来どおり右へ一直線）/ 'day' / 'week' / 'month' = 折り返しの単位。
+//   考え方は「折り返し単位は目盛り単位より1段上」。列が段の境界にぴったり揃う組み合わせだけを許す:
+//     目盛り=時 → 日ごと（1段=24列） / 目盛り=日 → 週ごと（1段=7列・日曜始まり）または月ごと（1段=その月の日数）。
+//   週/月目盛りは1列が粗く境界に揃わないため対象外（休日グレーアウトが非対象なのと同じ理由）。
+//   描画は「段ごとに軸原点を段の先頭へ差し替え、Yは平行移動グループでずらす」方式。これにより
+//   既存の各描画関数の座標計算（段0のローカル座標）をそのまま再利用できる。
+let _gwBand=null;   // 描画中の段index（null=折り返しOFF／通常描画）
+let _gwDY=0;        // その段のY平行移動量
+function ganttWrapChoices(scale){ return scale==='hour'?['day']:(scale==='day'?['week','month']:[]); }
+function ganttWrapOn(){ const g=S.gantt; if(!g)return false; const w=g.wrap; return !!w&&w!=='off'&&ganttWrapChoices(g.scale).indexOf(w)>=0; }
+// 折り返し単位の境界へ切り下げた日付（週=その週の日曜／月=月初／日=その日）
+function ganttWrapAlignDown(dateStr,w){
+  const d=ganttParseDate(dateStr);
+  if(w==='week'){ const s=new Date(d.getFullYear(),d.getMonth(),d.getDate()-d.getDay()); return ganttFmtDate(s); }
+  if(w==='month') return ganttFmtDate(new Date(d.getFullYear(),d.getMonth(),1));
+  return ganttFmtDate(d);
+}
+function ganttWrapBandStart(i){ const g=S.gantt; return ganttFmtDate(ganttAddUnit(ganttWrapAlignDown(g.startDate,g.wrap),i,g.wrap)); }
+// 表示に必要な最終日（完了日・各タスクの終了日・マイルストーン日付の最大）
+function ganttWrapEndDate(){
+  const g=S.gantt; let maxD=ganttParseDate(g.startDate);
+  S.nodes.forEach(n=>{
+    if(n.type==='gantt_milestone'){ const d=ganttParseDate(n.date||g.startDate); if(d>maxD)maxD=d; }
+    else if(n.type==='gantt_task'){ const d=ganttParseDate(n.endDate||n.startDate||g.startDate); if(d>maxD)maxD=d; }
+  });
+  if(g.endDate){ const ed=ganttParseDate(g.endDate); if(ed>maxD)maxD=ed; }
+  return maxD;
+}
+function ganttWrapBandCount(){
+  const end=ganttWrapEndDate(); let n=1;
+  while(n<400 && ganttParseDate(ganttWrapBandStart(n))<=end) n++;   // 400段で打ち切り（暴走防止）
+  return n;
+}
+// その段の列数（月ごとは月によって28〜31と変わるので段ごとに算出）
+function ganttWrapBandUnits(i){ return Math.max(1,Math.round(ganttDiffUnit(ganttWrapBandStart(i),ganttWrapBandStart(i+1),S.gantt.scale))); }
+// 1段ぶんの高さ＝段見出し＋時間軸ヘッダー＋行の総高さ＋段間の余白
+function ganttBandContentH(){ const L=ganttLayout(); return GANTT_BAND_LABEL_H+GANTT_HEADER_H+Math.max(0,L.bottom-ganttBodyTop())+GANTT_BAND_GAP; }
+function ganttBandAtY(y){
+  if(!ganttWrapOn()) return 0;
+  const h=ganttBandContentH(), top=ganttHeadH();
+  if(!(h>0)) return 0;
+  return Math.max(0,Math.min(ganttWrapBandCount()-1,Math.floor((y-top)/h)));
+}
+// 画面のY座標を「段0のローカルY」へ畳み込む（行判定・当たり判定用）
+function ganttLocalY(y){
+  if(!ganttWrapOn()) return y;
+  const h=ganttBandContentH(), top=ganttHeadH();
+  if(!(h>0)||y<top) return y;
+  return top+((y-top)%h);
+}
+// 画面座標 → 日付。折り返しONでは Y から段を求め、その段の原点を基準にXを単位換算する。
+function ganttPosToDate(x,y){
+  if(!ganttWrapOn()) return ganttXToDate(x);
+  const sv=_gwBand; _gwBand=ganttBandAtY(y);
+  const d=ganttXToDate(x); _gwBand=sv; return d;
+}
+// 描画先レイヤー。折り返し中は段ごとの平行移動グループを返す（各描画関数の座標は段0のまま）。
+function ganttLayer(id){
+  const root=document.getElementById(id);
+  if(!_gwDY) return root;
+  const key='gw'+_gwBand+'_'+id;
+  let g=root.querySelector('g[data-gw="'+key+'"]');
+  if(!g){ g=e('g',{transform:'translate(0,'+_gwDY+')','data-gw':key}); root.appendChild(g); }
+  return g;
+}
+// 折り返し中の「1段の帯幅／行の下端」。通常描画ではキャンバス全体を返す。
+function ganttStripW(){ return ganttWrapOn()? (ganttLeftW()+ganttTotalUnits()*ganttColW()) : SVG_W; }
+function ganttStripBottom(){ return ganttWrapOn()? ganttLayout().bottom : SVG_H; }
+function ganttBandLabelText(i){
+  const g=S.gantt, s=ganttParseDate(ganttWrapBandStart(i)), W='日月火水木金土';
+  if(g.wrap==='day') return s.getFullYear()+'年'+(s.getMonth()+1)+'月'+s.getDate()+'日（'+W[s.getDay()]+'）';
+  if(g.wrap==='month') return s.getFullYear()+'年'+(s.getMonth()+1)+'月';
+  const e2=new Date(s.getFullYear(),s.getMonth(),s.getDate()+6);
+  return s.getFullYear()+'年'+(s.getMonth()+1)+'月'+s.getDate()+'日（日）〜 '+(e2.getMonth()+1)+'月'+e2.getDate()+'日（土）';
+}
+function renderGanttBandLabel(i){
+  const gg=ganttLayer('g-dividers'), y=ganttHeadH(), w=ganttStripW();
+  gg.appendChild(e('rect',{x:0,y,width:w,height:GANTT_BAND_LABEL_H,fill:'#e8eef5','pointer-events':'none'}));
+  gg.appendChild(e('line',{x1:0,y1:y+GANTT_BAND_LABEL_H,x2:w,y2:y+GANTT_BAND_LABEL_H,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'}));
+  const t=e('text',{x:9,y:y+GANTT_BAND_LABEL_H/2,fill:'#334155','font-size':11,'dominant-baseline':'middle','pointer-events':'none'});
+  t.textContent=ganttBandLabelText(i); gg.appendChild(t);
 }
 // ── v6.06: 休工期間（タスクごとの suspensions=[{start,end}]）──
 // 休工区間を正規化して返す: start>end は入替／両端含む／重なり・隣接は統合／開始昇順。
@@ -1330,23 +1419,34 @@ function ganttHolidayRuns(x0,x1){
   }
   return out.length?out:[{a:x0,b:x1,hol:false}];
 }
-// v8.08: バー区間の塗り path。角丸を左端(rl)/右端(rr)ごとに効かせる（内側の継ぎ目は平ら）。
-function ganttBarPath(x,y,w,h,r,rl,rr){
-  const R=Math.max(0,Math.min(r,h/2,w/2)), l=rl?R:0, g=rr?R:0;
-  return 'M'+(x+l)+','+y+'H'+(x+w-g)
-    +(g?('a'+g+','+g+' 0 0 1 '+g+','+g):'')+'V'+(y+h-g)
-    +(g?('a'+g+','+g+' 0 0 1 '+(-g)+','+g):'')+'H'+(x+l)
-    +(l?('a'+l+','+l+' 0 0 1 '+(-l)+','+(-l)):'')+'V'+(y+l)
-    +(l?('a'+l+','+l+' 0 0 1 '+l+','+(-l)):'')+'Z';
+// v8.08: バー区間の端の形。0=平ら（隣の区間と接する内側の継ぎ目）/ 1=角丸（バーの外端）/
+//   2=矢羽根（折り返しで段をまたいで続く側）。塗り用は閉じたpath、外周線用は平らな辺を描かない開いたpath。
+const GANTT_CHEV_W=7;   // 矢羽根の突き出し量
+function ganttBarPath(x,y,w,h,r,eL,eR){
+  const R=Math.max(0,Math.min(r,h/2,w/2)), C=Math.min(GANTT_CHEV_W,w/2), m=y+h/2;
+  const l=(eL===1)?R:0, g=(eR===1)?R:0;
+  let d='M'+(x+((eL===2)?C:l))+','+y+'H'+(x+w-((eR===2)?C:g));
+  if(eR===2) d+='L'+(x+w)+','+m+'L'+(x+w-C)+','+(y+h);
+  else { if(g)d+='a'+g+','+g+' 0 0 1 '+g+','+g; d+='V'+(y+h-g); if(g)d+='a'+g+','+g+' 0 0 1 '+(-g)+','+g; }
+  d+='H'+(x+((eL===2)?C:l));
+  if(eL===2) d+='L'+x+','+m+'L'+(x+C)+','+y;
+  else { if(l)d+='a'+l+','+l+' 0 0 1 '+(-l)+','+(-l); d+='V'+(y+l); if(l)d+='a'+l+','+l+' 0 0 1 '+l+','+(-l); }
+  return d+'Z';
 }
-// v8.08: バー区間の外周線 path。隣の区間と接している側（内側の継ぎ目）には線を引かず、上辺・下辺と
-//   外端だけを描く。これで休日区間の破線が「1本のバーの途中」として読める（縦線でぶつ切りに見えない）。
-function ganttBarEdgePath(x,y,w,h,r,rl,rr){
-  const R=Math.max(0,Math.min(r,h/2,w/2)), l=rl?R:0, g=rr?R:0;
-  if(rl&&rr) return ganttBarPath(x,y,w,h,r,true,true);
-  if(rl) return 'M'+(x+w)+','+y+'H'+(x+l)+(l?('a'+l+','+l+' 0 0 0 '+(-l)+','+l):'')+'V'+(y+h-l)+(l?('a'+l+','+l+' 0 0 0 '+l+','+l):'')+'H'+(x+w);
-  if(rr) return 'M'+x+','+y+'H'+(x+w-g)+(g?('a'+g+','+g+' 0 0 1 '+g+','+g):'')+'V'+(y+h-g)+(g?('a'+g+','+g+' 0 0 1 '+(-g)+','+g):'')+'H'+x;
-  return 'M'+x+','+y+'H'+(x+w)+'M'+x+','+(y+h)+'H'+(x+w);
+function ganttBarEdgePath(x,y,w,h,r,eL,eR){
+  const R=Math.max(0,Math.min(r,h/2,w/2)), C=Math.min(GANTT_CHEV_W,w/2), m=y+h/2;
+  const l=(eL===1)?R:0, g=(eR===1)?R:0;
+  const tl=x+((eL===2)?C:l), tr=x+w-((eR===2)?C:g);
+  const right=(eR===2)?('L'+(x+w)+','+m+'L'+tr+','+(y+h))
+    :((eR===1)?('a'+g+','+g+' 0 0 1 '+g+','+g+'V'+(y+h-g)+'a'+g+','+g+' 0 0 1 '+(-g)+','+g):'');
+  const leftUp=(eL===2)?('L'+x+','+m+'L'+tl+','+y)
+    :((eL===1)?('a'+l+','+l+' 0 0 1 '+(-l)+','+(-l)+'V'+(y+l)+'a'+l+','+l+' 0 0 1 '+l+','+(-l)):'');
+  const leftDown=(eL===2)?('L'+x+','+m+'L'+tl+','+(y+h))
+    :((eL===1)?('a'+l+','+l+' 0 0 0 '+(-l)+','+l+'V'+(y+h-l)+'a'+l+','+l+' 0 0 0 '+l+','+l):'');
+  if(eR&&eL) return 'M'+tl+','+y+'H'+tr+right+'H'+tl+leftUp;
+  if(eR)     return 'M'+tl+','+y+'H'+tr+right+'H'+tl;
+  if(eL)     return 'M'+tr+','+y+'H'+tl+leftDown+'H'+tr;
+  return 'M'+tl+','+y+'H'+tr+'M'+tl+','+(y+h)+'H'+tr;
 }
 
 function wrapText(text,maxW,fontSize){
@@ -1682,6 +1782,15 @@ function calcCanvasSize(){
   // ガントチャート: 名前列＋時間軸幅 / ヘッダー＋行数高さ
   if(S.diagramType==='gantt'){
     const g=S.gantt;
+    if(ganttWrapOn()){
+      // v8.08: 折り返し=幅は「最も列数の多い段」に合わせ、高さは段数ぶん積む（横スクロールを不要にする）
+      const bands=ganttWrapBandCount(); let mx=1;
+      for(let b=0;b<bands;b++) mx=Math.max(mx,ganttWrapBandUnits(b));
+      SVG_W=ganttLeftW()+mx*ganttColW();
+      if(g.header&&g.header.show) SVG_W=Math.max(SVG_W,1120);
+      SVG_H=Math.max(400, ganttHeadH()+bands*ganttBandContentH()+8);
+      return;
+    }
     let maxUnit;
     if(g.endDate){
       // v5.00 ①: 完了日が指定されていれば、表示範囲を開始日～完了日で区切る（右端=完了日）。
@@ -1991,7 +2100,7 @@ function ganttPlace(type,px,py){
     return;
   }
   // v5.00 ③: 情報欄(px<ganttLeftW)へのクリック/ドロップでも追加可能に（ヘッダー行のみスキップ）。
-  if(py<ganttBodyTop()) return;   // v8.00: 見出し＋時間軸ヘッダーより上はスキップ
+  if(ganttLocalY(py)<ganttBodyTop()) return;   // v8.00: 見出し＋時間軸ヘッダーより上はスキップ（v8.08: 折り返し時は段0のローカルYで判定）
   // v5.00 ④: 左クリックで選択中のタスク（無ければドロップ位置の行）の直下に挿入。基準が無ければ最下行。
   const rows=ganttNodesSorted();
   let anchor=null;
@@ -1999,7 +2108,7 @@ function ganttPlace(type,px,py){
   if(!anchor && rows.length) anchor=rows[Math.max(0,Math.min(rows.length-1,ganttSlotIndexAtY(py)))]||null;
   // 開始日: 時間軸上に置いたら px から、情報欄なら基準タスクに合わせる（無ければ開始日）。
   let startDate;
-  if(px>=ganttLeftW()) startDate=ganttXToDate(px);
+  if(px>=ganttLeftW()) startDate=ganttPosToDate(px,py);   // v8.08: 折り返し時はYから段を決めてその段の原点で換算
   else if(anchor) startDate=(anchor.type==='gantt_milestone'?anchor.date:anchor.startDate)||g.startDate;
   else startDate=g.startDate;
   // 挿入行: 基準タスクの直下（row+0.5 で割り込み→後で 0..N-1 に正規化）。基準が無ければ最下行。
@@ -3469,7 +3578,8 @@ function ganttRowSlots(){
     const h=ganttRowHeight(n); slots.push({top:y,height:h,node:n,kind:'task'}); y+=h;
   });
   // 末尾の空き行（視覚的に最低8スロット＋余白1行ぶん）
-  const extra=Math.max(0,8-list.length)+1;
+  // v8.08: 折り返し時は段ごとに空き行が繰り返されて縦に膨れるため、末尾の空き行は1行だけにする
+  const extra=ganttWrapOn()?1:(Math.max(0,8-list.length)+1);
   const eh=ganttEmptyRowHeight();   // v5.03: 空欄行はタスク行と同じ高さ
   for(let k=0;k<extra;k++){ slots.push({top:y,height:eh,node:null,kind:'empty'}); y+=eh; }
   return {list,slots,bottom:y};
@@ -3492,6 +3602,7 @@ function ganttTaskSlot(taskIdx){
 }
 // Y座標 → タスク行 index（ヘッダー/空き行はスキップし、直後のタスク行に丸める）v4.19
 function ganttSlotIndexAtY(y){
+  y=ganttLocalY(y);   // v8.08: 折り返し時は段0のローカルYへ畳んで行判定
   const L=ganttLayout(); let taskIdx=-1;
   for(const s of L.slots){
     const inSlot=(y>=s.top&&y<s.top+s.height);
@@ -3502,6 +3613,7 @@ function ganttSlotIndexAtY(y){
 }
 // 表示単位数（キャンバス幅から算出）
 function ganttTotalUnits(){
+  if(_gwBand!=null) return ganttWrapBandUnits(_gwBand);   // v8.08: 折り返し中はその段の列数
   return Math.max(1,Math.ceil((SVG_W-ganttLeftW())/ganttColW()));
 }
 // 簡易週番号（年初からの通算週）
@@ -3673,7 +3785,7 @@ function calcGanttPositions(){
 }
 // ===== v8.00: ガント見出しブロック（表題部＋承認欄＋凡例） =====
 function ganttHeadH(){ const h=S.gantt&&S.gantt.header; if(!h||!h.show) return 0; return ganttHeadModel().H; }
-function ganttBodyTop(){ return ganttHeadH()+GANTT_HEADER_H; }   // 内容（行）の上端＝見出し＋時間軸ヘッダーの下
+function ganttBodyTop(){ return ganttHeadH()+(ganttWrapOn()?GANTT_BAND_LABEL_H:0)+GANTT_HEADER_H; }   // v8.08: 折り返し時は段見出しぶんも下げる   // 内容（行）の上端＝見出し＋時間軸ヘッダーの下
 // 凡例に載せる項目を、図で実際に使われている要素から自動生成（＋手動 extra）。
 function ganttLegendItems(){
   const lg=(S.gantt&&S.gantt.legend)||{}; if(lg.show===false) return [];
@@ -3775,6 +3887,7 @@ function renderGanttTitleBlock(){
 function renderGantt(){
   ganttEnsureHeader();            // v8.00: 旧ファイル後方互換（header/legend 補完）
   _ganttHeadModel=null;           // v8.00: 見出し寸法を再計算（行数・承認/凡例トグルに追従）
+  _gwBand=null; _gwDY=0;          // v8.08: 段の状態を先に戻す（ganttBodyTop が段見出しを見込むため）
   _ganttLayout=ganttRowSlots();   // v4.04: 可変行高レイアウトを毎フレーム再構築（以降の各描画が参照）
   _ganttColW=ganttComputeColW();  // v5.02: 実効列幅（週/月で完了日までが短いとき画面いっぱいに拡大）を先に確定
   calcGanttPositions();
@@ -3782,14 +3895,34 @@ function renderGantt(){
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
   ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers'].forEach(id=>{document.getElementById(id).innerHTML='';});
-  renderGanttRows();
-  renderGanttGrid();
-  renderGanttEdges();
-  renderGanttTasks();
-  renderGanttPhaseBars();   // v4.19: 工程側のフェーズ・ヘッダー横バー（ロールアップ期間）
-  renderGanttNameCol();
-  renderGanttPhases();   // v4.17: フェーズ専用列（最左・縦型バンド）
-  renderGanttHeader();
+  if(ganttWrapOn()){
+    // v8.08: 段ごとに「軸原点＝段の先頭」へ差し替え、Yは平行移動グループでずらして同じ描画関数を再利用する。
+    const bands=ganttWrapBandCount(), dh=ganttBandContentH();
+    for(let b=0;b<bands;b++){
+      _gwBand=b; _gwDY=b*dh;
+      calcGanttPositions();   // その段の原点でバー座標を再計算（段外のバーは描画側で除外）
+      renderGanttRows();
+      renderGanttGrid();
+      renderGanttEdges();
+      renderGanttTasks();
+      renderGanttPhaseBars();
+      renderGanttNameCol();
+      renderGanttPhases();
+      renderGanttHeader();
+      renderGanttBandLabel(b);
+    }
+    _gwBand=null; _gwDY=0;
+    calcGanttPositions();   // ドラッグ等が参照する座標は段0基準に戻す
+  } else {
+    renderGanttRows();
+    renderGanttGrid();
+    renderGanttEdges();
+    renderGanttTasks();
+    renderGanttPhaseBars();   // v4.19: 工程側のフェーズ・ヘッダー横バー（ロールアップ期間）
+    renderGanttNameCol();
+    renderGanttPhases();   // v4.17: フェーズ専用列（最左・縦型バンド）
+    renderGanttHeader();
+  }
   renderGanttTitleBlock();   // v8.00: 見出し欄（表題＋承認欄＋凡例）
   zoomLevel=1; applyZoom();
   // ズームラベルは列幅(px)を表示、ツールバーのスケール/開始日を同期
@@ -3799,21 +3932,21 @@ function renderGantt(){
 }
 // 行背景（交互色）
 function renderGanttRows(){
-  const gg=document.getElementById('g-lanes');
+  const gg=ganttLayer('g-lanes');   // v8.08: 折り返し中は段ごとの平行移動グループへ描く
   const slots=ganttLayout().slots;
   let i=0, y=ganttBodyTop();
   slots.forEach(s=>{
     // v4.30: フェーズ専用ヘッダー行は背景を「フェーズ色の薄め」にして区切り目を明確化
     const rowFill = (s.kind==='phase') ? ganttLighten((s.node&&s.node.color)||SD.gantt_summary.fill,0.82) : (i%2?'#f8fafc':'#ffffff');
-    gg.appendChild(e('rect',{x:0,y:s.top,width:SVG_W,height:s.height,fill:rowFill,'pointer-events':'none'}));
+    gg.appendChild(e('rect',{x:0,y:s.top,width:ganttStripW(),height:s.height,fill:rowFill,'pointer-events':'none'}));
     y=s.top+s.height; i++;
   });
   // 末尾スロット下端〜SVG_H を同じ交互パターンで埋める（v4.07: 最後の行だけ色が違って見える問題を解消）
-  while(y<SVG_H){
-    gg.appendChild(e('rect',{x:0,y,width:SVG_W,height:Math.min(GANTT_ROW_H,SVG_H-y),fill:i%2?'#f8fafc':'#ffffff','pointer-events':'none'}));
+  while(y<ganttStripBottom()){
+    gg.appendChild(e('rect',{x:0,y,width:ganttStripW(),height:Math.min(GANTT_ROW_H,ganttStripBottom()-y),fill:i%2?'#f8fafc':'#ffffff','pointer-events':'none'}));
     y+=GANTT_ROW_H; i++;
   }
-  gg.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'none',stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'}));
+  gg.appendChild(e('rect',{x:0,y:ganttWrapOn()?ganttHeadH():0,width:ganttStripW(),height:ganttStripBottom()-(ganttWrapOn()?ganttHeadH():0),fill:'none',stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'}));
 }
 // v6.09: 月表示の日付目盛り（刻み）。通常=5日刻み[1,5,10,15,20,25]／全体工程が1年(365日)超=10日刻み[1,10,20]。
 //   「30」は出さない（月末は月境界の強調線で示す）。renderGanttGrid / renderGanttHeader / expExcel で共有。
@@ -3828,9 +3961,9 @@ function ganttMonthTicks(){
 }
 // 縦グリッド線＋土日網掛け（v4.20: 原点を ganttAxisOrigin に揃え列を月曜/月初基準に。本日線は撤去）
 function renderGanttGrid(){
-  const g=S.gantt, gg=document.getElementById('g-grid');
+  const g=S.gantt, gg=ganttLayer('g-grid');
   const cw=ganttColW(), x0=ganttLeftW(), units=ganttTotalUnits(), origin=ganttAxisOrigin();
-  const top=ganttBodyTop(), bot=SVG_H;
+  const top=ganttBodyTop(), bot=ganttStripBottom();
   for(let i=0;i<=units;i++){
     const date=ganttAddUnit(origin,i,g.scale);
     const x=x0+i*cw;
@@ -3895,7 +4028,7 @@ function renderGanttGrid(){
 }
 // 時間軸ヘッダー（2段）
 function renderGanttHeader(){
-  const g=S.gantt, _gd=document.getElementById('g-dividers'), _oy=ganttHeadH();
+  const g=S.gantt, _gd=ganttLayer('g-dividers'), _oy=ganttHeadH()+(ganttWrapOn()?GANTT_BAND_LABEL_H:0);   // v8.08: 折り返し時は段見出しぶんも下げる
   const gg=_oy?e('g',{transform:'translate(0,'+_oy+')'}):_gd;   // v8.00: 見出しぶん時間軸ヘッダーを下げる（座標は不変・グループ平行移動）
   const cw=ganttColW(), x0=ganttLeftW(), units=ganttTotalUnits(), topH=GANTT_HEADER_H/2;
   gg.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:GANTT_HEADER_H,fill:'#1e293b','pointer-events':'none'}));
@@ -4054,12 +4187,12 @@ function renderGanttHeader(){
   const ptt=e('title'); ptt.textContent='列を追加'; pgrp.appendChild(ptt);
   pgrp.addEventListener('mousedown',ev=>{ev.stopPropagation();});
   pgrp.addEventListener('click',ev=>{ev.stopPropagation();ganttAddColumn();});
-  gg.appendChild(pgrp);
+  if(_gwBand===null||_gwBand===0) gg.appendChild(pgrp);   // v8.08: 「列を追加」ボタンは先頭の段にだけ出す
   if(_oy) _gd.appendChild(gg);   // v8.00: 平行移動グループを実レイヤーへ
 }
 // タスクバー群
 function renderGanttTasks(){
-  const gg=document.getElementById('g-nodes');
+  const gg=ganttLayer('g-nodes');
   ganttNodesSorted().forEach(n=>{   // v4.17: 行＝タスク／マイルストーンのみ（フェーズは renderGanttPhases）
     const sel=S.sel.includes(n.id);
     if(n.type==='gantt_milestone') renderGanttMilestone(gg,n,sel);
@@ -4073,19 +4206,32 @@ function renderGanttTaskBar(gg,n,sel){
   // v6.06: 休工期間ぶんバーに穴を空ける（前後は残す・日程不変）。進捗の塗りも同じ位置で穴。
   //   休工が無ければ従来どおり1本のバー＝[[n.x,n.x+n.w]]。全期間被覆なら空配列＝バー全消し。
   const strokeCol=sel?'#2563eb':(n.stroke||d.stroke), strokeW=sel?2.5:1.2;
-  const _bx0=n.x, _bx1=n.x+n.w, _progX=n.x+n.w*pr/100;
+  let _bx0=n.x, _bx1=n.x+n.w; const _progX=n.x+n.w*pr/100;
+  // v8.08: 折り返しONではこの段の帯（軸の左端〜列数ぶん）でバーを切り、はみ出す側は矢羽根で「続く」ことを示す。
+  let _cutL=false, _cutR=false;
+  if(ganttWrapOn()){
+    const _w0=ganttLeftW(), _w1=_w0+ganttTotalUnits()*ganttColW();
+    if(_bx1<=_w0+0.01||_bx0>=_w1-0.01) return;   // この段には現れないタスク
+    if(_bx0<_w0){ _bx0=_w0; _cutL=true; }
+    if(_bx1>_w1){ _bx1=_w1; _cutR=true; }
+    if(_bx1-_bx0<1) return;
+  }
   // v8.08: 休日（土/日/祝チェックでONの日）にかかる区間は枠を破線＋塗りを薄くして非稼働を示す。
-  //   休日での分割は「切れ目」ではないので、隣の区間と接している側は角を丸めず線も引かない（rl/rr）。
-  //   休工の穴で分断された側だけ従来どおり丸めて線を引く。塗り→進捗→外周線の順に重ねる。
-  const _segs=ganttBarSegments(n,_bx0,_bx1).map((sg,si,arr)=>({a:sg.a,b:sg.b,hol:sg.hol,
-    rl:(si===0)||(arr[si-1].b<sg.a-0.01), rr:(si===arr.length-1)||(arr[si+1].a>sg.b+0.01)}));
-  _segs.forEach(sg=>{
-    grp.appendChild(e('path',{d:ganttBarPath(sg.a,n.y,sg.b-sg.a,n.h,4,sg.rl,sg.rr),fill:sg.hol?ganttLighten(fill,0.55):fill}));
-    const pb=Math.min(sg.b,_progX);   // このセグメント内の進捗塗り（休日区間は薄めに入れる）
-    if(pb>sg.a) grp.appendChild(e('path',{d:ganttBarPath(sg.a,n.y,pb-sg.a,n.h,4,sg.rl,sg.rr&&pb>=sg.b-0.01),fill:n.stroke||d.stroke,opacity:sg.hol?.2:.45,'pointer-events':'none'}));
+  //   休日での分割は「切れ目」ではないので、隣の区間と接している側は角を丸めず線も引かない（端の形=0）。
+  //   休工の穴で分断された側は角丸（1）、段をまたいで続く側は矢羽根（2）。塗り→進捗→外周線の順に重ねる。
+  const _segs=ganttBarSegments(n,_bx0,_bx1).map((sg,si,arr)=>{
+    const first=(si===0), last=(si===arr.length-1);
+    const openL=first||(arr[si-1].b<sg.a-0.01), openR=last||(arr[si+1].a>sg.b+0.01);
+    return {a:sg.a,b:sg.b,hol:sg.hol,
+      eL:openL?((first&&_cutL)?2:1):0, eR:openR?((last&&_cutR)?2:1):0};
   });
   _segs.forEach(sg=>{
-    const at={d:ganttBarEdgePath(sg.a,n.y,sg.b-sg.a,n.h,4,sg.rl,sg.rr),fill:'none',stroke:strokeCol,'stroke-width':strokeW,'pointer-events':'none'};
+    grp.appendChild(e('path',{d:ganttBarPath(sg.a,n.y,sg.b-sg.a,n.h,4,sg.eL,sg.eR),fill:sg.hol?ganttLighten(fill,0.55):fill}));
+    const pb=Math.min(sg.b,_progX);   // このセグメント内の進捗塗り（休日区間は薄めに入れる）
+    if(pb>sg.a) grp.appendChild(e('path',{d:ganttBarPath(sg.a,n.y,pb-sg.a,n.h,4,sg.eL,(pb>=sg.b-0.01)?sg.eR:0),fill:n.stroke||d.stroke,opacity:sg.hol?.2:.45,'pointer-events':'none'}));
+  });
+  _segs.forEach(sg=>{
+    const at={d:ganttBarEdgePath(sg.a,n.y,sg.b-sg.a,n.h,4,sg.eL,sg.eR),fill:'none',stroke:strokeCol,'stroke-width':strokeW,'pointer-events':'none'};
     if(sg.hol) at['stroke-dasharray']='4 3';
     grp.appendChild(e('path',at));
   });
@@ -4150,7 +4296,7 @@ function renderGanttMilestone(gg,n,sel){
 // ロールアップ期間（最小開始〜最大終了）で gantt_summary のキャップ付き横バーを描く（名称は左列のみ）。
 function renderGanttPhaseBars(){
   if(!ganttHasPhases())return;
-  const gg=document.getElementById('g-nodes'), g=S.gantt;
+  const gg=ganttLayer('g-nodes'), g=S.gantt;
   S.nodes.filter(n=>n.type==='gantt_summary').forEach(p=>{
     const slot=ganttSlotOf(p.id); if(!slot) return;     // フェーズ専用ヘッダー行スロット
     const r=ganttPhaseRange(p); if(!r) return;
@@ -4188,11 +4334,11 @@ function renderGanttPhaseBars(){
 }
 // 左側タスク名列
 function renderGanttNameCol(){
-  const gg=document.getElementById('g-nodes');
+  const gg=ganttLayer('g-nodes');
   const leftW=ganttLeftW(), L=ganttLayout();
   const bx=ganttBracketW(), nw=leftW-bx;   // v4.11: ラベル列はブラケット列ぶん右へシフト（nw=ラベル列幅）
   // 列背景（ヘッダー下から）
-  gg.appendChild(e('rect',{x:bx,y:ganttBodyTop(),width:nw,height:SVG_H-ganttBodyTop(),fill:'#ffffff','pointer-events':'none'}));
+  gg.appendChild(e('rect',{x:bx,y:ganttBodyTop(),width:nw,height:ganttStripBottom()-ganttBodyTop(),fill:'#ffffff','pointer-events':'none'}));
   // フェーズ専用ヘッダー行のタスク列: 背景＝フェーズ色の薄め＋フェーズ名称を濃色で表示（v4.30:
   //   行全体を「フェーズ色を薄めた帯」にして区切り目を明確化。濃いフェーズ色は左の縦バンド・
   //   工程側ロールアップバーで識別）
@@ -4219,7 +4365,7 @@ function renderGanttNameCol(){
     gg.appendChild(hit);
   });
   // 列の右境界（時間軸との境界）
-  gg.appendChild(e('line',{x1:leftW,y1:ganttBodyTop(),x2:leftW,y2:SVG_H,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'}));
+  gg.appendChild(e('line',{x1:leftW,y1:ganttBodyTop(),x2:leftW,y2:ganttStripBottom(),stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'}));
   // 行区切り線（各スロット上端＝タスク境目）。v5.01: 工程表側(renderGanttGrid)と同じ太さ(#cbd5e1/1)に統一。
   ganttRowBoundaries().forEach(y=>gg.appendChild(e('line',{x1:bx,y1:y,x2:leftW,y2:y,stroke:'#cbd5e1','stroke-width':1,'pointer-events':'none'})));
   // 透明ヒット領域: mousedownで行ドラッグ・dblで該当フィールド編集・右クリックで削除
@@ -4308,10 +4454,10 @@ function renderGanttNameCol(){
 // メンバー行の高さに描画。上下端ドラッグで包括範囲を編集（v4.17 E-7）。
 function renderGanttPhases(){
   const pw=ganttPhaseColW(); if(!pw) return;   // フェーズが無ければ列ごと非表示
-  const gg=document.getElementById('g-nodes');
+  const gg=ganttLayer('g-nodes');
   // 列背景＋右境界（ラベル列との境界）
-  gg.appendChild(e('rect',{x:0,y:ganttBodyTop(),width:pw,height:SVG_H-ganttBodyTop(),fill:'#f8fafc','pointer-events':'none'}));
-  gg.appendChild(e('line',{x1:pw,y1:ganttBodyTop(),x2:pw,y2:SVG_H,stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
+  gg.appendChild(e('rect',{x:0,y:ganttBodyTop(),width:pw,height:ganttStripBottom()-ganttBodyTop(),fill:'#f8fafc','pointer-events':'none'}));
+  gg.appendChild(e('line',{x1:pw,y1:ganttBodyTop(),x2:pw,y2:ganttStripBottom(),stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
   const L=ganttLayout(), gs=ganttDragState;
   const gap=3;
   // 縦型フェーズバーの寸法（左に太いスパイン＝バー本体、上下端が右へ脚を伸ばす＝端キャップ）
@@ -4362,7 +4508,7 @@ function renderGanttPhases(){
 }
 // 依存関係矢印（FS/SS/FF/SF の4種別に対応した直角クランク経路）
 function renderGanttEdges(){
-  const gg=document.getElementById('g-edges');
+  const gg=ganttLayer('g-edges');
   S.edges.forEach(ed=>{
     const fn=S.nodes.find(n=>n.id===ed.from), tn=S.nodes.find(n=>n.id===ed.to);
     if(!fn||!tn||!isGanttShape(fn.type)||!isGanttShape(tn.type))return;
@@ -9774,6 +9920,7 @@ function ganttSetScale(scale){
   const g=S.gantt;
   if(g.scale===scale)return;
   g.scale=scale;
+  if(ganttWrapChoices(scale).indexOf(g.wrap)<0) g.wrap='off';   // v8.08: 目盛りに合わない折り返し単位は自動でOFF
   g.colWidth=GANTT_SCALE_COL_W[scale]||32;
   updateGanttToolbar();
   zoomLevel=1; snap(); render();
@@ -9793,6 +9940,44 @@ function ganttSetHoliday(key,checked){
   if(!S.gantt.holidays) S.gantt.holidays={sat:true,sun:true,jp:true};
   S.gantt.holidays[key]=!!checked;
   snap(); render();
+}
+// v8.08: 折り返し表示のON/OFFと単位。目盛りに対して選べる単位（時→日ごと／日→週・月ごと）だけを許す。
+function ganttSetWrap(w){
+  const g=S.gantt;
+  if(w!=='off'&&ganttWrapChoices(g.scale).indexOf(w)<0){ hint('この時間軸では選べない折り返し単位です'); return; }
+  if(g.wrap===w)return;
+  g.wrap=w;
+  snap(); render();
+}
+function ganttToggleWrap(){
+  const g=S.gantt, ch=ganttWrapChoices(g.scale);
+  if(!ch.length){ hint('折り返しは「時」または「日」の時間軸で使えます（時→日ごと／日→週・月ごと）'); return; }
+  if(ganttWrapOn()){ ganttSetWrap('off'); return; }
+  const sel=document.getElementById('gantt-wrap-unit');
+  const w=(sel&&ch.indexOf(sel.value)>=0)?sel.value:ch[0];
+  ganttSetWrap(w);
+}
+const GANTT_WRAP_NAME={day:'日ごと',week:'週ごと（日曜始まり）',month:'月ごと'};
+function ganttSyncWrapUI(){
+  const g=S.gantt, ch=ganttWrapChoices(g.scale), on=ganttWrapOn();
+  const btn=document.getElementById('gantt-wrap-btn'), sel=document.getElementById('gantt-wrap-unit');
+  if(btn){
+    btn.textContent=on?'ON':'OFF';
+    btn.classList.toggle('on',on);
+    btn.style.opacity=ch.length?'':'0.45';
+    btn.title=ch.length?'時間軸を一定の区切りごとに次の段へ折り返します（横スクロールが不要になります）'
+      :'週/月の時間軸では折り返せません（時→日ごと／日→週・月ごと）';
+  }
+  if(sel){
+    const want=ch.join(',');
+    if(sel.getAttribute('data-ch')!==want){
+      sel.innerHTML=ch.map(k=>'<option value="'+k+'">'+GANTT_WRAP_NAME[k]+'</option>').join('');
+      sel.setAttribute('data-ch',want);
+    }
+    if(on) sel.value=g.wrap; else if(ch.length) sel.value=ch[0];
+    sel.disabled=!ch.length;
+    sel.style.display=ch.length?'':'none';
+  }
 }
 function updateGanttToolbar(){
   const g=S.gantt;
@@ -9814,6 +9999,7 @@ function updateGanttToolbar(){
   { const hol=g.holidays||{sat:true,sun:true,jp:true};
     const setChk=(id,v)=>{const el=document.getElementById(id); if(el)el.checked=!!v;};
     setChk('gantt-hol-sat',hol.sat!==false); setChk('gantt-hol-sun',hol.sun!==false); setChk('gantt-hol-jp',!!hol.jp); }
+  ganttSyncWrapUI();   // v8.08: 折り返しUI（ON/OFF・単位）を同期
   ganttHeadSyncPanel();   // v8.00: 見出し・凡例パネルを同期
 }
 // ===== v8.00: 見出し・凡例 設定UI =====
