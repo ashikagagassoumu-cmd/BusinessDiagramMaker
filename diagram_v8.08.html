@@ -4330,26 +4330,29 @@ function renderGanttTaskBar(gg,n,sel){
   });
   const label=n.text||'';
   const t=e('text',{fill:'#1e293b','pointer-events':'none'});
+  // v8.08追補③: 折り返しONで段をまたぐバーは、ラベルも「その段に出ている部分」に合わせる。
+  //   n.x/n.w は切る前の座標なので、そのまま使うと段の左外＝左情報欄の上に文字が乗る。
+  const _lx=ganttWrapOn()?_bx0:n.x, _lw=ganttWrapOn()?(_bx1-_bx0):n.w;
   // v4.30: バー内に収まるようフォントを自動縮小（基準fs=12時の所要幅 = len*13+12）。
   //        ただし8px未満になる場合は縮小せず、シェイプの上に左揃えで12pxで表示。
   let fs=12, inside=true;
   if(label){
-    const fitFs=(n.w-12)*12/(label.length*13);   // バー内に収まる最大フォントサイズ
+    const fitFs=(_lw-12)*12/(label.length*13);   // バー内に収まる最大フォントサイズ
     if(fitFs>=8){ fs=Math.min(12,fitFs); inside=true; }
     else { fs=12; inside=false; }
   }
   t.setAttribute('font-size',String(fs));
   t.setAttribute('text-anchor','start');
   if(inside){
-    t.setAttribute('x', n.x+8); t.setAttribute('y', n.y+n.h/2); t.setAttribute('dominant-baseline','middle');
+    t.setAttribute('x', _lx+8); t.setAttribute('y', n.y+n.h/2); t.setAttribute('dominant-baseline','middle');
   } else {
     // 収まらない場合: シェイプ上に左揃え（バー左端に合わせ、上辺の少し上）
-    t.setAttribute('x', n.x); t.setAttribute('y', n.y-3); t.setAttribute('dominant-baseline','auto');
+    t.setAttribute('x', _lx); t.setAttribute('y', n.y-3); t.setAttribute('dominant-baseline','auto');
   }
   // v5.00 ②: 完了日で表示範囲を区切ったとき、右端(SVG_W)からはみ出すバー文字は右詰めに
   //   切り替えて枠内に収める（バー位置・列幅・レイアウトは変えない＝変えるのは文字だけ）。
-  if(label && S.gantt.endDate){
-    const startX=inside? n.x+8 : n.x;
+  if(label && (S.gantt.endDate||ganttWrapOn())){   // v8.08追補③: 折り返しONは完了日の指定に関係なく段の右端で収める
+    const startX=inside? _lx+8 : _lx;
     const approxW=label.length*fs;            // 全角想定の概算幅
     if(startX+approxW > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
   }
@@ -4423,10 +4426,13 @@ function renderGanttPhaseBars(){
       if(fits){
         const t=e('text',{x:x+8,y:ty,'dominant-baseline':'middle','font-size':'11','font-weight':'700',fill:ganttTextOn(fill),'pointer-events':'none'});
         t.textContent=ganttClip(label,w-14,11); grp.appendChild(t);
+      } else if(ganttWrapOn()&&x+w+6+ganttTextW(label,11)>ganttRightEdge()){
+        // v8.08追補③: 段の右にラベルを置く余地が無い場合はバーの中に白字で入れる
+        //   （右詰めにするとバーに重なって読めない。折り返しONは段の幅が限られるため起きやすい）。
+        const t=e('text',{x:x+8,y:ty,'dominant-baseline':'middle','font-size':'11','font-weight':'700',fill:ganttTextOn(fill),'pointer-events':'none'});
+        t.textContent=ganttClip(label,w-14,11); grp.appendChild(t);
       } else {
         const t=e('text',{x:x+w+6,y:ty,'dominant-baseline':'middle','font-size':'11','font-weight':'700',fill:'#334155','pointer-events':'none'});
-        // v8.08追補②: バー右のフェーズ名が段からはみ出すときは右詰めにして段内へ収める
-        if(ganttWrapOn()&&x+w+6+label.length*11>ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x',ganttRightEdge()-4); }
         t.textContent=label; grp.appendChild(t);
       }
     }
@@ -4459,8 +4465,10 @@ function renderGanttNameCol(){
     t.textContent=ganttClip(p.text||'(無題フェーズ)', nw-14, 12); gg.appendChild(t);
     const pr=ganttPhaseRange(p);
     if(pr){
-      const dt=e('text',{x:bx+8,y:s.top+s.height*0.72,'dominant-baseline':'middle','font-size':'11','fill':'#475569','pointer-events':'none'});
-      dt.textContent=ganttClip('工程：'+ganttDispDate(pr.start)+'～'+ganttDispDate(pr.end), nw-14, 11); gg.appendChild(dt);
+      // v8.08追補③: 時モードは日付＋時刻で長くなるため、列に収まるフォントへ落としてから収める
+      const _ds='工程：'+ganttDispDate(pr.start)+'～'+ganttDispDate(pr.end), _dfs=ganttFitFs(_ds,nw-14,11,9);
+      const dt=e('text',{x:bx+8,y:s.top+s.height*0.72,'dominant-baseline':'middle','font-size':String(_dfs),'fill':'#475569','pointer-events':'none'});
+      dt.textContent=ganttClip(_ds, nw-14, _dfs); gg.appendChild(dt);
     }
     // クリックで選択・ダブルクリックで名称編集・右クリック削除（他のフェーズ表現と連動）
     const hit=e('rect',{x:bx,y:s.top,width:nw,height:s.height,fill:'transparent',cursor:'pointer'});
@@ -4516,8 +4524,9 @@ function renderGanttNameCol(){
     dhit.addEventListener('dblclick',ev=>{ev.stopPropagation();if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}openGanttEditor(n.id);});
     dhit.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[n.id];delSel();});
     gg.appendChild(dhit);
-    const dtt=e('text',{x:bx+di,y:dateTop+lh/2,'dominant-baseline':'middle','font-size':'11',fill:sel?'#1d4ed8':'#475569','pointer-events':'none'});
-    dtt.textContent=ganttClip(dateStr,nw-di-6,11); gg.appendChild(dtt);
+    const _tfs=ganttFitFs(dateStr,nw-di-6,11,9);   // v8.08追補③: 同上（時モードの工程行）
+    const dtt=e('text',{x:bx+di,y:dateTop+lh/2,'dominant-baseline':'middle','font-size':String(_tfs),fill:sel?'#1d4ed8':'#475569','pointer-events':'none'});
+    dtt.textContent=ganttClip(dateStr,nw-di-6,_tfs); gg.appendChild(dtt);
     // 行3・行4: 列ごとの自由セル「項目名：本文」（v5.00 列モデル）。既定列 c0 は概要/担当。
     //   折返し＋ぶら下げを維持し、列幅に応じて自動再折返し。各列の高さは行3最大・行4最大行数で揃える。
     const cols=ganttColList();
@@ -4747,11 +4756,29 @@ function ganttConnClick(id){
 }
 // タスク名インライン編集（名前列上）
 // テキストをセル幅に合わせて省略（…付き）
+// v8.08追補③: 文字の描画幅を「全角=fontPx／半角=fontPx*0.55」で積み上げて測る（見出し欄の mLab と同じ基準）。
+//   従来 ganttClip は一律 fontPx*0.62 の概算で、全角が多い文字列を短く見積もっていた。そのため
+//   時モードの「工程：2026年8月12日 0時～2026年8月30日 0時」のような行が切られずに列の枠を越えていた。
+function ganttTextW(str,fontPx){ let w=0; for(const ch of String(str==null?'':str)) w+=(ch.charCodeAt(0)>255?fontPx:fontPx*0.55); return w; }
+// v8.08追補③: 文字列が maxW に収まる最大フォントサイズ（fontPx 以下・minPx 以上）。
+//   時モードの工程行のように「日付＋時刻」で長くなる行を、末尾を…で切らずに収めるために使う。
+function ganttFitFs(str,maxW,fontPx,minPx){
+  const w=ganttTextW(str,fontPx);
+  if(!(w>maxW)||!(w>0)) return fontPx;
+  return Math.max(minPx||8, Math.floor(fontPx*maxW/w*10)/10);
+}
 function ganttClip(str,maxW,fontPx){
   str=String(str==null?'':str);
   if(!str)return '';
-  const per=fontPx*0.62, max=Math.max(1,Math.floor(maxW/per));
-  return str.length>max ? str.slice(0,Math.max(1,max-1))+'…' : str;
+  if(ganttTextW(str,fontPx)<=maxW) return str;
+  const eW=ganttTextW('…',fontPx);
+  let w=0, out='';
+  for(const ch of str){
+    const cw=(ch.charCodeAt(0)>255?fontPx:fontPx*0.55);
+    if(w+cw+eW>maxW) break;
+    out+=ch; w+=cw;
+  }
+  return (out||str.slice(0,1))+'…';
 }
 // 名前列の各セル（タスク名/概要/担当者）をインライン編集（v4.01）
 function ganttEditField(id,field){
