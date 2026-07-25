@@ -8494,15 +8494,18 @@ async function expPDF(){
     //     同じ複雑さの本体SVGは通常フローなので各ページ正常描画される＝反復ヘッダー特有の不具合）。対策＝ヘッダー
     //     だけを高解像度PNGにラスタ化して <img> で置く（ラスタ<img>は反復描画が確実）。本体はSVGのまま。
     const _headTop=axisTop, _headH=ganttBodyTop()-axisTop;
-    svg.setAttribute('viewBox','0 '+_headTop+' '+W+' '+_headH);
-    let headHtml;
-    try{ const _u=await svgViewToPngURL(svg,W,_headH); headHtml='<div class="pg-svg"><img class="pg-hdr" src="'+_u+'"></div>'; }
-    catch(_e){ svg.setAttribute('viewBox','0 '+_headTop+' '+W+' '+_headH); headHtml='<div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div>'; }   // 失敗時は従来のSVG反復にフォールバック
+    const _wrapOn=ganttWrapOn();   // v8.08: 折り返しは段ごとに時間軸ヘッダーを持つので反復<thead>を使わない
+    let headHtml='';
+    if(!_wrapOn){
+      svg.setAttribute('viewBox','0 '+_headTop+' '+W+' '+_headH);
+      try{ const _u=await svgViewToPngURL(svg,W,_headH); headHtml='<div class="pg-svg"><img class="pg-hdr" src="'+_u+'"></div>'; }
+      catch(_e){ svg.setAttribute('viewBox','0 '+_headTop+' '+W+' '+_headH); headHtml='<div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div>'; }   // 失敗時は従来のSVG反復にフォールバック
+    }
     // (3) 本体行のスライスを構築。emit(top,bottom,cls)=その y 範囲を1 <tr> として切り出す。
     //   ※各 <tr> は SVG 全体を1回直列化する。行ごとに <tr> を作るとタスク数の二乗コストで印刷が固まるため、
     //     フェーズ外タスクは「1ページに収まる高さ」ごとのチャンクにまとめる（＝直列化回数=ページ数程度に抑える）。
     const bodyTop=ganttBodyTop();
-    const emit=(top,bottom,cls)=>{ const t=Math.max(top,bodyTop), h=Math.max(1,bottom-t);
+    const emit=(top,bottom,cls)=>{ const t=_wrapOn?top:Math.max(top,bodyTop), h=Math.max(1,bottom-t);
       svg.setAttribute('viewBox','0 '+t+' '+W+' '+h);
       return '<tr class="'+cls+'"><td><div class="pg-svg pg-rows">'+new XMLSerializer().serializeToString(svg)+'</div></td></tr>'; };
     // 1チャンクの最大高さ(SVG座標)。倍率100%では svg 幅=用紙内容幅にフィットするため、W×(用紙縦横比)以下なら
@@ -8514,10 +8517,21 @@ async function expPDF(){
     //   「ヘッダー＋1チャンク」が用紙(A/B系横向き 内容比≒0.707)を僅かに超過→続きページでヘッダーが消えていた。
     //   対策＝ヘッダー高さを差し引き、係数を0.60へ下げて安全余裕を確保（横向き用紙で必ず1ページに収まる）。
     const scaleFrac=Math.max(0.1,scale/100);
-    const headerPx=Math.max(0,bodyTop-axisTop);                    // 各ページ先頭で反復する時間軸ヘッダーの高さ(SVG座標)
+    const headerPx=_wrapOn?0:Math.max(0,bodyTop-axisTop);          // 各ページ先頭で反復する時間軸ヘッダーの高さ(SVG座標)
     const maxChunkPx=Math.max(300,(W/scaleFrac)*0.60-headerPx);
     const L=ganttLayout();
     let rows='', emittedAny=false;
+    if(_wrapOn){
+      // v8.08: 折り返し表示＝「1段＝1<tr>」で切る。段の中に時間軸ヘッダーが含まれるので反復ヘッダーは不要。
+      //   page-break-inside:avoid により、段がページ境界で途切れるときだけ改ページされる。
+      //   1段が用紙1ページより高い場合だけ、さらに maxChunkPx ごとに分割して <tr> が用紙を超えないようにする。
+      const bands=ganttWrapBandCount(), dh=ganttBandContentH(), top0=ganttHeadH();
+      for(let b=0;b<bands;b++){
+        let a=top0+b*dh; const bot=a+dh;
+        while(a<bot-0.5){ const t=Math.min(bot,a+maxChunkPx); rows+=emit(a,t,'pg-phase'); a=t; }
+      }
+      emittedAny=bands>0;
+    } else {
     let chunkTop=null, chunkBot=null;                       // フェーズ外タスクの現在チャンク
     const flushChunk=()=>{ if(chunkTop!==null){ rows+=emit(chunkTop,chunkBot,'pg-row'); emittedAny=true; chunkTop=null; } };
     let curPhase=null, phaseTop=null, phaseBot=null, phaseBreak=false;
@@ -8541,7 +8555,8 @@ async function expPDF(){
       }
     }
     flushChunk(); flushPhase();
-    bodyInner=onceStr+'<table class="pgt"><thead><tr><th>'+headHtml+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    }
+    bodyInner=onceStr+'<table class="pgt">'+(_wrapOn?'':'<thead><tr><th>'+headHtml+'</th></tr></thead>')+'<tbody>'+rows+'</tbody></table>';
   } else {
     svg.setAttribute('viewBox',vbX+' '+(vbY-bandH)+' '+vbW+' '+(vbH+bandH));
     bodyInner='<div class="pg-center"><div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div></div>';
@@ -8877,6 +8892,8 @@ async function expExcel(){
     const buf=await wb.xlsx.writeBuffer();
     const name=(exportDiagramName()||'工程表');
     dl(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), name+'.xlsx');
+    // v8.08: Excel出力は折り返し表示に未対応（時間軸は従来どおり一直線）。Excelは横スクロールできるため実害は小さいが明示しておく。
+    if(ganttWrapOn()) hint('Excelを出力しました（Excel出力は折り返し表示に未対応のため、時間軸は一直線で書き出しています）');
   }catch(err){ console.error(err); hint('Excelの生成に失敗しました: '+((err&&err.message)||err)); }
 }
 
