@@ -356,8 +356,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="tbtn" id="btn-uml-iface" onclick="umlToggleInterface()" title="選択ノードの«interface»表示を切替">«interface»</button>
   </span>
   <div class="sep"></div>
+  <button class="tbtn save" onclick="overwriteSave()" title="開いている（前回保存した）ファイルにそのまま上書きします（Ctrl+S）。初回だけ保存先を尋ねます">💾 上書き保存</button>
   <button class="tbtn save" onclick="openSaveAsDialog()">💾 名前をつけて保存</button>
-  <button class="tbtn" onclick="document.getElementById('import-file').click()" title="保存した.htmlから編集データを読み込む">📂 インポート</button>
+  <button class="tbtn" onclick="openImportFile()" title="保存した.htmlから編集データを読み込む">📂 インポート</button>
   <input id="import-file" type="file" accept=".html,.htm" style="display:none" onchange="importFromFile(event)"/>
   <button class="tbtn" onclick="expPNG()">↓ PNG</button>
   <button class="tbtn" id="btn-excel" onclick="expExcel()" disabled title="Excel出力はガント/工程表のみ対応" style="opacity:.4;cursor:not-allowed">↓ Excel</button>
@@ -1040,7 +1041,7 @@ function renderFlowControls(){
 }
 function toggleStepNums(){ S.stepNums=!S.stepNums; render(); hint(S.stepNums?'ステップ番号を表示しました（配置順で自動採番）':'ステップ番号を非表示にしました'); }
 
-let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false};   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
+let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null};   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
 // ガントチャート時間軸モデルの初期値
 //   v4.01: 開始日の既定を「当月初日」に、概要(descW)/担当者(assigneeW)列幅を追加
 function ganttFirstOfThisMonth(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';}
@@ -1835,6 +1836,7 @@ function init(){
     S.orientation=st.orientation||'vertical';
     S.lanes=st.lanes; S.nodes=st.nodes; S.edges=st.edges;
     if(st.uid!=null)S.uid=st.uid;
+    S.docId=st.docId||null;   // v8.09: 上書き保存の保存先を思い出すための一意ID
     S.gantt=Object.assign(defaultGantt(),st.gantt||{});
     S.mindLayout=st.mindLayout||'radial';
     S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
@@ -8397,6 +8399,8 @@ document.addEventListener('keydown',ev=>{
   }
   // 検索・置換パネルを開く（Ctrl+F）— A-2 v4.15。INPUTガードより前に処理し常に有効化
   if((ev.ctrlKey||ev.metaKey)&&(ev.key==='f'||ev.key==='F')){ev.preventDefault();openSearch();return;}
+  // v8.09: Ctrl+S＝上書き保存。Ctrl+F と同じくINPUTガードより前で処理し常に有効化
+  if((ev.ctrlKey||ev.metaKey)&&(ev.key==='s'||ev.key==='S')){ev.preventDefault();overwriteSave();return;}
   if(ev.target.tagName==='INPUT'||ev.target.tagName==='TEXTAREA')return;
   // マインドマップ: Tab=子追加 / Enter=兄弟追加 / Space=折り畳みトグル
   if(S.diagramType==='mindmap'&&!pasteMode){
@@ -8509,12 +8513,131 @@ function ganttPanel(){
   });
 }
 
+// ── v8.09: 上書き保存（開いた／保存したファイルへそのまま書き戻す）──
+//   ブラウザはパス文字列を指定してファイルへ書き込めないため、「フォルダを覚えて同名を上書き」は実現できない。
+//   代わりに File System Access API で「ユーザーが一度選んだファイルへの参照（ハンドル）」を保持し、そこへ書き戻す。
+//   参照は IndexedDB に docId（保存データへ埋め込む一意ID）で紐づけるので、次に開いた時も保存先を覚えている。
+//   非対応ブラウザ（Firefox/Safari）や失敗時は、従来どおりダウンロードでの保存へ自動的に切り替える。
+const FSA_OK=(typeof window.showSaveFilePicker==='function');
+let fileHandle=null;         // このセッションで確定した保存先（null＝未確定）
+let fileHandleTried=false;   // IndexedDB からの復元を既に試したか
+function newDocId(){ return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); }
+function curSaveName(){ return exportDiagramName()||'ダイアグラム'; }
+// ダブルクリックで開いた場合の自分自身のファイル名（file:// のときだけ得られる。それ以外は空）
+function curFileName(){
+  try{ if(location.protocol!=='file:') return '';
+       return decodeURIComponent((location.href.split(/[?#]/)[0].split('/').pop())||''); }catch(e){ return ''; }
+}
+const FH_DB='bdm-file-handles', FH_STORE='handles';
+function fhDB(){ return new Promise((res,rej)=>{ let rq; try{ rq=indexedDB.open(FH_DB,1); }catch(e){ return rej(e); }
+  rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(FH_STORE)) db.createObjectStore(FH_STORE); };
+  rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error||new Error('IndexedDB')); }); }
+async function fhSave(id,h){ if(!id||!h) return;
+  try{ const db=await fhDB();
+    await new Promise((res,rej)=>{ const tx=db.transaction(FH_STORE,'readwrite'); tx.objectStore(FH_STORE).put(h,id); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
+    db.close(); }catch(e){}   // 記憶できなくても保存自体は成立する（次回また保存先を尋ねるだけ）
+}
+async function fhLoad(id){ if(!id) return null;
+  try{ const db=await fhDB();
+    const v=await new Promise((res,rej)=>{ const tx=db.transaction(FH_STORE,'readonly'); const rq=tx.objectStore(FH_STORE).get(id); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+    db.close(); return v||null; }catch(e){ return null; }
+}
+// 書き込み許可の確認。requestPermission はユーザー操作の直後にしか出せないため、呼び出し元の
+//   クリック／キー操作からできるだけ間を置かずに呼ぶ（重い照合はこの後に回す）。
+async function fhPermit(h){
+  if(!h||!h.queryPermission) return true;
+  const o={mode:'readwrite'};
+  try{ if(await h.queryPermission(o)==='granted') return true;
+       return (await h.requestPermission(o))==='granted'; }catch(e){ return false; }
+}
+// 記憶していた保存先が「いま開いている図そのもの」かを確かめてから書く。ファイルをエクスプローラーで
+//   複製すると docId も複製されるため、ファイル名（file:// で開いた時のみ判る）も併せて照合する。
+async function fhIsSameDoc(h){
+  try{
+    const cf=curFileName();
+    if(cf&&h.name&&cf!==h.name) return false;
+    const txt=await (await h.getFile()).text();
+    return !!S.docId&&txt.indexOf('"docId":"'+S.docId+'"')>=0;
+  }catch(e){ return false; }
+}
+async function fhWrite(h,html){ const w=await h.createWritable(); await w.write(new Blob([html],{type:'text/html;charset=utf-8'})); await w.close(); }
+// 保存先を選んで保存（OSの保存ダイアログ）。ここで選んだファイルが以後の上書き先になる。
+async function saveAsWithPicker(){
+  const name=curSaveName();
+  let h=null;
+  try{
+    h=await window.showSaveFilePicker({
+      id:'bdm-save',                                  // 前回と同じフォルダを既定で開く（ブラウザが記憶）
+      suggestedName:name.replace(/[\\/:*?"<>|]/g,'_')+'.html',
+      types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html']}}],
+    });
+  }catch(err){
+    if(err&&err.name==='AbortError') return;          // ユーザーが取り消した
+    hint('保存ダイアログを開けないため、ダウンロードで保存します'); saveHtmlCore(name); return;
+  }
+  try{
+    S.docId=newDocId();                               // 別ファイルとして保存＝新しいID（複製元を上書きしないため）
+    const r=buildSaveHtml(name);
+    await fhWrite(h,r.html);
+    fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
+    setTabTitleFromFilename(h.name);
+    hint('保存しました: '+h.name+'（以後は「上書き保存」／Ctrl+S でこのファイルに上書きします）');
+  }catch(err){ hint('保存に失敗しました: '+((err&&err.message)||err)); }
+}
+// 上書き保存（Ctrl+S）。保存先が未確定のときだけ一度だけ場所を尋ね、以後は無確認で同じファイルへ書き戻す。
+async function overwriteSave(){
+  if(!FSA_OK){
+    hint('このブラウザは上書き保存に対応していません（Microsoft Edge / Google Chrome をご利用ください）');
+    openSaveAsDialog(); return;
+  }
+  let h=fileHandle, restored=false;
+  if(!h&&!fileHandleTried){ fileHandleTried=true; h=await fhLoad(S.docId); restored=!!h; }
+  if(h&&!(await fhPermit(h))){
+    hint('ファイルへの書き込みが許可されなかったため、保存先を指定してください'); h=null; fileHandle=null;
+  }
+  if(h&&restored&&!(await fhIsSameDoc(h))){
+    hint('記憶していた保存先が見つからない（または別のファイルになっている）ため、保存先を指定してください'); h=null;
+  }
+  if(!h) return saveAsWithPicker();
+  try{
+    const r=buildSaveHtml(curSaveName());
+    await fhWrite(h,r.html);
+    fileHandle=h; await fhSave(S.docId,h);
+    setTabTitleFromFilename(h.name);
+    hint('上書き保存しました: '+h.name);
+  }catch(err){
+    fileHandle=null;
+    hint('上書き保存に失敗しました: '+((err&&err.message)||err)+' — 保存先を指定し直してください');
+  }
+}
+// インポート＝保存した.htmlを開く。対応ブラウザではハンドルも取得し、そのまま Ctrl+S で上書きできるようにする。
+async function openImportFile(){
+  const fallback=()=>document.getElementById('import-file').click();
+  if(!FSA_OK){ fallback(); return; }
+  let h=null;
+  try{
+    const picked=await window.showOpenFilePicker({id:'bdm-save',multiple:false,
+      types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html','.htm']}}]});
+    h=picked&&picked[0];
+  }catch(err){ if(err&&err.name==='AbortError') return; fallback(); return; }
+  if(!h) return;
+  try{
+    const txt=await (await h.getFile()).text();
+    if(!importStateFromHtml(txt)) return;             // 置き換え確認で取消＝保存先も変えない
+    setTabTitleFromFilename(h.name);
+    if(!S.docId) S.docId=newDocId();
+    fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
+    hint('読み込みました: '+h.name+'（「上書き保存」／Ctrl+S でこのファイルに上書きします）');
+  }catch(err){ hint('インポート失敗: '+((err&&err.message)||err)); }
+}
 // ── Save ──
-function saveHtmlCore(name){
+// v8.09: 保存用HTMLの生成。生成（ここ）と書き出し（ダウンロード／上書き）を分離した。
+function buildSaveHtml(name){
   document.getElementById('svg-editor')?.remove();
+  if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
-  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
+  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
   const SCR='<scr'+'ipt',CSCR='</scr'+'ipt>';
   const stateJson=JSON.stringify(st).replace(new RegExp(CSCR,'gi'),'<\\/script>');
   let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
@@ -8522,7 +8645,12 @@ function saveHtmlCore(name){
   html=html.replace(new RegExp(SCR+' id="swimlane-state">[\\s\\S]*?'+CSCR+'\\s*','g'),'');
   html=html.replace(/\s+data-state="[^"]*"/g,'');
   html=html.replace('</head>',()=>SCR+' id="swimlane-state">window.__SWIMLANE_STATE__='+stateJson+';'+CSCR+'\n</head>');
-  dl(new Blob([html],{type:'text/html;charset=utf-8'}),safe+'.html');
+  return {safe,html};
+}
+// v8.09: 従来どおりダウンロードで保存（上書き保存が使えないブラウザ・失敗時のフォールバック）
+function saveHtmlCore(name){
+  const r=buildSaveHtml(name);
+  dl(new Blob([r.html],{type:'text/html;charset=utf-8'}),r.safe+'.html');
 }
 
 function openSaveAsDialog(){
@@ -8541,7 +8669,7 @@ function confirmSaveAs(){
   const ni=document.getElementById('diagram-name');
   if(ni)ni.value=name;
   closeSaveDialog();
-  saveHtmlCore(name);
+  if(FSA_OK) saveAsWithPicker(); else saveHtmlCore(name);   // v8.09: 対応ブラウザは保存先を選べる＝選んだファイルが以後の上書き先になる
 }
 
 // ── Export ──
@@ -9124,6 +9252,7 @@ function importStateFromHtml(html){
   S.nodes=st.nodes;
   S.edges=Array.isArray(st.edges)?st.edges:[];
   if(st.uid!=null)S.uid=st.uid;
+  S.docId=st.docId||null;   // v8.09: 取り込んだファイル側のIDへ切り替え
   S.gantt=Object.assign(defaultGantt(),st.gantt||{});
   S.mindLayout=st.mindLayout||'radial';   // C-1修正(v4.02): init同様にレイアウトモードを復元（インポート時の欠落を是正）
   S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
