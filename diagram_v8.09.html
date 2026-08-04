@@ -433,6 +433,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
             <option value="tree">ツリー（右方向）</option>
           </select>
         </label>
+        <label>枝の形
+          <span class="mind-seg" id="mind-branch-seg">
+            <button onclick="mindSetBranchStyle('curve')" data-b="curve" title="ゆるやかな曲線でつなぐ（従来）">曲線</button>
+            <button onclick="mindSetBranchStyle('straight')" data-b="straight" title="子の方向へまっすぐ伸ばす">直線</button>
+          </span></label>
         <button id="mind-arrange-sb" onclick="mindLayout()"
           style="padding:6px;border:1.5px solid #cbd5e1;border-radius:5px;background:#f8fafc;color:#334155;font-size:12px;cursor:pointer">⊞ 整列を実行</button>
       </div>
@@ -1041,7 +1046,7 @@ function renderFlowControls(){
 }
 function toggleStepNums(){ S.stepNums=!S.stepNums; render(); hint(S.stepNums?'ステップ番号を表示しました（配置順で自動採番）':'ステップ番号を非表示にしました'); }
 
-let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null};   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
+let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null,mindBranch:'curve'};   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
 // ガントチャート時間軸モデルの初期値
 //   v4.01: 開始日の既定を「当月初日」に、概要(descW)/担当者(assigneeW)列幅を追加
 function ganttFirstOfThisMonth(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';}
@@ -1839,6 +1844,7 @@ function init(){
     S.docId=st.docId||null;   // v8.09: 上書き保存の保存先を思い出すための一意ID
     S.gantt=Object.assign(defaultGantt(),st.gantt||{});
     S.mindLayout=st.mindLayout||'radial';
+    S.mindBranch=(st.mindBranch==='straight')?'straight':'curve';   // v8.09: 枝の形（旧ファイルは曲線）
     S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
     S.style=(st.style&&STYLES[st.style])?st.style:'standard';   // v8.01: デザインテンプレートを復元（旧ファイルは標準）
     S.stepNums=!!st.stepNums;   // v8.01: 番号バッジ表示状態
@@ -5339,12 +5345,23 @@ function renderMindBranches(hidden,dim){
     const fn=S.nodes.find(n=>n.id===ed.from), tn=S.nodes.find(n=>n.id===ed.to);
     if(!fn||!tn||!isMindShape(fn.type)||!isMindShape(tn.type))return;
     if(hidden.has(fn.id)||hidden.has(tn.id))return;
-    const es=mindSideToward(fn,tn), en=mindSideToward(tn,fn);
-    const [sx,sy]=exitPt(fn,es), [ex,ey]=exitPt(tn,en);
+    // v8.09: 枝の形。曲線＝従来（辺の中央から出て軸沿いに膨らむ）／直線＝互いの輪郭上の
+    //   「相手の方向」の点どうしを結ぶ。直線は枝が自分の角度の中に収まるため、兄弟をほぼ同じ
+    //   方向へ手で動かしたときに起きる追い越し（交差）が出ない。
+    let dPath;
+    if(S.mindBranch==='straight'){
+      const a=_edgeBorderToward(fn,tn.x+tn.w/2,tn.y+tn.h/2);
+      const b=_edgeBorderToward(tn,fn.x+fn.w/2,fn.y+fn.h/2);
+      dPath='M'+a[0]+','+a[1]+' L'+b[0]+','+b[1];
+    } else {
+      const es=mindSideToward(fn,tn), en=mindSideToward(tn,fn);
+      const [sx,sy]=exitPt(fn,es), [ex,ey]=exitPt(tn,en);
+      dPath=mindBezier(sx,sy,ex,ey,es,en);
+    }
     const isNote=tn.type==='mind_note';   // v8.04: 補足情報への枝＝細い点線（本筋の枝と区別）
     const col=isNote?mindNodeColor(fn).stroke:(mindBranchColor(tn.id)||{stroke:'#64748b'}).stroke;   // v8.05: 補足情報の枝も属するシェイプ(親)の色
     const sw=isNote?1.3:Math.max(1.4,3.6-(mindDepth(tn.id)-1)*0.7);
-    const pAttrs={d:mindBezier(sx,sy,ex,ey,es,en),stroke:col,'stroke-width':sw,fill:'none','stroke-linecap':'round','pointer-events':'none'};
+    const pAttrs={d:dPath,stroke:col,'stroke-width':sw,fill:'none','stroke-linecap':'round','pointer-events':'none'};
     if(isNote)pAttrs['stroke-dasharray']='3 3';
     const p=e('path',pAttrs);
     if(dim&&dim.has(tn.id))p.setAttribute('class','mind-dim');   // v8.03: 子側が減光対象なら枝も減光
@@ -5662,6 +5679,14 @@ function mindSetLayout(mode){
   updateMindToolbar();
   mindLayout();   // モード変更時に即再配置
 }
+// v8.09: 枝の形を切り替える（サイドバーの「枝の形」）。配置は変えず描画だけ切り替わる。
+function mindSetBranchStyle(mode){
+  if(mode!=='curve'&&mode!=='straight')return;
+  if(S.mindBranch===mode)return;
+  S.mindBranch=mode;
+  updateMindToolbar(); render();   // 表示の切替なので履歴には積まない（方眼・ステップ番号と同じ扱い）
+  hint(mode==='straight'?'枝を直線でつなぎます':'枝を曲線でつなぎます');
+}
 function updateMindToolbar(){
   document.querySelectorAll('.mind-layout').forEach(b=>{
     b.classList.toggle('on',b.getAttribute('data-ml')===S.mindLayout);
@@ -5672,7 +5697,9 @@ function updateMindToolbar(){
   const fb=document.getElementById('btn-mind-focus');
   if(fb)fb.classList.toggle('on',!!mindFocusId);
   const ns=mindSelectedNodes(), one=ns.length===1?ns[0]:null;
-  document.querySelectorAll('.mind-seg').forEach(seg=>{
+  const bseg=document.getElementById('mind-branch-seg');   // v8.09: 枝の形（選択の有無に関係なく常に有効）
+  if(bseg)bseg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-b')===(S.mindBranch||'curve')));
+  document.querySelectorAll('.mind-seg[data-key]').forEach(seg=>{
     const key=seg.getAttribute('data-key');
     seg.querySelectorAll('button').forEach(b=>{
       b.disabled=!ns.length;
@@ -8637,7 +8664,7 @@ function buildSaveHtml(name){
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
-  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
+  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
   const SCR='<scr'+'ipt',CSCR='</scr'+'ipt>';
   const stateJson=JSON.stringify(st).replace(new RegExp(CSCR,'gi'),'<\\/script>');
   let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
@@ -9254,6 +9281,7 @@ function importStateFromHtml(html){
   if(st.uid!=null)S.uid=st.uid;
   S.docId=st.docId||null;   // v8.09: 取り込んだファイル側のIDへ切り替え
   S.gantt=Object.assign(defaultGantt(),st.gantt||{});
+  S.mindBranch=(st.mindBranch==='straight')?'straight':'curve';   // v8.09: 枝の形（旧ファイルは曲線）
   S.mindLayout=st.mindLayout||'radial';   // C-1修正(v4.02): init同様にレイアウトモードを復元（インポート時の欠落を是正）
   S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
   migrateOrgSections();         // v7.02: 旧2段(sub)→ミニ表へ自動移行（見た目不変）
