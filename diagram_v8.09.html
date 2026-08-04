@@ -5512,7 +5512,35 @@ function mindDropTargetAt(px,py,draggedId){
   return null;
 }
 // 親エッジを張り替え（循環防止・中心トピックは対象外）
-function mindReparent(childId,newParentId){
+// v8.09: ドラッグで動かした時点で、その子の「兄弟のあいだでの順序」をエッジの並びへ反映する。
+//   整列のたびに位置から順序を決め直すと、配置モードを切り替えただけで順序が入れ替わってしまう。
+//   ドロップ時に一度だけ確定させることで、以後どのモードで整列しても並びが保たれる。
+function mindSiblingKey(parent){
+  if(S.mindLayout==='tree') return n=>n.y+n.h/2;   // ツリー＝上から下
+  const px=parent.x+parent.w/2, py=parent.y+parent.h/2, root=mindRoot();
+  let base=-Math.PI;
+  if(root&&root.id!==parent.id){
+    base=Math.atan2(py-(root.y+root.h/2), px-(root.x+root.w/2))-Math.PI;   // 内向きを起点に一周
+  }
+  return n=>{
+    let a=Math.atan2((n.y+n.h/2)-py,(n.x+n.w/2)-px)-base;
+    while(a<0)a+=Math.PI*2; while(a>=Math.PI*2)a-=Math.PI*2;
+    return a;
+  };
+}
+function mindReorderSiblings(childId){
+  const pid=mindParentId(childId); if(pid==null)return;
+  const parent=S.nodes.find(n=>n.id===pid); if(!parent)return;
+  const kids=mindChildren(pid); if(kids.length<2)return;
+  const key=mindSiblingKey(parent);
+  const sorted=kids.slice().sort((a,b)=>key(a)-key(b));
+  const byTo={}; S.edges.forEach(e=>{ if(e.from===pid)(byTo[e.to]=byTo[e.to]||[]).push(e); });
+  const seq=[];
+  sorted.forEach(k=>{ (byTo[k.id]||[]).forEach(e=>seq.push(e)); delete byTo[k.id]; });
+  Object.keys(byTo).forEach(k=>byTo[k].forEach(e=>seq.push(e)));
+  let i=0;
+  S.edges=S.edges.map(e=> e.from===pid ? seq[i++] : e);   // 親のエッジ群を、元の位置に並べ替えて戻す
+}function mindReparent(childId,newParentId){
   if(childId===newParentId)return;
   const child=S.nodes.find(n=>n.id===childId);
   if(!child||child.type==='mind_root')return;          // 中心は再ペアレント不可
@@ -5522,13 +5550,39 @@ function mindReparent(childId,newParentId){
     S.edges.push({id:uid(),from:newParentId,to:childId,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
   }
 }
-// 子トピック追加（Tab）
+// v8.09: 新しい子の置き場所。従来は「親の右へ70px」固定だったため、親が中心より左にあると
+//   新しい子が中心へ向かって置かれ、既存の枝の下へ潜り込んでいた。中心から見て外向きへ置く。
+const MIND_ADD_DIST=150;     // 親から新しい子までの距離
+const MIND_ADD_SPREAD=52;    // 兄弟を振り分ける間隔（外向きと直交する向き）
+function mindNewChildSpot(parent,sibs){
+  const root=mindRoot();
+  const px=parent.x+parent.w/2, py=parent.y+parent.h/2;
+  let ux=1, uy=0;
+  if(root&&root.id!==parent.id){
+    const dx=px-(root.x+root.w/2), dy=py-(root.y+root.h/2), l=Math.hypot(dx,dy);
+    if(l>1){ ux=dx/l; uy=dy/l; }
+  } else if(root&&root.id===parent.id&&sibs.length){
+    // 中心トピック＝既存の枝の角度を見て、一番空いている隙間の中央へ伸ばす
+    const angs=sibs.map(k=>Math.atan2((k.y+k.h/2)-py,(k.x+k.w/2)-px)).sort((a,b)=>a-b);
+    let best=-1, mid=0;
+    for(let i=0;i<angs.length;i++){
+      const a0=angs[i], a1=(i===angs.length-1)?angs[0]+Math.PI*2:angs[i+1];
+      if(a1-a0>best){ best=a1-a0; mid=a0+(a1-a0)/2; }
+    }
+    ux=Math.cos(mid); uy=Math.sin(mid);
+  }
+  // 兄弟は外向きの軸をはさんで左右交互に振り分ける（0, +1, -1, +2, -2 …）
+  const i=sibs.length, spread=Math.ceil(i/2)*MIND_ADD_SPREAD*((i%2===1)?1:-1);
+  const cx=px+ux*MIND_ADD_DIST-uy*spread, cy=py+uy*MIND_ADD_DIST+ux*spread;
+  return {x:cx-SD.mind_topic.w/2, y:cy-SD.mind_topic.h/2};
+}// 子トピック追加（Tab）
 function mindAddChild(parentId){
   const parent=S.nodes.find(n=>n.id===parentId); if(!parent)return;
   if(parent.collapsed){parent.collapsed=false;}          // 折り畳み中なら展開
   const sibs=mindChildren(parentId);
+  const spot=mindNewChildSpot(parent,sibs);   // v8.09: 中心から見て外向きに置く
   const n={id:uid(),type:'mind_topic',text:'問題',
-    x:parent.x+parent.w+70, y:parent.y+sibs.length*46, w:SD.mind_topic.w, h:SD.mind_topic.h};
+    x:spot.x, y:spot.y, w:SD.mind_topic.w, h:SD.mind_topic.h};
   S.nodes.push(n);
   S.edges.push({id:uid(),from:parentId,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
   S.sel=[n.id]; snap(); render();
@@ -5623,42 +5677,75 @@ function mindLeafCount(id){
   if(!kids.length)return 1;
   return kids.reduce((s,k)=>s+mindLeafCount(k.id),0);
 }
-// 放射状: 中心を原点に、葉数比で角度配分・depth×環間隔の半径
+// v8.09: 放射状の配置。角度は「葉の数」ではなく「箱が必要とする弧の長さ」で配り、半径は
+//   その深さに必要な弧の総和から決める（混み合う階層だけ外へ広がる）。葉の数だけで配ると
+//   箱の幅ぶんの角度が確保されず、枝の通り道にノードが入り込んで枝がノードを貫通していた。
+const MIND_RING_MIN=185;   // 環と環の最小間隔（従来の固定値）
+const MIND_ARC_GAP=26;     // 隣り合う箱のあいだに空ける弧の長さ
+// サブツリーが必要とする弧の長さ（葉の箱幅＋余白の合計）
+function mindArcNeed(id){
+  const n=S.nodes.find(x=>x.id===id); if(!n)return 0;
+  const kids=n.collapsed?[]:mindChildren(id);
+  if(!kids.length)return n.w+MIND_ARC_GAP;
+  return kids.reduce((s,k)=>s+mindArcNeed(k.id),0);
+}
 function mindLayoutRadial(root){
-  const cx=root.x+root.w/2, cy=root.y+root.h/2, ring=185;
+  const cx=root.x+root.w/2, cy=root.y+root.h/2;
+  // 深さごとの必要弧 → 半径（混み合う階層だけ外へ広がる）
+  const need={};
+  (function walk(id,depth){
+    const n=S.nodes.find(x=>x.id===id); if(!n)return;
+    if(depth>0) need[depth]=(need[depth]||0)+n.w+MIND_ARC_GAP;
+    (n.collapsed?[]:mindChildren(id)).forEach(k=>walk(k.id,depth+1));
+  })(root.id,0);
+  const radius={}; let prev=0;
+  Object.keys(need).map(Number).sort((a,b)=>a-b).forEach(d=>{
+    radius[d]=Math.max(prev+MIND_RING_MIN, need[d]/(Math.PI*2)); prev=radius[d];
+  });
+  // 並び順は枝の並び（＝エッジの順序）に従う。ドラッグで並べ替えたときは
+  //   その時点で mindReorderSiblings がエッジ順を更新しているので、整列しても順序は保たれる。
   (function place(id,depth,a0,a1){
     const n=S.nodes.find(x=>x.id===id); if(!n)return;
     if(depth>0){
-      const ang=(a0+a1)/2, r=depth*ring;
+      const ang=(a0+a1)/2, r=radius[depth]||depth*MIND_RING_MIN;
       n.x=cx+r*Math.cos(ang)-n.w/2;
       n.y=cy+r*Math.sin(ang)-n.h/2;
     }
     const kids=n.collapsed?[]:mindChildren(id);
     if(!kids.length)return;
-    const total=kids.reduce((s,k)=>s+mindLeafCount(k.id),0)||1;
+    const total=kids.reduce((s,k)=>s+mindArcNeed(k.id),0)||1;
     let a=a0;
     kids.forEach(k=>{
-      const span=(a1-a0)*(mindLeafCount(k.id)/total);
+      const span=(a1-a0)*(mindArcNeed(k.id)/total);
       place(k.id,depth+1,a,a+span);
       a+=span;
     });
   })(root.id,0,0,Math.PI*2);
 }
-// 右方向ツリー: depth×水平間隔、葉を縦に並べ親を子の中央に
+// v8.09: 右方向ツリー。列の間隔と行の高さを実際の箱の大きさから決める
+//   （従来は列210px・行54px固定で、文字数の多い箱や重要度「高」の箱がはみ出していた）。
+const MIND_TREE_GAP_X=70;  // 列と列のあいだ
+const MIND_TREE_GAP_Y=16;  // 行と行のあいだ
 function mindLayoutTree(root){
-  const x0=root.x, levelStep=210, rowH=54;
+  const maxW={};
+  (function walk(id,d){
+    const n=S.nodes.find(x=>x.id===id); if(!n)return;
+    maxW[d]=Math.max(maxW[d]||0,n.w);
+    (n.collapsed?[]:mindChildren(id)).forEach(k=>walk(k.id,d+1));
+  })(root.id,0);
+  const colX={}; let x=root.x;
+  Object.keys(maxW).map(Number).sort((a,b)=>a-b).forEach(d=>{ colX[d]=x; x+=maxW[d]+MIND_TREE_GAP_X; });
   let nextY=root.y;
   (function place(id,depth){
     const n=S.nodes.find(x=>x.id===id); if(!n)return;
-    n.x=x0+depth*levelStep;
+    n.x=colX[depth];
     const kids=n.collapsed?[]:mindChildren(id);
-    if(!kids.length){ n.y=nextY; nextY+=rowH; return; }
+    if(!kids.length){ n.y=nextY; nextY+=n.h+MIND_TREE_GAP_Y; return; }
     kids.forEach(k=>place(k.id,depth+1));
     const cys=kids.map(k=>{const kn=S.nodes.find(x=>x.id===k.id);return kn.y+kn.h/2;});
     n.y=(Math.min(...cys)+Math.max(...cys))/2-n.h/2;
   })(root.id,0);
-}
-// 全mindノードを正の領域へ（左/上端に余白を確保）
+}// 全mindノードを正の領域へ（左/上端に余白を確保）
 function mindNormalize(){
   const ns=S.nodes.filter(n=>isMindShape(n.type));
   if(!ns.length)return;
@@ -7944,8 +8031,8 @@ document.addEventListener('mouseup',()=>{
   // マインドマップ ノード移動完了（ドロップ先があれば再ペアレント）
   if(mindDragState){
     const ds=mindDragState; mindDragState=null;
-    if(ds.dropTarget){ mindReparent(ds.nid,ds.dropTarget); snap(); render(); }
-    else if(ds.moved){ snap(); render(); }
+    if(ds.dropTarget){ mindReparent(ds.nid,ds.dropTarget); mindReorderSiblings(ds.nid); snap(); render(); }
+    else if(ds.moved){ mindReorderSiblings(ds.nid); snap(); render(); }   // v8.09: 動かした位置で兄弟の順序を確定
     else {
       // 未移動（クリック）: 選択描画を220ms遅延（ダブルクリック編集と排他・ガント行と同方式）
       if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
