@@ -30,6 +30,9 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .tbtn:hover{background:#334155;color:#f1f5f9}
 .tbtn.on{background:#2563eb;color:#fff;border-color:#3b82f6}
 .tbtn.red:hover{background:#dc2626;color:#fff}
+/* v8.10: 図形で描くツールバーアイコン（文字揃え・ハンドツール）。色はボタンの文字色に追従 */
+.tbtn>svg{display:block}
+.tbtn .algn line{stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
 .gantt-hol-chk{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:#cbd5e1;cursor:pointer;padding:2px 5px;border-radius:4px;user-select:none;white-space:nowrap}
 .gantt-hol-chk:hover{background:#334155}
 .gantt-hol-chk:has(input:checked){background:#2563eb;color:#fff}
@@ -79,6 +82,9 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
 #diagram-svg{display:block;cursor:default;transform-origin:0 0}
 #diagram-svg.cx *,#diagram-svg.cx{cursor:crosshair!important}
+/* v8.10: ハンドツール（パン専用）＝掴む手のカーソル。ドラッグ中は握った手に変える */
+#diagram-svg.hand *,#diagram-svg.hand{cursor:grab!important}
+#diagram-svg.hand.grabbing *,#diagram-svg.hand.grabbing{cursor:grabbing!important}
 
 #hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#e2e8f0;padding:5px 14px;border-radius:20px;font-size:11px;pointer-events:none;white-space:nowrap;z-index:100;display:none}
 #lane-choice{position:fixed;z-index:1000;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:10px 12px;display:flex;flex-direction:column;gap:5px;min-width:120px}
@@ -297,6 +303,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div id="toolbar">
   <button class="tbtn on" id="btn-select" onclick="setMode('select')">▶ 選択</button>
   <button class="tbtn" id="btn-connect" onclick="setMode('connect')">→ 接続</button>
+  <!-- v8.10: ハンドツール（パン専用）。押すとパレットのシェイプ選択が外れ、ドラッグで画面が動くだけになる -->
+  <button class="tbtn" id="btn-hand" onclick="setMode('hand')" title="ハンドツール: ドラッグで画面を移動（シェイプは配置・選択されません）"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5 8.4V3.6a1 1 0 0 1 2 0v3.2m0-.4V2.9a1 1 0 0 1 2 0v3.5m0-.2V3.4a1 1 0 0 1 2 0v4m0-1.1a1 1 0 0 1 2 0v4.3c0 2.3-1.7 3.9-4 3.9-2.4 0-3.4-1-4.3-2.2L3.4 10c-.5-.7-.3-1.4.3-1.8.5-.3 1.1-.2 1.5.2l.8.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div class="sep"></div>
   <button class="tbtn" onclick="undo()">↩ 元に戻す</button>
   <button class="tbtn" onclick="redo()">↪ やり直す</button>
@@ -306,9 +314,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <button class="tbtn" onclick="showShapeColorMenu(event)" title="選択シェイプの色を変更">🎨 色</button>
   <button class="tbtn" onclick="showDesignMenu(event)" title="図全体のデザイン（角丸・線・影）を切替。色は変わりません">✨ デザイン</button>
   <button class="tbtn" onclick="showStepMenu(event)" title="おしゃれなステップ図の挿入・番号採番・カラフル配色">① ステップ</button>
-  <button class="tbtn" onclick="setTextAlign('left')" title="テキストを左揃え">⯇</button>
-  <button class="tbtn" onclick="setTextAlign('center')" title="テキストを中央揃え">≡</button>
-  <button class="tbtn" onclick="setTextAlign('right')" title="テキストを右揃え">⯈</button>
+  <!-- v8.10: 文字揃えは Word/Excel と同じ「横線の束の端が揃う」絵柄へ（旧 ⯇ ≡ ⯈ は何のボタンか分からなかった）。
+       線の色は currentColor＝ボタンの文字色に追従するので、ホバー・選択中の色変化は他のボタンと同じ。 -->
+  <button class="tbtn" onclick="setTextAlign('left')" title="テキストを左揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.33" x2="9.5" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="2" y1="13" x2="9.5" y2="13"/></g></svg></button>
+  <button class="tbtn" onclick="setTextAlign('center')" title="テキストを中央揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4.25" y1="6.33" x2="11.75" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="4.25" y1="13" x2="11.75" y2="13"/></g></svg></button>
+  <button class="tbtn" onclick="setTextAlign('right')" title="テキストを右揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6.5" y1="6.33" x2="14" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="6.5" y1="13" x2="14" y2="13"/></g></svg></button>
   <button class="tbtn" id="btn-group" onclick="groupSel()" title="選択した複数シェイプをグループ化 (Ctrl+G)">⧉ グループ化</button>
   <button class="tbtn" id="btn-ungroup" onclick="ungroupSel()" title="グループを解除 (Ctrl+Shift+G)">⧈ 解除</button>
   <button class="tbtn red" onclick="delSel()">✕ 削除</button>
@@ -539,6 +549,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <g id="g-nodes"></g>
       <g id="g-replace-hl" style="pointer-events:none"></g>
       <g id="g-dividers"></g>
+      <!-- v8.10: レーン見出しは最前面の独立レイヤに描き、スクロール量ぶん平行移動して固定表示する -->
+      <g id="g-lane-hdr"></g>
       <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
     </svg>
   </div>
@@ -1548,6 +1560,72 @@ function wrapText(text,maxW,fontSize){
   });
   return lines;
 }
+// v8.10: シェイプの自動リサイズ＋自動折り返し。
+//   従来は通常シェイプのサイズが既定のまま固定で、長い文章は枠外へはみ出していた（折り返しも
+//   Alt+Enter の明示改行だけ）。既定幅から AUTO_W_MAX まで横に広げ、そこを超えたぶんは
+//   wrapText で折り返して縦に伸ばす。折り返したあとは「実際に一番長くなった行」に合わせて
+//   幅を詰め直すので、上限いっぱいの箱に短い行が並んで左右が間延びすることはない。
+const AUTO_W_MAX=260;   // 自動で広げる幅の上限（超えたぶんは折り返して縦へ）
+const AUTO_PAD=5;       // 文字の左右（縦書きは上下）の余白（片側）
+const AUTO_LINE_H=15;   // 行の高さ（描画側 shapeEl と同じ値）
+const AUTO_FONT=12;     // 本文の文字サイズ（描画側 shapeEl と同じ値）
+// ひし形は斜辺に文字が当たるため、四角より余白を厚く取る
+function autoFitPad(n){return n.type==='diamond'?24:AUTO_PAD*2;}
+function autoFitPadH(n){return n.type==='diamond'?22:12;}
+// wrapText と同じ近似（全角=フォントサイズ / 半角=×0.6）で1行の幅を測る
+function textW(line,fontSize){
+  let w=0; for(const ch of (line||'')) w+=(ch.charCodeAt(0)>255?fontSize:fontSize*0.6);
+  return w;
+}
+// 縦書き用の折り返し。縦書きは半角も全角も同じ送り（1文字＝charH）で積むため、
+// 幅ではなく「文字数」で列を切る。wrapText を縦書きに使うと半角混じりで送りがずれる。
+const VTEXT_CH=AUTO_FONT*1.5;   // 縦書きの1文字ぶんの送り（appendVText と同じ）
+const VTEXT_COL=17;             // 縦書きの列と列の間隔（12px の字に対して詰まりすぎない幅）
+function wrapTextByCount(text,maxChars){
+  const cols=[]; const lim=Math.max(1,maxChars|0);
+  (text||'').split('\n').forEach(line=>{
+    const chars=[...line];
+    if(!chars.length){cols.push('');return;}
+    for(let i=0;i<chars.length;i+=lim) cols.push(chars.slice(i,i+lim).join(''));
+  });
+  return cols.length?cols:[''];
+}
+// 自動リサイズの対象外シェイプ（ラベルが枠外／内部レイアウトを別管理／ラベルを持たない）
+const AUTO_FIT_SKIP=new Set(['note','state_detail','group_box','org_group','event',
+  'gateway_xor','gateway_par','initial','final','step_num','er_relation']);
+function autoFitTarget(n){
+  if(!n||!SD[n.type])return false;
+  if(!isResizable(n))return false;          // gantt/sequence/mindmap 図種と特殊管理シェイプを除外
+  if(n.sections&&n.sections.length)return false;   // ER/UML/樹状図の区画は calcSectionsH が担当
+  if(n.flowId)return false;                 // ステップ図は列を自動配置するため触らない
+  return !AUTO_FIT_SKIP.has(n.type);
+}
+// 文字量に合わせて n.w / n.h を更新する。手動リサイズ済み（manualW）の箱は幅を変えず、
+// 折り返しと高さだけ追従させる（手で決めた幅を尊重する）。
+function autoFitNodeSize(n){
+  if(!autoFitTarget(n))return;
+  const def=SD[n.type], pad=autoFitPad(n), padH=autoFitPadH(n);
+  if(tV()){   // 横書き（縦モード＋樹状図は横向きでも横書き）
+    const cap=Math.max(24,(n.manualW?n.w:AUTO_W_MAX)-pad);
+    const lines=wrapText(n.text,cap,AUTO_FONT);
+    if(!n.manualW){
+      const need=Math.ceil(Math.max(0,...lines.map(l=>textW(l,AUTO_FONT))))+pad;
+      n.w=Math.max(def.w,Math.min(AUTO_W_MAX,need));
+    }
+    const needH=lines.length*AUTO_LINE_H+padH;
+    n.h=Math.max(def.h,n.manualH||0,needH);
+  } else {    // 縦書き（横モード）＝軸を入れ替えて同じ計算。文字は下へ流れ、列は右から左へ積む。
+    //          既定サイズも addNode と同じく w/h が入れ替わる。
+    const cap=Math.max(VTEXT_CH,(n.manualW?n.h:AUTO_W_MAX)-pad);
+    const cols=wrapTextByCount(n.text,Math.floor(cap/VTEXT_CH));
+    if(!n.manualW){
+      const need=Math.max(0,...cols.map(c=>[...c].length))*VTEXT_CH+pad;
+      n.h=Math.max(def.w,Math.min(AUTO_W_MAX,Math.ceil(need)));
+    }
+    const needW=cols.length*VTEXT_COL+padH;
+    n.w=Math.max(def.h,n.manualH||0,needW);
+  }
+}
 function uid(){return 'e'+(++S.uid)}
 
 // ── 図種選択 ──
@@ -1830,6 +1908,8 @@ function init(){
   document.getElementById('btn-select')?.classList.add('on');
   document.getElementById('diagram-svg').setAttribute('class','');
   document.getElementById('prev-edge').style.display='none';
+  initHandTool();       // v8.10: ハンドツール（パン専用）のキャプチャ用リスナ
+  initStickyHeader();   // v8.10: レーン見出しのスクロール追従
 
   let st=null;
   if(window.__SWIMLANE_STATE__)st=window.__SWIMLANE_STATE__;
@@ -2407,6 +2487,9 @@ function showLaneChoice(n,callback){
 }
 function renderGuides(lane,snappedCross,snapMain){
   const g=document.getElementById('g-guides');g.innerHTML='';
+  // v8.10: マインドマップは親ノードからの相対配置で位置が決まるため、キャンバス全体に伸びる
+  //   配置ガイド（黄色い点線）は意味を持たない。描かない。
+  if(S.diagramType==='mindmap')return;
   const hdr=headerSize();
   if(lane&&usesLanes()){
     const lx=laneX(lane.id);
@@ -5169,14 +5252,38 @@ function mindDepth(id){let d=0,cur=id,g=0;while((cur=mindParentId(cur))!=null&&g
 function mindDescendants(id){const out=[],seen=new Set();(function walk(p){mindChildren(p).forEach(c=>{if(seen.has(c.id))return;seen.add(c.id);out.push(c.id);walk(c.id);});})(id);return out;}
 function mindIsAncestor(a,b){let cur=b,g=0;while((cur=mindParentId(cur))!=null&&g++<999){if(cur===a)return true;}return false;}
 // 第1階層の枝頭(depth=1祖先)の並び順で枝色を決定
+// v8.10: 色の根拠を「S.edges の中で何番目か」からノードに焼き付けた branchIdx へ移した。
+//   従来はエッジ順が色を決めていたため、枝をドラッグして並べ替えたり整列したりするだけで
+//   色が総入れ替えになっていた（並び順と色が同じ根拠を共有していた）。branchIdx はルート直下の
+//   ノードだけが持つ optional プロパティで、S.nodes ごと保存・Undo に乗る。
+//   未設定なら従来どおりエッジ順で決めるので、旧ファイルの見た目は変わらない。
 function mindBranchColor(id){
   const root=mindRoot();
   if(!root||id===root.id)return null;
   let cur=id,parent=mindParentId(cur),g=0;
   while(parent!=null&&parent!==root.id&&g++<999){cur=parent;parent=mindParentId(cur);}
   if(parent!==root.id)return MIND_BRANCH_COLORS[0];
-  const idx=mindChildren(root.id).findIndex(n=>n.id===cur);
+  const head=S.nodes.find(n=>n.id===cur);
+  const idx=(head&&head.branchIdx!=null)?head.branchIdx
+    :mindChildren(root.id).findIndex(n=>n.id===cur);
   return MIND_BRANCH_COLORS[(idx<0?0:idx)%MIND_BRANCH_COLORS.length];
+}
+// ルート直下で branchIdx を持たないノードに番号を割り当てる。
+//   既存ファイルは「その時点のエッジ順」＝いま画面に出ている色をそのまま焼き付けるので、
+//   開いた瞬間に色が変わることはない。新しく枝になったノードは未使用の最小番号を採る。
+//   ルート直下から外れたノードの番号は捨てる（別の枝の子になったら親の色に染まるため）。
+function mindAssignBranchIdx(){
+  const root=mindRoot(); if(!root)return;
+  const kids=mindChildren(root.id);
+  const kidSet=new Set(kids.map(n=>n.id));
+  S.nodes.forEach(n=>{ if(n.branchIdx!=null&&!kidSet.has(n.id)) delete n.branchIdx; });
+  const used=new Set(kids.filter(n=>n.branchIdx!=null).map(n=>n.branchIdx));
+  kids.forEach((n,i)=>{
+    if(n.branchIdx!=null)return;
+    let cand=used.has(i)?0:i;              // 既存ファイル＝エッジ順の番号をそのまま採る
+    while(used.has(cand))cand++;           // 埋まっていたら未使用の最小番号へ
+    n.branchIdx=cand; used.add(cand);
+  });
 }
 // 折り畳みで隠れるノードID集合（Phase2でトグルUI追加予定）
 function mindHiddenSet(){
@@ -5209,12 +5316,21 @@ function mindNodeFont(n){   // v8.05: 種別＋重要度で文字サイズを決
   const base=n.type==='mind_root'?15:(n.type==='mind_note'?11:12);
   return n.type==='mind_root'?base:base+mindImpSize(n).f;
 }
+// v8.10: 上限 MIND_W_MAX を超えるぶんは自動で折り返して縦へ伸ばす（従来は横へ伸び続けた）。
+//   折り返したあとは実際に一番長くなった行に合わせて幅を詰めるので、左右が間延びしない。
+const MIND_W_MAX=240;   // マインドマップのノード幅の上限
+function mindTextLines(n){
+  const sz=mindImpSize(n), fs=mindNodeFont(n);
+  const extra=sz.pad+(n.type==='mind_action'?12:0);
+  return wrapText(n.text||'',Math.max(24,MIND_W_MAX-extra),fs);
+}
 function calcMindNodeSize(n){
-  const lines=(n.text||'').split('\n');   // 追補: Alt+Enterの改行に対応（幅=最長行・高さ=行数で拡張）
   const sz=mindImpSize(n);   // v8.05: 重要度で大きさを三段階に（未設定は基準）
   const fs=mindNodeFont(n);
-  const maxLen=lines.reduce((m,l)=>Math.max(m,[...l].length),0);
-  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,maxLen*(fs*1.05)+sz.pad+(n.type==='mind_action'?12:0)));
+  const extra=sz.pad+(n.type==='mind_action'?12:0);
+  const lines=mindTextLines(n);
+  const need=Math.ceil(Math.max(0,...lines.map(l=>textW(l,fs))))+extra;
+  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,Math.min(MIND_W_MAX,need)));
   const baseH=n.type==='mind_root'?46:Math.round((n.type==='mind_note'?28:32)*sz.hm);
   n.h=baseH+(lines.length-1)*Math.round(fs*1.3);
 }
@@ -5232,6 +5348,7 @@ function mindPlace(type,px,py){
 }
 // ── 描画 ──
 function renderMindmap(){
+  mindAssignBranchIdx();   // v8.10: 枝色の番号を確定（読込・追加・付け替えをここ1か所で拾う）
   S.nodes.forEach(n=>{if(isMindShape(n.type))calcMindNodeSize(n);});
   calcCanvasSize();
   const svg=document.getElementById('diagram-svg');
@@ -5421,7 +5538,8 @@ function renderMindNodes(hidden,dim){
       'font-size':String(fs),'font-weight':isRoot?'700':(n.importance==='high'?'600':'500'),
       fill:isRoot?'#f8fafc':(isNote?nbc.stroke:'#1e293b'),'pointer-events':'none'});
     // 追補: Alt+Enterの改行を複数行(tspan)で表示＝ライブSVGなのでPNG/SVG/印刷にも反映
-    const tls=(n.text||'').split('\n');
+    // v8.10: 明示改行に加え、上限幅を超えた行の自動折り返しも同じ経路で描く
+    const tls=mindTextLines(n);
     if(tls.length>1){ const lh=Math.round(fs*1.3);
       tls.forEach((ln,i)=>{const ts=e('tspan',{x:tcx,y:n.y+n.h/2+(i-(tls.length-1)/2)*lh});ts.textContent=ln;t.appendChild(ts);});
     } else t.textContent=n.text||'';
@@ -5499,7 +5617,13 @@ function mindNodeMD(ev,id){
 function mindEditNode(id){
   const n=S.nodes.find(x=>x.id===id); if(!n)return;
   // 追補: 常に複数行エディタ（Alt+Enterで改行）。表示高さは最低46pxを確保
-  openSvgEditor(n.x,n.y,Math.max(n.w,90),Math.max(n.h,46),n.text||'',v=>{n.text=v.trim();snap();render();},'名称',{multiline:true});
+  // v8.10: 入力中も大きさを追従（calcMindNodeSize は renderMindmap の冒頭で毎回走る）
+  openSvgEditor(n.x,n.y,Math.max(n.w,90),Math.max(n.h,46),n.text||'',v=>{n.text=v.trim();snap();render();},'名称',
+    {multiline:true,onInput:(v,fo)=>{
+      n.text=v; render();
+      fo.setAttribute('x',n.x); fo.setAttribute('y',n.y);
+      fo.setAttribute('width',Math.max(n.w,90)); fo.setAttribute('height',Math.max(n.h,46));
+    }});
 }
 // カーソル下の再ペアレント候補（ドラッグ中ノードとその子孫は除外）
 function mindDropTargetAt(px,py,draggedId){
@@ -5549,6 +5673,10 @@ function mindReorderSiblings(childId){
   if(!S.edges.some(e=>e.from===newParentId&&e.to===childId)){
     S.edges.push({id:uid(),from:newParentId,to:childId,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
   }
+  // v8.10: ルート直下から外れたら枝色の番号は捨てる（新しい親の枝色に染まるため）。
+  //   逆にルート直下へ移ったノードには mindAssignBranchIdx が未使用の番号を与える。
+  const root=mindRoot();
+  if(root&&newParentId!==root.id){ const c=S.nodes.find(n=>n.id===childId); if(c)delete c.branchIdx; }
 }
 // v8.09: 新しい子の置き場所。従来は「親の右へ70px」固定だったため、親が中心より左にあると
 //   新しい子が中心へ向かって置かれ、既存の枝の下へ潜り込んでいた。中心から見て外向きへ置く。
@@ -5702,6 +5830,26 @@ function mindLayoutRadial(root){
   Object.keys(need).map(Number).sort((a,b)=>a-b).forEach(d=>{
     radius[d]=Math.max(prev+MIND_RING_MIN, need[d]/(Math.PI*2)); prev=radius[d];
   });
+  // v8.10: 配り始めの角度を、いまの枝の向きに合わせて回す。従来は常に角度0（真右）から配って
+  //   いたため、整列するたびに図全体が回り、どの枝がどちらにあるか分からなくなっていた。
+  //   並び順そのものはエッジ順のまま（v8.09の設計）で、扇全体の回転だけを現状へ寄せる。
+  //   ずれの平均は角度の巻き（±π境界）に強い円周平均で求める。
+  const rot=(function(){
+    const kids=(root.collapsed?[]:mindChildren(root.id));
+    if(kids.length<1)return 0;
+    const total=kids.reduce((s,k)=>s+mindArcNeed(k.id),0)||1;
+    let a=0,sn=0,cs=0,seen=0;
+    kids.forEach(k=>{
+      const span=Math.PI*2*(mindArcNeed(k.id)/total);
+      const newAng=a+span/2; a+=span;
+      const kn=S.nodes.find(x=>x.id===k.id); if(!kn)return;
+      const dx=(kn.x+kn.w/2)-cx, dy=(kn.y+kn.h/2)-cy;
+      if(Math.hypot(dx,dy)<1)return;              // 中心に重なっている枝は向きが定まらないので除く
+      const d=Math.atan2(dy,dx)-newAng;
+      sn+=Math.sin(d); cs+=Math.cos(d); seen++;
+    });
+    return seen?Math.atan2(sn,cs):0;
+  })();
   // 並び順は枝の並び（＝エッジの順序）に従う。ドラッグで並べ替えたときは
   //   その時点で mindReorderSiblings がエッジ順を更新しているので、整列しても順序は保たれる。
   (function place(id,depth,a0,a1){
@@ -5720,7 +5868,7 @@ function mindLayoutRadial(root){
       place(k.id,depth+1,a,a+span);
       a+=span;
     });
-  })(root.id,0,0,Math.PI*2);
+  })(root.id,0,rot,rot+Math.PI*2);
 }
 // v8.09: 右方向ツリー。列の間隔と行の高さを実際の箱の大きさから決める
 //   （従来は列210px・行54px固定で、文字数の多い箱や重要度「高」の箱がはみ出していた）。
@@ -5957,6 +6105,7 @@ function render(){
       }
     }
   });
+  S.nodes.forEach(autoFitNodeSize);   // v8.10: 文字量に合わせてシェイプを自動リサイズ（折り返し込み）
   S.nodes.forEach(n=>{
     if(!n.sections||!n.sections.length)return;
     const sh=calcSectionsH(n.sections,n.type==='org_node');
@@ -5972,8 +6121,12 @@ function render(){
   applyZoom();
   if(S.diagramType==='uml') updateUmlToolbar();
 }
+// v8.10: レーン本体（背景・区切り線・外枠）は g-lanes、見出し帯は最前面の g-lane-hdr に分けて描く。
+//   見出しを別レイヤにしたのは、スクロール量ぶん平行移動して固定表示するため（stickyLaneHeader）。
+//   分けても描く内容・座標は従来と同一なので、見た目・レーンドラッグの操作感は変わらない。
 function renderLanes(){
   const g=document.getElementById('g-lanes'); g.innerHTML='';
+  const gh=document.getElementById('g-lane-hdr'); if(gh){gh.innerHTML=''; gh.removeAttribute('transform');}
   if(!usesLanes()){
     // レーンなし: 単色背景
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc',stroke:'#94a3b8','stroke-width':1.5}));
@@ -5986,9 +6139,9 @@ function renderLanes(){
       g.appendChild(e('rect',{x,y:hdr,width:l.w,height:SVG_H-hdr,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
       const hr=e('rect',{x,y:0,width:l.w,height:hdr,fill:l.hd,stroke:'#94a3b8','stroke-width':1,cursor:'grab'});
       hr.addEventListener('mousedown',ev=>startLaneDrag(ev,l.id));
-      g.appendChild(hr);
+      gh.appendChild(hr);
       const t=e('text',{x:x+l.w/2,y:hdr/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
-      t.textContent=l.name; g.appendChild(t);
+      t.textContent=l.name; gh.appendChild(t);
       if(i<S.lanes.length-1)g.appendChild(e('line',{x1:x+l.w,y1:0,x2:x+l.w,y2:SVG_H,stroke:'#94a3b8','stroke-width':1.5}));
       x+=l.w;
     });
@@ -5999,20 +6152,42 @@ function renderLanes(){
       g.appendChild(e('rect',{x:hdr,y,width:SVG_W-hdr,height:l.w,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
       const hr=e('rect',{x:0,y,width:hdr,height:l.w,fill:l.hd,stroke:'#94a3b8','stroke-width':1,cursor:'grab'});
       hr.addEventListener('mousedown',ev=>startLaneDrag(ev,l.id));
-      g.appendChild(hr);
+      gh.appendChild(hr);
       // 横モードのヘッダー: 1文字ずつ縦に並べる縦読み形式
       const chars=[...l.name];
       const charH=18, totalH=chars.length*charH;
       const startY=y+l.w/2-totalH/2+charH/2;
       chars.forEach((ch,ci)=>{
         const ct=e('text',{x:hdr/2,y:startY+ci*charH,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
-        ct.textContent=ch; g.appendChild(ct);
+        ct.textContent=ch; gh.appendChild(ct);
       });
       if(i<S.lanes.length-1)g.appendChild(e('line',{x1:0,y1:y+l.w,x2:SVG_W,y2:y+l.w,stroke:'#94a3b8','stroke-width':1.5}));
       y+=l.w;
     });
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:totalLaneSpan(),fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
   }
+  stickyLaneHeader();
+}
+// v8.10: レーン見出しをスクロールに追従させる。SVG 全体に CSS transform:scale() が掛かっているので、
+//   スクロール量を zoomLevel で割って SVG 座標へ直してから平行移動する。
+//   縦モードは上端に固定（Y方向）、横モードは左端に固定（X方向）。
+//   レーン並べ替えが見るのは縦モード=X・横モード=Y と、動かす軸と直交するため座標補正は要らない。
+function stickyLaneHeader(){
+  const gh=document.getElementById('g-lane-hdr'); if(!gh)return;
+  if(!usesLanes()||S.diagramType==='gantt'||S.diagramType==='mindmap'){gh.removeAttribute('transform');return;}
+  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
+  const z=zoomLevel||1;
+  if(isV()){
+    const dy=Math.max(0,wrap.scrollTop/z);
+    gh.setAttribute('transform',dy?`translate(0,${dy})`:'translate(0,0)');
+  } else {
+    const dx=Math.max(0,wrap.scrollLeft/z);
+    gh.setAttribute('transform',dx?`translate(${dx},0)`:'translate(0,0)');
+  }
+}
+function initStickyHeader(){
+  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
+  wrap.addEventListener('scroll',stickyLaneHeader,{passive:true});
 }
 // ── v7.00: バス型接続線（樹状図/組織図の標準）──
 //   親の下中央→1本→横バス→各子の上中央（横向きは右中央→縦バス→各子の左中央）。
@@ -6471,6 +6646,23 @@ function appendVText(parent,text,cx,cy,fontSize,attrs){
   }
 }
 
+// v8.10: 縦書きラベルの列折り返し。1列に収まらないぶんを次の列（左方向）へ送る。
+//   列の並びは日本語の縦書きに合わせて右から左。列幅は AUTO_LINE_H（横書きの行高と同じ）。
+function appendVTextWrap(parent,text,cx,cy,fontSize,maxColH,attrs){
+  attrs=attrs||{};
+  const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
+  const charH=fontSize*1.5, colW=VTEXT_COL;
+  const cols=wrapTextByCount(text,Math.floor(Math.max(charH,maxColH)/charH));
+  const startX=cx+(cols.length-1)*colW/2;   // 右端の列から始めて左へ送る
+  cols.forEach((col,ci)=>{
+    const chars=[...col];
+    const startY=cy-chars.length*charH/2+charH/2;
+    chars.forEach((ch,i)=>{
+      const t=e('text',{x:startX-ci*colW,y:startY+i*charH,...baseAttrs});
+      t.textContent=ch; parent.appendChild(t);
+    });
+  });
+}
 // ── シーケンス図: ライフライン縦破線 ──
 function renderLifelines(){
   const g=document.getElementById('g-lifelines'); g.innerHTML='';
@@ -7005,11 +7197,15 @@ function renderNodes(){
         const al=n.textAlign||'center', pad=8;   // D-5 v4.28: テキスト揃え
         let tx=cx, anc='middle';
         if(al==='left'){ tx=n.x+pad; anc='start'; } else if(al==='right'){ tx=n.x+n.w-pad; anc='end'; }
-        const lines=n.text.split('\n'),lh=15;
+        // v8.10: 幅に収まらない行は自動で折り返す（従来は明示改行のみ）。対象外シェイプは従来どおり。
+        const lines=autoFitTarget(n)?wrapText(n.text,Math.max(24,n.w-autoFitPad(n)),AUTO_FONT):n.text.split('\n');
+        const lh=AUTO_LINE_H;
         lines.forEach((ln,i)=>{
           const t=e('text',{x:tx,y:textCy-(lines.length-1)*lh/2+i*lh,'text-anchor':anc,'dominant-baseline':'middle','font-size':'12',fill:'#1e293b','pointer-events':'none'});
           t.textContent=ln; ng.appendChild(t);
         });
+      } else if(autoFitTarget(n)){
+        appendVTextWrap(ng,n.text,cx,textCy,12,Math.max(24,n.h-autoFitPad(n)));   // v8.10: 縦書きも列で折り返す
       } else {
         appendVText(ng,n.text,cx,textCy,12);
       }
@@ -7052,7 +7248,8 @@ function renderNodes(){
       }
     }
     // 汎用シェイプのリサイズハンドル（選択中・選択モード）
-    if(sel&&S.mode!=='connect'&&isResizable(n)) addResizeHandles(ng,n);
+    // v8.10: ハンドツール中は掴めない／文字編集中はハンドルを出さない（編集欄の縁と重なって紛らわしいため）
+    if(sel&&S.mode==='select'&&isResizable(n)&&!svgEditorActive()) addResizeHandles(ng,n);
     ng.style.cursor=S.mode==='connect'?'crosshair':(n.type==='crosslane'?(isV()?'ns-resize':'ew-resize'):'move');
     ng.addEventListener('mousedown',ev=>nodeMD(ev,n.id));
     ng.addEventListener('click',ev=>{
@@ -7140,8 +7337,10 @@ function setMode(m){
   document.getElementById('prev-edge').style.display='none';
   document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('on'));
   document.getElementById('btn-'+m)?.classList.add('on');
-  document.getElementById('diagram-svg').setAttribute('class',m==='connect'?'cx':'');
+  document.getElementById('diagram-svg').setAttribute('class',m==='connect'?'cx':(m==='hand'?'hand':''));
   if(m==='connect'){clearPal();hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)')}
+  // v8.10: ハンドツールはパン専用。パレットのシェイプ選択を解除し、配置・選択・接続をすべて無効にする
+  else if(m==='hand'){clearPal();hint('ハンドツール: ドラッグで画面を移動（Escまたは「▶ 選択」で戻る）')}
   else hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
   render();
 }
@@ -7156,7 +7355,7 @@ function palClick(type){
   activePal=type;
   document.querySelectorAll('.ps').forEach(p=>p.classList.remove('on'));
   document.getElementById('ps-'+type)?.classList.add('on');
-  if(S.mode==='connect')setMode('select');
+  if(S.mode!=='select')setMode('select');   // v8.10: 接続・ハンドツール中にパレットを触ったら選択モードへ戻す
   const label=getDT().palLabels[type]||SD[type]?.text||type;
   hint(`「${label}」: キャンバスをクリックして配置 (Escでキャンセル)`);
 }
@@ -7166,7 +7365,7 @@ function palDragStart(ev,type){
   if(ev.button!==0)return;
   ev.preventDefault(); ev.stopPropagation();
   exitPasteMode();
-  if(S.mode==='connect')setMode('select');
+  if(S.mode!=='select')setMode('select');   // v8.10: 接続・ハンドツール中でもパレットのドラッグは配置として扱う
   const d=SD[type];
   const ghost=document.createElement('div');
   const label=getDT().palLabels[type]||d.text;
@@ -7218,8 +7417,21 @@ function palDragStart(ev,type){
 // ── Canvas events ──
 let marquee=null; // {sx,sy} start point of marquee selection
 let groupDrawState=null; // v7.10: グループ枠の2クリック配置 {x0,y0}=始点（1回目クリック後）
+// v8.10: 文字編集中に余白をクリックしたら「確定するだけ」。従来は blur(=確定) より先にこの関数が
+//   走るため、確定と同時にシェイプの配置まで起きていた。blur を明示的に呼んで確定させ、ここで返す。
+//   パレットの選択は解除しないので、置きたいときは続けてもう一度クリックすれば従来どおり配置される。
+function svgEditorActive(){return !!document.getElementById('svg-editor');}
+function closeSvgEditor(){
+  const ed=document.getElementById('svg-editor'); if(!ed)return false;
+  ed.querySelector('input,textarea')?.blur();   // blur → openSvgEditor の commit が走って内容が確定する
+  // 編集していた箱の選択も同時に外す。残したままだと v8.05 の「選択中の余白クリックは選択解除だけ」に
+  // 引っかかり、置きたいときに3クリック必要になるため。マインドマップは選択＝次の配置の親なので残す。
+  if(S.diagramType!=='mindmap'){ S.sel=[]; render(); }
+  return true;
+}
 function svgMD(ev){
   if(ev.button!==0)return;
+  if(closeSvgEditor())return;
   if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
   if(edgeClickTimer!==null){clearTimeout(edgeClickTimer);edgeClickTimer=null;}
   if(S.mode==='connect'){S.conn=null;document.getElementById('prev-edge').style.display='none';S.sel=[];render();return}
@@ -7250,6 +7462,7 @@ function svgMD(ev){
   S.sel=[]; render();
 }
 function svgDbl(ev){
+  if(svgEditorActive())return;   // v8.10: 編集中の余白ダブルクリックで新しい四角を作らない
   const pt=svgPt(ev);
   const hdr=headerSize();
   const mainPos=isV()?pt.y:pt.x;
@@ -7565,7 +7778,31 @@ function nodeMD(ev,nid){
   S_didDrag=false;
 }
 
+// ── v8.10: ハンドツール（パン専用）──
+//   #canvas-wrap のキャプチャフェーズで拾うので、SVG やノード <g> のハンドラより先に走る。
+//   ここで stopPropagation すれば、配置・選択・接続・ダブルクリック編集を個別にガードしなくても
+//   すべて止まる。画面移動は #canvas-wrap のネイティブスクロールをそのまま動かす（ズーム非依存）。
+let panState=null;
+function initHandTool(){
+  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
+  wrap.addEventListener('mousedown',ev=>{
+    if(S.mode!=='hand'||ev.button!==0)return;
+    ev.preventDefault(); ev.stopPropagation();
+    panState={sx:ev.clientX,sy:ev.clientY,sl:wrap.scrollLeft,st:wrap.scrollTop};
+    document.getElementById('diagram-svg').classList.add('grabbing');
+  },true);
+  // 押した後に発生するクリック系も握りつぶす（配置・選択・編集を起こさない）
+  ['click','dblclick','contextmenu'].forEach(t=>{
+    wrap.addEventListener(t,ev=>{ if(S.mode==='hand'){ev.preventDefault();ev.stopPropagation();} },true);
+  });
+}
 document.addEventListener('mousemove',ev=>{
+  if(panState){
+    const wrap=document.getElementById('canvas-wrap');
+    wrap.scrollLeft=panState.sl-(ev.clientX-panState.sx);
+    wrap.scrollTop =panState.st-(ev.clientY-panState.sy);
+    return;
+  }
   // レーン並べ替え（キャンバスヘッダードラッグ）
   if(laneDragState){
     const pt=svgPt(ev);
@@ -8028,6 +8265,12 @@ document.addEventListener('mousemove',ev=>{
   }
 });
 document.addEventListener('mouseup',()=>{
+  // v8.10: ハンドツールのパン終了（履歴には積まない＝表示だけの操作）
+  if(panState){
+    panState=null;
+    document.getElementById('diagram-svg').classList.remove('grabbing');
+    return;
+  }
   // マインドマップ ノード移動完了（ドロップ先があれば再ペアレント）
   if(mindDragState){
     const ds=mindDragState; mindDragState=null;
@@ -8054,6 +8297,10 @@ document.addEventListener('mouseup',()=>{
   }
   // シェイプリサイズ完了
   if(nodeResizeState){
+    // v8.10: 手で決めた大きさは自動リサイズより優先する。以後この箱は幅（縦書きは高さ）を
+    //   変えず、折り返しと伸びる側だけが文字量に追従する。manualH は伸びる側の下限。
+    const _rn=S.nodes.find(x=>x.id===nodeResizeState.nid);
+    if(_rn&&autoFitTarget(_rn)){ _rn.manualW=true; _rn.manualH=tV()?_rn.h:_rn.w; }
     nodeResizeState=null; snap(); render(); return;
   }
   // レーン並べ替え完了
@@ -8370,6 +8617,12 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
   ['mousedown','mouseup','click','dblclick'].forEach(t=>fo.addEventListener(t,ev=>ev.stopPropagation()));
   setTimeout(()=>{inp.focus();inp.select();},0);
   setTimeout(()=>{if(document.activeElement!==inp&&fo.isConnected){inp.focus();inp.select();}},80);   // 追補: フォーカス再試行
+  // v8.10: 入力中もシェイプの大きさを追従させる（opts.onInput）。エディタは SVG 直下にあり
+  //   render() の g-nodes 差し替えでは消えないため、再描画してもフォーカスは保たれる。
+  //   IME 変換中も input は発火するので、変換中から大きさが追いつく。履歴(snap)は確定時だけ。
+  if(opts&&opts.onInput){
+    inp.addEventListener('input',()=>{ if(!fo.isConnected)return; opts.onInput(inp.value,fo); });
+  }
   let done=false;
   const commit=()=>{if(done)return;done=true;const v=inp.value;fo.remove();onCommit(v);};
   const cancel=()=>{if(done)return;done=true;fo.remove();render();};
@@ -8398,7 +8651,13 @@ function editText(nid){
     openSvgEditor(n.x,n.y,NOTE_TITLE_H,n.h,n.text,v=>{n.text=v;snap();render();});
   } else {
     const h=(n.type==='note'||n.type==='state_detail')?NOTE_TITLE_H:n.h;
-    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();});
+    // v8.10: 入力のたびに本文を反映して再描画し、育った箱に編集欄を合わせる（履歴は確定時のみ）
+    const grow=autoFitTarget(n)?{onInput:(v,fo)=>{
+      n.text=v; render();
+      fo.setAttribute('x',n.x); fo.setAttribute('y',n.y);
+      fo.setAttribute('width',n.w); fo.setAttribute('height',n.h);
+    }}:undefined;
+    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();},undefined,grow);
   }
 }
 function editNote(nid){
@@ -8531,6 +8790,7 @@ document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'){
     if(pasteMode){exitPasteMode();hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');return;}
     if(groupDrawState){groupDrawState=null;const _gr=document.getElementById('group-draw-rect');if(_gr)_gr.remove();hint('グループ枠の配置をキャンセルしました');}
+    if(S.mode==='hand'){setMode('select');return;}   // v8.10: ハンドツールは Esc で選択モードへ戻す
     S.conn=null; clearPal();
     document.getElementById('prev-edge').style.display='none';
     S.sel=[]; render();
@@ -8748,6 +9008,7 @@ async function openImportFile(){
 // v8.09: 保存用HTMLの生成。生成（ここ）と書き出し（ダウンロード／上書き）を分離した。
 function buildSaveHtml(name){
   document.getElementById('svg-editor')?.remove();
+  document.getElementById('g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんを保存HTMLへ焼き込まない
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
@@ -8759,6 +9020,7 @@ function buildSaveHtml(name){
   html=html.replace(new RegExp(SCR+' id="swimlane-state">[\\s\\S]*?'+CSCR+'\\s*','g'),'');
   html=html.replace(/\s+data-state="[^"]*"/g,'');
   html=html.replace('</head>',()=>SCR+' id="swimlane-state">window.__SWIMLANE_STATE__='+stateJson+';'+CSCR+'\n</head>');
+  stickyLaneHeader();   // v8.10: 画面側の見出し追従を元に戻す（保存のために一時的に外していた）
   return {safe,html};
 }
 // v8.09: 従来どおりダウンロードで保存（上書き保存が使えないブラウザ・失敗時のフォールバック）
@@ -8811,6 +9073,7 @@ function buildExportSvg(skipTitle){
   const svg=document.getElementById('diagram-svg').cloneNode(true);
   svg.setAttribute('xmlns',NS);
   svg.style.transform='';
+  svg.querySelector('#g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんは出力に持ち込まない
   svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
   svg.querySelectorAll('.mind-dim').forEach(el=>el.classList.remove('mind-dim'));   // v8.03: 強調表示の減光は書き出しに含めない
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
@@ -9393,6 +9656,7 @@ function applyZoom(){
   spacer.style.width=Math.round(SVG_W*zoomLevel)+'px';
   spacer.style.height=Math.round(SVG_H*zoomLevel)+'px';
   document.getElementById('zoom-label').textContent=Math.round(zoomLevel*100)+'%';
+  stickyLaneHeader();   // v8.10: 再描画・ズーム変更のたびに見出しの追従位置を入れ直す
 }
 function zoomIn(){
   if(S.diagramType==='gantt'){ ganttZoom(4); return; }
