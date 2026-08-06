@@ -74,7 +74,7 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   //  基本操作（スイムレーン図ベース）
   // ============================================================
 
-  // 01: 新規作成ダイアログ（10図種カード）
+  // 01: 新規作成ダイアログ（選択できる5図種のカード）
   await page.screenshot({ path: shotPath('01_new_diagram_dialog.png') });
   console.log('01 done');
 
@@ -346,22 +346,7 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   //  各図種
   // ============================================================
 
-  // 30: ER図
-  await page.evaluate(() => {
-    window._reset('er');
-    placeShape('entity', 150, 150);
-    placeShape('entity', 520, 360);
-    const [a, b] = S.nodes;
-    a.sections = [{ text: '顧客', style: 'header' }, { rows: ['id (PK)', '氏名', 'メール'], style: 'list' }];
-    b.sections = [{ text: '注文', style: 'header' }, { rows: ['id (PK)', '顧客id (FK)', '金額', '注文日'], style: 'list' }];
-    a.text = ''; b.text = '';
-    addEdge(a.id, b.id, { fromLabel: '1', toLabel: 'N' });
-    S.sel = []; render();
-  });
-  await page.screenshot({ path: shotPath('30_er.png') });
-  console.log('30 done');
-
-  // 31: 組織図
+  // 31: 樹状図
   await page.evaluate(() => {
     window._reset('orgchart');
     const set = (n, role, name) => { n.sections = [{ text: role, style: 'header' }, { text: name, style: 'sub' }]; n.text = ''; };
@@ -379,27 +364,6 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   });
   await page.screenshot({ path: shotPath('31_orgchart.png') });
   console.log('31 done');
-
-  // 32: シーケンス図
-  await page.evaluate(() => {
-    window._reset('sequence');
-    placeShape('lifeline', 160, 40);
-    placeShape('lifeline', 420, 40);
-    placeShape('lifeline', 680, 40);
-    const [u, s, d] = S.nodes;
-    u.text = '利用者'; s.text = 'システム'; d.text = 'DB';
-    addEdge(u.id, s.id, { msgType: 'sync', msgY: 120 });
-    addEdge(s.id, d.id, { msgType: 'sync', msgY: 180 });
-    addEdge(d.id, s.id, { msgType: 'reply', msgY: 240 });
-    addEdge(s.id, u.id, { msgType: 'reply', msgY: 300 });
-    S.edges[0].label = 'ログイン要求';
-    S.edges[1].label = '認証照会';
-    S.edges[2].label = '結果';
-    S.edges[3].label = '応答';
-    S.sel = []; render();
-  });
-  await page.screenshot({ path: shotPath('32_sequence.png') });
-  console.log('32 done');
 
   // 33: ガントチャート
   await page.evaluate(() => {
@@ -444,26 +408,6 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   await wait(300);
   await page.screenshot({ path: shotPath('34_mindmap.png') });
   console.log('34 done');
-
-  // 35: UMLクラス図
-  await page.evaluate(() => {
-    window._reset('uml');
-    placeShape('uml_class', 200, 130);
-    placeShape('uml_class', 200, 420);
-    placeShape('uml_interface', 560, 130);
-    const [animal, dog, comparable] = S.nodes;
-    animal.sections = [{ text: 'Animal', style: 'header' }, { rows: ['- name: String', '- age: int'], style: 'list' }, { rows: ['+ eat()', '+ sleep()'], style: 'list' }];
-    animal.abstract = true; animal.text = '';
-    dog.sections = [{ text: 'Dog', style: 'header' }, { rows: ['- breed: String'], style: 'list' }, { rows: ['+ bark()'], style: 'list' }];
-    dog.text = '';
-    comparable.sections = [{ text: 'Comparable', style: 'header', stereotype: 'interface' }, { rows: ['+ compareTo()'], style: 'list' }];
-    comparable.text = '';
-    addEdge(dog.id, animal.id, { umlType: 'generalization' });
-    addEdge(dog.id, comparable.id, { umlType: 'realization' });
-    S.sel = []; render();
-  });
-  await page.screenshot({ path: shotPath('35_uml.png') });
-  console.log('35 done');
 
   // ============================================================
   //  マインドマップの拡張（v8.03 / v8.04 / v8.09 / v8.11追補）
