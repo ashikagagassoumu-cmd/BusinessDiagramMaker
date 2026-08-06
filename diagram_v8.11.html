@@ -4632,7 +4632,7 @@ function renderGanttHeader(){
     //   カーソルを近づけた時だけ表示（既定opacity:0→ホバーで1）。クリックでganttDeleteColumn（確認あり）。
     if(col.id!=='c0'){
       const dcx=colLeftX+col.width/2, dcy=GANTT_HEADER_H-11;   // ヘッダー行の下端寄り
-      const dgrp=e('g');
+      const dgrp=e('g',{'class':'ui-only'});   // v8.11追補: 画面操作用＝書き出しには載せない
       // ホバー判定ゾーン＝列下部の帯。左右のリサイズハンドル(±3px)と干渉しないよう内側に8px寄せる。
       const zone=e('rect',{x:colLeftX+8,y:GANTT_HEADER_H-22,width:Math.max(0,col.width-16),height:22,fill:'transparent'});
       const icon=e('g'); icon.style.opacity='0'; icon.style.transition='opacity .12s'; icon.style.cursor='pointer';
@@ -4650,7 +4650,7 @@ function renderGanttHeader(){
   });
   // v5.00: ⊕ 列追加ボタン（情報欄と時間軸の境目付近・ヘッダー行）
   const plusCx=leftW-14, plusCy=GANTT_HEADER_H-11;   // ヘッダー行の下端寄り
-  const pgrp=e('g'); pgrp.style.cursor='pointer';
+  const pgrp=e('g',{'class':'ui-only'}); pgrp.style.cursor='pointer';   // v8.11追補: 画面操作用＝書き出しには載せない
   pgrp.appendChild(e('circle',{cx:plusCx,cy:plusCy,r:9,fill:'#2563eb',stroke:'#1e40af','stroke-width':1}));
   pgrp.appendChild(e('line',{x1:plusCx-4.5,y1:plusCy,x2:plusCx+4.5,y2:plusCy,stroke:'#fff','stroke-width':1.8,'pointer-events':'none'}));
   pgrp.appendChild(e('line',{x1:plusCx,y1:plusCy-4.5,x2:plusCx,y2:plusCy+4.5,stroke:'#fff','stroke-width':1.8,'pointer-events':'none'}));
@@ -6006,7 +6006,7 @@ function renderMindNodes(hidden,dim){
     const kids=mindChildren(n.id);
     if(kids.length){
       const tx=n.x+n.w, ty=n.y+n.h/2;
-      const tg=e('g',{cursor:'pointer'});
+      const tg=e('g',{cursor:'pointer','class':'ui-only'});   // v8.11追補: 画面操作用＝書き出しには載せない
       tg.appendChild(e('circle',{cx:tx,cy:ty,r:7,fill:'#ffffff',stroke:bc.stroke,'stroke-width':1.5}));
       const tt=e('text',{x:tx,y:ty+0.5,'text-anchor':'middle','dominant-baseline':'middle',
         'font-size':'10','font-weight':'700',fill:bc.stroke,'pointer-events':'none'});
@@ -9621,6 +9621,18 @@ function contentBBox(){
   if(!isFinite(x0))return null;
   return {x:x0,y:y0,w:x1-x0,h:y1-y0};
 }
+// v8.11追補: 書き出し（PNG/SVG/印刷）には画面操作のための表現を載せない。
+//   選択の強調は「シェイプ自身の線色・線幅を変える」作りなので、出来上がったSVGから後で剥がせない。
+//   そこで選択を外して1回描き直したものを写し、終わったら元の選択で描き直す（画面の見た目は戻る）。
+//   常に見えている操作アイコン（折り畳みトグル・列追加/削除ボタン等）は .ui-only を付けて
+//   buildExportSvg で落とす。buildExportSvg は現在のDOMを clone するので、囲うのは clone を作る処理だけでよい。
+function withExportView(fn){
+  const sel=S.sel, conn=S.conn;
+  S.sel=[]; S.conn=null;
+  render();
+  try{ return fn(); }
+  finally{ S.sel=sel; S.conn=conn; render(); }
+}
 function buildExportSvg(skipTitle){
   const svg=document.getElementById('diagram-svg').cloneNode(true);
   svg.setAttribute('xmlns',NS);
@@ -9630,6 +9642,7 @@ function buildExportSvg(skipTitle){
   //   座標系は本体と同じなので、そのまま最前面へ足せば画面と同じ絵になる。
   ['g-lane-hdr','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{ const src=document.getElementById(id); if(src&&src.childElementCount) svg.appendChild(src.cloneNode(true)); });
   svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
+  svg.querySelectorAll('.ui-only').forEach(el=>el.remove());     // v8.11追補: 画面操作のための表現（折り畳みトグル・列追加/削除ボタン等）は載せない
   svg.querySelectorAll('.mind-dim').forEach(el=>el.classList.remove('mind-dim'));   // v8.03: 強調表示の減光は書き出しに含めない
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
   const name=(skipTitle||_ganttHdr)?'':exportDiagramName();   // v5.00: PDFはHTMLのタイトル行を毎ページ出すため、SVG内の帯は省く
@@ -9665,7 +9678,7 @@ function ganttPageGroups(titleH){
   return groups;
 }
 function expSVG(){
-  const {svg}=buildExportSvg();
+  const {svg}=withExportView(()=>buildExportSvg());
   const s=new XMLSerializer().serializeToString(svg);
   const fname=S.diagramType==='gantt'?'gantt_chart.svg':(S.diagramType==='mindmap'?'mindmap.svg':(S.diagramType==='uml'?'uml_class.svg':'diagram.svg'));
   dl(new Blob(['<?xml version="1.0"?>\n'+s],{type:'image/svg+xml'}),fname);
@@ -9703,7 +9716,7 @@ async function expPDF(){
   try{ win.document.open(); win.document.write('<!DOCTYPE html><meta charset="utf-8"><title>'+esc(winTitle)+'</title><p style="font-family:sans-serif;color:#475569;padding:12px">PDF出力を生成しています…</p>'); win.document.close(); }catch(_){}
   // v5.00: 図のクローン（タイトル帯なし）。上部(負y)に「図面名＋日付」帯を描き、SVGごと倍率%で拡縮させる
   //   （HTML文字ではなくSVG内に置くことで、タイトル・日付・工程表ヘッダーがすべて倍率に追従する）。
-  const {svg,W}=buildExportSvg(true);
+  const {svg,W}=withExportView(()=>buildExportSvg(true));
   svg.removeAttribute('width'); svg.removeAttribute('height');   // 幅は CSS の倍率%で制御
   // v5.00: 図面名は v4.30 と同じ大きさ（W*0.02 を 24〜48 にクランプ）に戻す。日付はやや小さめ。
   const nameFs=Math.round(Math.max(24,Math.min(48,W*0.02)));
@@ -9836,7 +9849,7 @@ async function expPDF(){
   hint('PDF出力（倍率'+scale+'%）: 各ページ先頭に工程表ヘッダー。収まらないときだけ改ページ。印刷ダイアログで「PDFに保存」を選択');
 }
 function expPNG(){
-  const {svg,W,H}=buildExportSvg();   // v4.30: 白背景＋図面名タイトル帯付き
+  const {svg,W,H}=withExportView(()=>buildExportSvg());   // v4.30: 白背景＋図面名タイトル帯付き
   const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml'}));
   const img=new Image(); const sc=2;
   img.onload=()=>{
@@ -11828,7 +11841,7 @@ function renderOrgAddButton(){
   if(!n||n.type!=='org_node')return;
   const g=document.getElementById('g-dividers'); if(!g)return;
   const mkBtn=(bx,by,label,fill,tip,fn)=>{
-    const grp=e('g',{cursor:'pointer'});
+    const grp=e('g',{cursor:'pointer','class':'ui-only'});   // v8.11追補: 画面操作用＝書き出しには載せない
     const tt=e('title'); tt.textContent=tip; grp.appendChild(tt);
     grp.appendChild(e('circle',{cx:bx,cy:by,r:9,fill,stroke:'#ffffff','stroke-width':1.5}));
     const t=e('text',{x:bx,y:by+0.5,'text-anchor':'middle','dominant-baseline':'middle','font-size':label==='＋'?'13':'11','font-weight':'700',fill:'#ffffff','pointer-events':'none'});
