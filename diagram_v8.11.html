@@ -90,6 +90,7 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .gstick{position:sticky;width:0;height:0}
 .gstick>svg{position:absolute;top:0;left:0;display:block;overflow:visible;transform-origin:0 0;pointer-events:none}
 .gstick>svg>g{pointer-events:auto}
+#gstick-lane{z-index:4}   /* top / left は向きに応じて JS が設定する */
 #gstick-left{left:0;z-index:5}
 #gstick-top{top:0;z-index:6}
 #gstick-corner{top:0;left:0;z-index:7}#diagram-svg{display:block;cursor:default;transform-origin:0 0}
@@ -551,6 +552,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
          （縦スクロールで固定）／角＝左上コーナー（両方向で固定）。左→上→角の順＝重なったら角が最前面。
          本体SVGの外に出しているのは position:sticky が SVG の中身には効かないため。座標系は本体と
          同じなので、当たり判定（svgPt は本体SVGの行列で換算）も書き出しもそのまま流用できる。 -->
+    <!-- v8.11追補: レーン見出し（スイムレーン／BPMN）も同じ作りへ。縦モードは上端・横モードは左端に
+         固定するので、どちらの軸を止めるかは向きに応じて JS で top / left を切り替える。 -->
+    <div id="gstick-lane" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-lane-hdr"></g></svg></div>
     <div id="gstick-left" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-left"></g></svg></div>
     <div id="gstick-top" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-top"></g></svg></div>
     <div id="gstick-corner" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-corner"></g></svg></div>
@@ -590,7 +594,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <g id="g-replace-hl" style="pointer-events:none"></g>
       <g id="g-dividers"></g>
       <!-- v8.10: レーン見出しは最前面の独立レイヤに描き、スクロール量ぶん平行移動して固定表示する -->
-      <g id="g-lane-hdr"></g>
 
       <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
     </svg>
@@ -1971,7 +1974,6 @@ function init(){
   document.getElementById('diagram-svg').setAttribute('class','');
   document.getElementById('prev-edge').style.display='none';
   initHandTool();       // v8.10: ハンドツール（パン専用）のキャプチャ用リスナ
-  initStickyHeader();   // v8.10: レーン見出しのスクロール追従
 
   let st=null;
   if(window.__SWIMLANE_STATE__)st=window.__SWIMLANE_STATE__;
@@ -6224,11 +6226,11 @@ function render(){
   if(S.diagramType==='uml') updateUmlToolbar();
 }
 // v8.10: レーン本体（背景・区切り線・外枠）は g-lanes、見出し帯は最前面の g-lane-hdr に分けて描く。
-//   見出しを別レイヤにしたのは、スクロール量ぶん平行移動して固定表示するため（stickyLaneHeader）。
+//   見出しを別レイヤにしたのは、position:sticky の重ね箱に載せて固定表示するため（syncLaneSticky）。
 //   分けても描く内容・座標は従来と同一なので、見た目・レーンドラッグの操作感は変わらない。
 function renderLanes(){
   const g=document.getElementById('g-lanes'); g.innerHTML='';
-  const gh=document.getElementById('g-lane-hdr'); if(gh){gh.innerHTML=''; gh.removeAttribute('transform');}
+  const gh=document.getElementById('g-lane-hdr'); if(gh) gh.innerHTML='';
   if(!usesLanes()){
     // レーンなし: 単色背景
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc',stroke:'#94a3b8','stroke-width':1.5}));
@@ -6268,30 +6270,26 @@ function renderLanes(){
     });
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:totalLaneSpan(),fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
   }
-  stickyLaneHeader();
+  syncLaneSticky();
   syncGanttSticky();   // v8.11: ガント以外なので固定レイヤを畳む
 }
-// v8.10: レーン見出しをスクロールに追従させる。SVG 全体に CSS transform:scale() が掛かっているので、
-//   スクロール量を zoomLevel で割って SVG 座標へ直してから平行移動する。
-//   縦モードは上端に固定（Y方向）、横モードは左端に固定（X方向）。
-//   レーン並べ替えが見るのは縦モード=X・横モード=Y と、動かす軸と直交するため座標補正は要らない。
-function stickyLaneHeader(){
-  const gh=document.getElementById('g-lane-hdr'); if(!gh)return;
-  if(!usesLanes()||S.diagramType==='gantt'||S.diagramType==='mindmap'){gh.removeAttribute('transform');return;}
-  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
-  const z=zoomLevel||1;
-  if(isV()){
-    const dy=Math.max(0,wrap.scrollTop/z);
-    gh.setAttribute('transform',dy?`translate(0,${dy})`:'translate(0,0)');
-  } else {
-    const dx=Math.max(0,wrap.scrollLeft/z);
-    gh.setAttribute('transform',dx?`translate(${dx},0)`:'translate(0,0)');
-  }
+// v8.10→v8.11追補: レーン見出し（スイムレーン／BPMN）の固定。縦モードは上端・横モードは左端に留める。
+//   当初はスクロール量ぶん JS で平行移動していたが、スクロールの描画に1フレーム遅れて追いつくため
+//   スクロール中に見出しが揺れた。ガントと同じく position:sticky の重ね箱に載せ替え、ここでやるのは
+//   大きさ・拡大率・表示切替と「どちらの軸を止めるか」の指定だけにした＝スクロール中に走る JS は無い。
+//   レーン並べ替えが見るのは縦モード=X・横モード=Y と、止める軸と直交するため座標補正は要らない。
+function syncLaneSticky(){
+  const box=document.getElementById('gstick-lane'); if(!box) return;
+  const on=usesLanes()&&S.diagramType!=='gantt'&&S.diagramType!=='mindmap';
+  box.style.display=on?'':'none';
+  box.style.top =(on&&isV())?'0px':'auto';    // 縦モード＝上端に固定（横は本体と一緒に流れる）
+  box.style.left=(on&&!isV())?'0px':'auto';   // 横モード＝左端に固定
+  const sv=box.firstElementChild; if(!sv) return;
+  sv.setAttribute('width',SVG_W); sv.setAttribute('height',SVG_H);
+  sv.style.transform='scale('+(zoomLevel||1)+')';
 }
 // v8.11: ガントの固定レイヤ（重ね箱）を本体SVGに合わせる。位置合わせ自体は CSS の position:sticky が
 //   やるので、ここでやるのは大きさ・拡大率・表示/非表示だけ＝スクロール中に走る JS は無い。
-//   （追補: 当初はスクロール量ぶん平行移動していたが、スクロールの描画に1フレーム遅れて追いつくため
-//    見出しがわずかに揺れた。ブラウザ任せに変えて完全に止めた。）
 function syncGanttSticky(){
   const on=ganttStickyOn();
   ['gstick-left','gstick-top','gstick-corner'].forEach(id=>{
@@ -6302,28 +6300,24 @@ function syncGanttSticky(){
     sv.style.transform='scale('+(zoomLevel||1)+')';
   });
 }
+// v8.11: 固定レイヤの一番下に敷く透明の板。固定中は見出し・列の下に本体の行やバーが潜り込むので、
+//   これが無いと「見出しの上をクリックしたのに下のバーを掴んでしまう」。自前のハンドラは持たせず
+//   イベントは canvas 側へ通す＝従来どおり「情報欄をクリックして工程を追加」も効いたままにする
+//   （通ったあと ganttPlace が ganttStickyPt で見えているとおりの座標に読み替える）。
+//   レーン見出しは帯の全面が掴めるドラッグ用の矩形で埋まっているため、この板は要らない。
+function ganttStickyShield(x,y,w,h){ return e('rect',{x:x,y:y,width:Math.max(0,w),height:Math.max(0,h),fill:'transparent'}); }
 // v8.11: 画面で掴んだ位置を「その場所に見えているもの」の座標へ読み替える。
 //   固定レイヤは図の座標を動かさずに見た目だけずらすので、固定中の見出し・タスク名列の下には
 //   本体の行が潜り込んでいる。読み替えないと、見出しを掴んだのに下の工程が反応する／タスク名列を
 //   掴んだのに「時間軸の上」と判定されて日付から工程が置かれる、という取り違えが起きる。
 //   固定していない図・折り返し表示中・スクロール量0のときは、そのままの座標を返す。
-// v8.11: 固定レイヤの一番下に敷く透明の板。固定中は見出し・列の下に本体の行やバーが潜り込むので、
-//   これが無いと「見出しの上をクリックしたのに下のバーを掴んでしまう」。自前のハンドラは持たせず
-//   イベントは canvas 側へ通す＝従来どおり「情報欄をクリックして工程を追加」も効いたままにする
-//   （通ったあと ganttPlace が ganttStickyPt で見えているとおりの座標に読み替える）。
-function ganttStickyShield(x,y,w,h){ return e('rect',{x:x,y:y,width:Math.max(0,w),height:Math.max(0,h),fill:'transparent'}); }
 function ganttStickyPt(px,py){
   if(!ganttStickyOn()) return {x:px,y:py};
   const wrap=document.getElementById('canvas-wrap'); if(!wrap) return {x:px,y:py};
   const z=zoomLevel||1;
   const dx=Math.max(0,wrap.scrollLeft/z), dy=Math.max(0,wrap.scrollTop/z);
   return {x:((px-dx)<ganttLeftW()? px-dx : px), y:((py-dy)<ganttBodyTop()? py-dy : py)};
-}
-function initStickyHeader(){
-  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
-  wrap.addEventListener('scroll',stickyLaneHeader,{passive:true});
-}
-// ── v7.00: バス型接続線（樹状図/組織図の標準）──
+}// ── v7.00: バス型接続線（樹状図/組織図の標準）──
 //   親の下中央→1本→横バス→各子の上中央（横向きは右中央→縦バス→各子の左中央）。
 //   バス位置＝親ノードの busPos（親下端〜最寄り子上端の割合 0〜1・既定0.5）。選択エッジの
 //   白四角ハンドルで上下(左右)調整・ダブルクリックで既定へ。手動支点(waypoints)付きエッジと
@@ -9181,7 +9175,6 @@ async function openImportFile(){
 // v8.09: 保存用HTMLの生成。生成（ここ）と書き出し（ダウンロード／上書き）を分離した。
 function buildSaveHtml(name){
   document.getElementById('svg-editor')?.remove();
-  document.getElementById('g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんを保存HTMLへ焼き込まない
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
@@ -9193,7 +9186,6 @@ function buildSaveHtml(name){
   html=html.replace(new RegExp(SCR+' id="swimlane-state">[\\s\\S]*?'+CSCR+'\\s*','g'),'');
   html=html.replace(/\s+data-state="[^"]*"/g,'');
   html=html.replace('</head>',()=>SCR+' id="swimlane-state">window.__SWIMLANE_STATE__='+stateJson+';'+CSCR+'\n</head>');
-  stickyLaneHeader();   // v8.10: 画面側の見出し追従を元に戻す（保存のために一時的に外していた）
   return {safe,html};
 }
 // v8.09: 従来どおりダウンロードで保存（上書き保存が使えないブラウザ・失敗時のフォールバック）
@@ -9246,10 +9238,10 @@ function buildExportSvg(skipTitle){
   const svg=document.getElementById('diagram-svg').cloneNode(true);
   svg.setAttribute('xmlns',NS);
   svg.style.transform='';
-  svg.querySelector('#g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんは出力に持ち込まない
+  // v8.11追補: レーン見出しも本体SVGの外（重ね箱）にあるので、ガントの3レイヤと同じく取り込む。
   // v8.11: ガントの固定レイヤは本体SVGの外（position:sticky の重ね箱）にあるので、書き出しには明示的に取り込む。
   //   座標系は本体と同じなので、そのまま最前面へ足せば画面と同じ絵になる。
-  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{ const src=document.getElementById(id); if(src&&src.childElementCount) svg.appendChild(src.cloneNode(true)); });
+  ['g-lane-hdr','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{ const src=document.getElementById(id); if(src&&src.childElementCount) svg.appendChild(src.cloneNode(true)); });
   svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
   svg.querySelectorAll('.mind-dim').forEach(el=>el.classList.remove('mind-dim'));   // v8.03: 強調表示の減光は書き出しに含めない
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
@@ -9832,7 +9824,7 @@ function applyZoom(){
   spacer.style.width=Math.round(SVG_W*zoomLevel)+'px';
   spacer.style.height=Math.round(SVG_H*zoomLevel)+'px';
   document.getElementById('zoom-label').textContent=Math.round(zoomLevel*100)+'%';
-  stickyLaneHeader();   // v8.10: 再描画・ズーム変更のたびに見出しの追従位置を入れ直す
+  syncLaneSticky();     // v8.10→v8.11追補: レーン見出しの重ね箱の拡大率を合わせる
   syncGanttSticky();    // v8.11: ガントの固定レイヤの拡大率も合わせる
 }
 function zoomIn(){
