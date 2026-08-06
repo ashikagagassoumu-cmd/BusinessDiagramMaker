@@ -8280,7 +8280,7 @@ function initHandTool(){
   wrap.addEventListener('wheel',ev=>{
     if(S.mode!=='hand')return;
     ev.preventDefault(); ev.stopPropagation();
-    if(ev.deltaY<0) zoomIn(); else if(ev.deltaY>0) zoomOut();
+    if(ev.deltaY!==0) zoomAtPointer(ev,ev.deltaY<0?1:-1);   // v8.11追補: カーソル位置を中心に拡大縮小
   },{capture:true,passive:false});
   // 押した後に発生するクリック系も握りつぶす（配置・余白ダブルクリックでの箱追加を起こさない）。
   // シェイプ上の click（選択）と dblclick（文字編集）だけは通す。右クリック削除は通さない。
@@ -11251,6 +11251,33 @@ function runText2Diagram(){
   let h=`生成しました: ノード${res.nodeCount} / 線${res.edgeCount}`;
   if(res.warnings&&res.warnings.length) h+=` / 警告${res.warnings.length}件（未対応記述をスキップ）`;
   hint(h);
+}
+// v8.11追補: ホイールのズームはカーソルの位置を中心にする。従来は zoomIn/zoomOut を呼ぶだけで
+//   スクロール位置を触らなかったため、拡大の基点がキャンバスの左上に固定され、拡大するたびに
+//   見ていた場所が画面の外へ逃げていた。カーソルの下にある図の点が動かないよう、拡大率の変化ぶん
+//   だけスクロール位置を付け替える。
+function zoomAtPointer(ev,dir){
+  const wrap=document.getElementById('canvas-wrap');
+  const zoom=()=>{ if(dir>0) zoomIn(); else zoomOut(); };
+  if(!wrap){ zoom(); return; }
+  const r=wrap.getBoundingClientRect();
+  const vx=ev.clientX-r.left, vy=ev.clientY-r.top;   // ビューポート内での位置
+  if(S.diagramType==='gantt'){
+    // ガントは zoomLevel ではなく列幅で拡大する＝横だけが伸び縮みし、左のタスク名列は幅が変わらない。
+    //   縦は変わらないのでスクロールも触らない。カーソルがタスク名列の上にあるときは基点が無いので
+    //   横位置もそのまま（固定表示中は画面左端に名前列が重なっているため vx でも判定する）。
+    const lw=ganttLeftW(), before=S.gantt.colWidth, docX=vx+wrap.scrollLeft;
+    zoom();
+    const k=S.gantt.colWidth/before;
+    if(k!==1&&docX>lw&&vx>lw) wrap.scrollLeft=Math.max(0,lw+(docX-lw)*k-vx);
+    return;
+  }
+  const before=zoomLevel, docX=vx+wrap.scrollLeft, docY=vy+wrap.scrollTop;
+  zoom();
+  const k=zoomLevel/before;
+  if(k===1)return;   // 端まで来ていて倍率が変わらなかった
+  wrap.scrollLeft=Math.max(0,docX*k-vx);
+  wrap.scrollTop =Math.max(0,docY*k-vy);
 }
 function fitView(){
   const wrap=document.getElementById('canvas-wrap');
