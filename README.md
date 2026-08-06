@@ -4,7 +4,7 @@
 スイムレーン図メーカーを起点に、ノード配置・接続線ルーティング・保存/復元・各種エクスポートを
 備えた汎用ダイアグラムエディタへ発展させました。インストール不要で、HTML を開くだけで使えます。
 
-- **最新版**: [`diagram_v7.11.html`](diagram_v7.11.html)（2026-06-22）
+- **最新版**: [`diagram_v8.12.html`](diagram_v8.12.html)（2026-08-06）
 - 開発計画は [`開発ロードマップ.txt`](開発ロードマップ.txt)、変更履歴は [`開発記録.txt`](開発記録.txt) を参照してください。
 
 ---
@@ -41,8 +41,8 @@
 
 ## 使い方
 
-最新版の [`diagram_v7.11.html`](diagram_v7.11.html) をブラウザで開くだけです。
-過去版（`diagram_v6.16.html` 〜）も開発履歴として同梱しています。
+最新版の [`diagram_v8.12.html`](diagram_v8.12.html) をブラウザで開くだけです。
+過去版は `99_旧バージョン/` に退避してあります（ルート直下に置くのは常に最新版1本だけ）。
 
 ## 開発の経緯（バージョン構成）
 
@@ -60,8 +60,9 @@
 ## リポジトリ構成
 
 ```
-diagram_v*.html        本体（バージョン別 / 最新は v7.11）
-開発記録*.txt          変更履歴（開発記録.txt = 索引、_v1〜_v7 = 各メジャー版）
+diagram_v*.html        本体（ルートは最新版1本のみ / 最新は v8.12）
+99_旧バージョン/        過去版の退避先
+開発記録*.txt          変更履歴（開発記録.txt = 索引、_v1〜_v8 = 各メジャー版）
 開発ロードマップ*.txt   開発計画（開発ロードマップ.txt = 全体計画＋索引）
 運用ルール.txt          開発・運用ルール
 capture-puppeteer.js   Puppeteer によるスクリーンショット取得補助
@@ -69,7 +70,7 @@ capture-server.js      キャプチャ用ローカルサーバー
 serve.js               ローカルプレビュー用簡易サーバー
 create-manual.js       操作マニュアル生成スクリプト
 exceljs.bare.min.js    Excel 出力用の同梱ライブラリ（ExcelJS, MIT License）
-package.json           開発補助スクリプトの依存（Puppeteer）
+package.json           開発補助スクリプトの依存（Puppeteer / docx）
 ```
 
 ## 開発補助スクリプト（任意）
@@ -77,11 +78,25 @@ package.json           開発補助スクリプトの依存（Puppeteer）
 スクリーンショット取得などの補助スクリプトを使う場合のみ、依存をインストールします。
 
 ```bash
-npm install        # Puppeteer を取得
+npm install        # Puppeteer / docx を取得
 node serve.js      # ローカルでプレビュー
 ```
 
 本体（`diagram_*.html`）の利用自体には何のインストールも不要です。
+
+### 操作マニュアルの再生成
+
+マニュアル（.docx）は本体と同じ版番号で管理しています。次の順に実行すると再生成されます。
+
+```bash
+node serve.js              # 別ターミナルで起動したままにする
+node capture-puppeteer.js  # screenshots/ に画面を撮り直す
+node create-manual.js      # ビジネスダイアグラムメーカー_操作マニュアル_vX.YZ.docx を出力
+```
+
+版を上げたときは `capture-puppeteer.js` の `URL` と `create-manual.js` の `APP_VERSION` も
+新しい版に合わせてください（旧版は `99_旧バージョン/` へ退避するため、放置すると撮影が 404 で落ちます）。
+なお `.docx` と `screenshots/` は `.gitignore` 対象で、リポジトリには含まれません。
 
 ## 同梱物・ライセンス
 
