@@ -103,6 +103,17 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #diagram-svg.hand.grabbing *,#diagram-svg.hand.grabbing{cursor:grabbing!important}
 
 #hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#e2e8f0;padding:5px 14px;border-radius:20px;font-size:11px;pointer-events:none;white-space:nowrap;z-index:100;display:none}
+/* v8.11追補: 保存の結果だけを画面中央に出すトースト。#hint は100箇所以上から呼ばれる常設の
+   ステータス行なので置き換えず併設する（中央＝保存の結果／下段＝従来どおりの詳細）。
+   pointer-events:none ＝中央に不透明な箱を置くので、これが無いとキャンバスの真ん中が押せなくなる。
+   z-index は #confirm-modal(4000) の上・#dtype-menu(9999) の下。 */
+#toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5000;pointer-events:none;max-width:70vw;
+  background:rgba(15,23,42,.92);color:#e2e8f0;border:1px solid rgba(148,163,184,.35);border-radius:10px;
+  padding:13px 26px;font-size:14px;line-height:1.6;text-align:center;opacity:0;transition:opacity .18s ease}
+#toast.show{opacity:1}
+#toast.ng{background:rgba(69,10,10,.94);border-color:#f87171;color:#fee2e2}
+#toast .tsub{display:block;margin-top:7px;font-size:12px;color:#cbd5e1}
+#toast.ng .tsub{color:#fecaca}
 /* v8.10: 検索パネルの見出し帯（掴んで移動）と右上の閉じるボタン */
 #search-head{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 9px;border-bottom:1px solid #e2e8f0;background:#f8fafc;border-radius:7px 7px 0 0;cursor:move;user-select:none}
 #search-head .grip{color:#cbd5e1;font-size:12px;line-height:1}
@@ -159,6 +170,22 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #confirm-no:hover{background:#f1f5f9}
 #confirm-yes{background:#ef4444;color:#fff;border-color:#ef4444}
 #confirm-yes:hover{background:#dc2626}
+/* v8.11追補: 未保存のまま今の図を捨てる操作の前に出す4択。上書き保存／名前を付けて保存／保存しない／
+   キャンセルのどれも起こりうるので、どれも1クリックで選べるよう縦に並べる（横1列だと収まらない）。 */
+#save4-modal{position:fixed;inset:0;z-index:4100;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
+#save4-box{background:#fff;border-radius:14px;padding:24px 26px;max-width:430px;width:90%;box-shadow:0 12px 48px rgba(0,0,0,.28)}
+#save4-msg{font-size:14px;color:#0f172a;line-height:1.75}
+#save4-sub{font-size:12px;color:#64748b;line-height:1.7;margin-top:6px}
+#save4-btns{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+#save4-btns button{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;border:1px solid #cbd5e1;background:#fff;color:#334155}
+#save4-btns button:hover{background:#f1f5f9}
+#save4-over{background:#2563eb;color:#fff;border-color:#2563eb}
+#save4-over:hover{background:#1d4ed8}
+#save4-file{float:right;font-weight:400;font-size:11px;color:#bfdbfe;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#save4-discard{color:#b91c1c;border-color:#fecaca}
+#save4-discard:hover{background:#fef2f2}
+#save4-cancel{background:#f8fafc;color:#475569}
+#save4-cancel:hover{background:#f1f5f9}
 
 /* 新規作成ダイアログ */
 #new-modal{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
@@ -618,6 +645,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div>
 </div>
 <div id="hint"></div>
+<div id="toast" role="status" aria-live="polite" style="display:none"></div>
 
 <!-- 検索・置換パネル（Ctrl+F）A-2 v4.15
      v8.10: 見出し帯を追加。帯を掴めばドラッグで移動でき、右上の ✕ で閉じられる。
@@ -766,6 +794,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <div id="confirm-modal-btns">
       <button id="confirm-no" type="button" onclick="hideConfirm()">いいえ</button>
       <button id="confirm-yes" type="button" onclick="confirmYes()">はい</button>
+    </div>
+  </div>
+</div>
+
+<!-- v8.11追補: 未保存のまま今の図を捨てる操作の前に出す4択 -->
+<div id="save4-modal" style="display:none">
+  <div id="save4-box">
+    <div id="save4-msg"></div>
+    <div id="save4-sub"></div>
+    <div id="save4-btns">
+      <button id="save4-over" type="button" onclick="save4Pick('over')">上書き保存<span id="save4-file"></span></button>
+      <button id="save4-as" type="button" onclick="save4Pick('as')">名前を付けて保存</button>
+      <button id="save4-discard" type="button" onclick="save4Pick('discard')">保存しない</button>
+      <button id="save4-cancel" type="button" onclick="save4Pick('cancel')">キャンセル</button>
     </div>
   </div>
 </div>
@@ -1130,7 +1172,7 @@ function renderFlowControls(){
 }
 function toggleStepNums(){ S.stepNums=!S.stepNums; render(); hint(S.stepNums?'ステップ番号を表示しました（配置順で自動採番）':'ステップ番号を非表示にしました'); }
 
-let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null,mindBranch:'curve'};   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
+let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null,mindBranch:'curve',mindReserve:[]};   // v8.11追補: mindReserve=マインドマップのリザーブ領域（未配置のトピック）   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
 // ガントチャート時間軸モデルの初期値
 //   v4.01: 開始日の既定を「当月初日」に、概要(descW)/担当者(assigneeW)列幅を追加
 function ganttFirstOfThisMonth(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';}
@@ -1727,6 +1769,41 @@ function hideConfirm(){
   _confirmYesCb=null;
 }
 function confirmYes(){ const cb=_confirmYesCb; hideConfirm(); if(typeof cb==='function')cb(); }
+// v8.11追補: 未保存のまま今の図を捨てる操作の前に出す4択。
+//   保存を選んだときは「保存が成立したときだけ」次へ進む。失敗したのに図が消えると取り返しがつかない
+//   ため、失敗・中止ならダイアログは開いたまま（原因は赤トーストに出る）。
+let _save4Opts=null;
+function confirmSave4(msg,sub,opts){
+  _save4Opts=opts||{};
+  document.getElementById('save4-msg').textContent=msg;
+  const s=document.getElementById('save4-sub'); s.textContent=sub||''; s.style.display=sub?'':'none';
+  // 一度も保存していない＝上書き先が無いので「上書き保存」は出さない（記憶した保存先が残っている
+  //   可能性がある場合は出す＝押せば overwriteSave が保存先を思い出す）
+  const canOver=FSA_OK&&(!!fileHandle||(!fileHandleTried&&!!S.docId));
+  document.getElementById('save4-over').style.display=canOver?'':'none';
+  document.getElementById('save4-file').textContent=fileHandle?(' '+fileHandle.name):'';
+  const dis=document.getElementById('save4-discard');
+  dis.style.display=_save4Opts.onDiscard?'':'none';
+  dis.textContent=_save4Opts.discardLabel||'保存しない';
+  document.getElementById('save4-cancel').textContent=_save4Opts.cancelLabel||'キャンセル';
+  document.getElementById('save4-modal').style.display='flex';
+}
+function hideSave4(){ document.getElementById('save4-modal').style.display='none'; _save4Opts=null; }
+async function save4Pick(which){
+  const o=_save4Opts||{};
+  if(which==='cancel'){ hideSave4(); return; }
+  if(which==='discard'){ hideSave4(); if(typeof o.onDiscard==='function') o.onDiscard(); return; }
+  const before=savedSeq;
+  if(which==='over') await overwriteSave(); else await saveAsWithPicker();
+  if(savedSeq===before) return;   // 保存できなかった＝ダイアログは開いたまま
+  hideSave4();
+  if(typeof o.onSaved==='function') o.onSaved();
+}
+// 今の図を捨てる操作の共通ガード。未保存なら4択を出し、保存できた／保存しないを選んだときだけ進む。
+function guardDiscard(sub,next){
+  if(!isDirty()){ next(); return; }
+  confirmSave4('保存していない変更があります。',sub,{onSaved:next,onDiscard:next});
+}
 // v6.04: 新規ガントの初期サンプル（3フェーズ×2タスク＝6タスク）。
 //   完成イメージを掴みやすくするため、開始日(=当月初日)を起点に階段状の日程・進捗・担当・
 //   フェーズ色をあらかじめ投入する。空のキャンバス前提で selectDiagramType('gantt') からのみ呼ぶ
@@ -1761,8 +1838,15 @@ function selectDiagramType(type){
   // v7.07: 図種を切り替えると作図内容をすべてリセットする。内容がある時は確認ダイアログを挟み、
   //   「はい」でリセット＋新図種を初期化、「いいえ」でキャンセル。空のキャンバスは確認なしで即実行。
   //   新規作成ダイアログのカード／タイトルバーの図種切替メニューの両方からここを通る。
-  if(S.nodes.length>0||S.edges.length>0){
+  // v8.11追補: シェイプが無くても、レーン名や図の名称を変えていれば失われる＝未保存なら必ず確認する
+  if(S.nodes.length>0||S.edges.length>0||isDirty()){
     const nm=(DIAGRAM_TYPES[type]&&DIAGRAM_TYPES[type].name)||type;
+    // v8.11追補: 未保存なら「捨てるか保存するか」を選ばせる（従来は はい/いいえ だけで保存の逃げ道が無かった）
+    if(isDirty()){
+      confirmSave4('保存していない変更があります。','現在の作図内容をすべてリセットして「'+nm+'」に切り替えます。',
+        {onSaved:()=>doSelectDiagramType(type),onDiscard:()=>doSelectDiagramType(type)});
+      return;
+    }
     showConfirm('現在の作図内容をすべてリセットして「'+nm+'」に切り替えます。\nよろしいですか？',()=>doSelectDiagramType(type));
   } else {
     doSelectDiagramType(type);
@@ -1773,7 +1857,7 @@ function doSelectDiagramType(type){
   //   積み増しされないよう冪等化）。通常フローでは init() 初回のみ呼ばれ既に空なので無害。
   //   ガント初期サンプルの二重投入（同一ページでガントを選び直すと 6タスク×3フェーズが重複し、
   //   Excel出力で「結合済みセル」エラーになる既存バグ）を根本対処。
-  S.nodes=[]; S.edges=[]; S.lanes=[]; S.sel=[]; S.conn=null;
+  S.nodes=[]; S.edges=[]; S.lanes=[]; S.sel=[]; S.conn=null; S.mindReserve=[];
   S.diagramType=type;
   S.orientation='vertical';
   // 新規ガントは開始日を当月初日にリセット（保存ファイル読込時は init で保存値を維持）
@@ -1784,6 +1868,7 @@ function doSelectDiagramType(type){
   for(let i=0;i<dt.defaultLanes;i++) addLane();
   if(type==='mindmap'&&!S.nodes.some(n=>n.type==='mind_root')) mindCreateRoot();
   snap(); render();
+  if(savedFingerprint===null) markSaved();   // v8.11追補: 起動直後の新規作成だけ基準を作る（2回目以降の図種切替は未保存にする）
   hint(type==='mindmap'
     ?'パレットの「問題」「対策」「補足情報」をクリックして枝を追加 / ダブルクリックで名称編集'
     :'シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
@@ -2008,6 +2093,7 @@ function init(){
     S.gantt=Object.assign(defaultGantt(),st.gantt||{});
     S.mindLayout=st.mindLayout||'radial';
     S.mindBranch=(st.mindBranch==='straight')?'straight':'curve';   // v8.09: 枝の形（旧ファイルは曲線）
+    S.mindReserve=Array.isArray(st.mindReserve)?st.mindReserve:[];   // v8.11追補: 旧ファイルには無いキー
     S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
     S.style=(st.style&&STYLES[st.style])?st.style:'standard';   // v8.01: デザインテンプレートを復元（旧ファイルは標準）
     S.stepNums=!!st.stepNums;   // v8.01: 番号バッジ表示状態
@@ -2018,6 +2104,7 @@ function init(){
     if(ni)ni.value=S_diagramName;
     applyDiagramType();
     lanePanel(); snap(); render();
+    markSaved();   // v8.11追補: 開いた直後＝ファイルの内容と一致
     hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
     return;
   }
@@ -2871,12 +2958,12 @@ function addEdge(f,t,opts={}){
 
 // ── History ──
 function snap(){
-  const d=JSON.stringify({lanes:S.lanes,nodes:S.nodes,edges:S.edges,gantt:S.gantt,mindLayout:S.mindLayout});
+  const d=JSON.stringify({lanes:S.lanes,nodes:S.nodes,edges:S.edges,gantt:S.gantt,mindLayout:S.mindLayout,mindReserve:S.mindReserve});   // v8.11追補: リザーブの追加・分類・削除も元に戻せるようにする
   S.hist=S.hist.slice(0,S.hi+1); S.hist.push(d);
   if(S.hist.length>80)S.hist.shift();
   S.hi=S.hist.length-1;
 }
-function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;if(p.gantt)S.gantt=p.gantt;if(p.mindLayout)S.mindLayout=p.mindLayout;ganttMigrateColLabels();S.sel=[];S.conn=null;lanePanel();render()}
+function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;if(p.gantt)S.gantt=p.gantt;if(p.mindLayout)S.mindLayout=p.mindLayout;if(Array.isArray(p.mindReserve))S.mindReserve=p.mindReserve;ganttMigrateColLabels();S.sel=[];S.conn=null;lanePanel();render()}
 function undo(){if(S.hi>0){S.hi--;restore(S.hist[S.hi])}}
 function redo(){if(S.hi<S.hist.length-1){S.hi++;restore(S.hist[S.hi])}}
 
@@ -9098,6 +9185,25 @@ let fileHandle=null;         // このセッションで確定した保存先（
 let fileHandleTried=false;   // IndexedDB からの復元を既に試したか
 function newDocId(){ return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); }
 function curSaveName(){ return exportDiagramName()||'ダイアグラム'; }
+// v8.11追補: 未保存判定（指紋方式）。snap() の履歴は lanes/nodes/edges/gantt/mindLayout の5キーしか
+//   積まないため、方眼のオン・オフ／デザインテンプレート／図の名称／レーン名などは履歴に載らない。
+//   そこで「保存する内容そのもの」を文字列化し、最後に保存した時点の文字列と比べる＝取りこぼしが無い。
+//   uid は除く: restore() が巻き戻さない単調増加カウンタなので、1つ足して Ctrl+Z しても値だけ進み
+//   永久に未保存扱いになる。docId も除く: 保存先照合用の内部IDで読み込み直後に遅延生成されるため、
+//   含めると開いた瞬間に未保存になる。
+function docState(){
+  return {diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,
+          diagramName:exportDiagramName(),gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,
+          style:S.style,stepNums:S.stepNums,mindBranch:S.mindBranch,mindReserve:S.mindReserve||[]};
+}
+function docFingerprint(){ return JSON.stringify(docState()); }
+let savedFingerprint=null;   // null＝基準がまだ無い（起動直後・新規作成ダイアログ表示中）
+let savedSeq=0;              // 保存が成立した回数。内容が同一でも増えるので「保存できたか」の判定に使う
+function markSaved(){ try{ savedFingerprint=docFingerprint(); }catch(e){ savedFingerprint=null; } savedSeq++; }
+function isDirty(){
+  try{ return savedFingerprint!==null && docFingerprint()!==savedFingerprint; }
+  catch(e){ return false; }   // 判定できないことを理由にタブを閉じられなくしない
+}
 // ダブルクリックで開いた場合の自分自身のファイル名（file:// のときだけ得られる。それ以外は空）
 function curFileName(){
   try{ if(location.protocol!=='file:') return '';
@@ -9136,6 +9242,24 @@ async function fhIsSameDoc(h){
   }catch(e){ return false; }
 }
 async function fhWrite(h,html){ const w=await h.createWritable(); await w.write(new Blob([html],{type:'text/html;charset=utf-8'})); await w.close(); }
+// v8.11追補: 保存の失敗理由を日本語にする。DOMException の name はブラウザ共通なので name で引く。
+//   知らない name のときは元のメッセージに name を添えて出す（黙って握り潰さない）。
+const SAVE_ERR_JA={
+  NotAllowedError:'ファイルへの書き込みが許可されませんでした',
+  NoModificationAllowedError:'ファイルが他のアプリで開かれているため書き込めません',
+  NotFoundError:'保存先のファイルが見つかりません（移動・削除・名前の変更）',
+  QuotaExceededError:'保存先の空き容量が足りません',
+  SecurityError:'ブラウザの制限により保存できませんでした',
+  InvalidStateError:'保存先の状態が変わったため書き込めません（開き直してください）',
+  AbortError:'保存が中止されました',
+  TypeError:'保存の処理を開始できませんでした',
+};
+function saveErrText(err){
+  if(!err) return '原因不明';
+  const n=err.name||'', m=((err.message||'')+'').trim();
+  if(SAVE_ERR_JA[n]) return SAVE_ERR_JA[n];
+  return m? (m+'（'+(n||'Error')+'）') : (n||'原因不明');
+}
 // 保存先を選んで保存（OSの保存ダイアログ）。ここで選んだファイルが以後の上書き先になる。
 async function saveAsWithPicker(){
   const name=curSaveName();
@@ -9147,7 +9271,7 @@ async function saveAsWithPicker(){
       types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html']}}],
     });
   }catch(err){
-    if(err&&err.name==='AbortError') return;          // ユーザーが取り消した
+    if(err&&err.name==='AbortError'){ hint('保存を中止しました（変更は保存されていません）'); return; }   // v8.11追補: 従来は完全に無言だった
     hint('保存ダイアログを開けないため、ダウンロードで保存します'); saveHtmlCore(name); return;
   }
   try{
@@ -9156,8 +9280,13 @@ async function saveAsWithPicker(){
     await fhWrite(h,r.html);
     fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
     setTabTitleFromFilename(h.name);
+    markSaved();
+    toast('保存しました');
     hint('保存しました: '+h.name+'（以後は「上書き保存」／Ctrl+S でこのファイルに上書きします）');
-  }catch(err){ hint('保存に失敗しました: '+((err&&err.message)||err)); }
+  }catch(err){
+    toast('保存に失敗しました','ng',saveErrText(err));
+    hint('保存に失敗しました: '+saveErrText(err));
+  }
 }
 // 上書き保存（Ctrl+S）。保存先が未確定のときだけ一度だけ場所を尋ね、以後は無確認で同じファイルへ書き戻す。
 async function overwriteSave(){
@@ -9179,14 +9308,19 @@ async function overwriteSave(){
     await fhWrite(h,r.html);
     fileHandle=h; await fhSave(S.docId,h);
     setTabTitleFromFilename(h.name);
+    markSaved();
+    toast('上書き保存しました');
     hint('上書き保存しました: '+h.name);
   }catch(err){
     fileHandle=null;
-    hint('上書き保存に失敗しました: '+((err&&err.message)||err)+' — 保存先を指定し直してください');
+    toast('上書き保存に失敗しました','ng',saveErrText(err));
+    hint('上書き保存に失敗しました: '+saveErrText(err)+' — 保存先を指定し直してください');
   }
 }
 // インポート＝保存した.htmlを開く。対応ブラウザではハンドルも取得し、そのまま Ctrl+S で上書きできるようにする。
-async function openImportFile(){
+async function openImportFile(asked){
+  // v8.11追補: ファイルを選ばせる前に、今の図が未保存でないかを確かめる
+  if(!asked&&isDirty()){ guardDiscard('読み込んだ内容で現在の図は置き換えられます。',()=>openImportFile(true)); return; }
   const fallback=()=>document.getElementById('import-file').click();
   if(!FSA_OK){ fallback(); return; }
   let h=null;
@@ -9194,14 +9328,15 @@ async function openImportFile(){
     const picked=await window.showOpenFilePicker({id:'bdm-save',multiple:false,
       types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html','.htm']}}]});
     h=picked&&picked[0];
-  }catch(err){ if(err&&err.name==='AbortError') return; fallback(); return; }
+  }catch(err){ if(err&&err.name==='AbortError'){ hint('読み込みを中止しました'); return; } fallback(); return; }
   if(!h) return;
   try{
     const txt=await (await h.getFile()).text();
-    if(!importStateFromHtml(txt)) return;             // 置き換え確認で取消＝保存先も変えない
+    if(!importStateFromHtml(txt,asked)) return;       // 置き換え確認で取消＝保存先も変えない
     setTabTitleFromFilename(h.name);
     if(!S.docId) S.docId=newDocId();
     fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
+    markSaved();   // 読み込んだ直後＝ファイルの内容と一致
     hint('読み込みました: '+h.name+'（「上書き保存」／Ctrl+S でこのファイルに上書きします）');
   }catch(err){ hint('インポート失敗: '+((err&&err.message)||err)); }
 }
@@ -9209,10 +9344,11 @@ async function openImportFile(){
 // v8.09: 保存用HTMLの生成。生成（ここ）と書き出し（ダウンロード／上書き）を分離した。
 function buildSaveHtml(name){
   document.getElementById('svg-editor')?.remove();
+  toastHide();   // v8.11追補: outerHTML を丸ごと文字列化するため、表示中のトーストが保存ファイルへ焼き込まれる
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
-  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
+  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch,mindReserve:S.mindReserve};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
   const SCR='<scr'+'ipt',CSCR='</scr'+'ipt>';
   const stateJson=JSON.stringify(st).replace(new RegExp(CSCR,'gi'),'<\\/script>');
   let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
@@ -9224,8 +9360,15 @@ function buildSaveHtml(name){
 }
 // v8.09: 従来どおりダウンロードで保存（上書き保存が使えないブラウザ・失敗時のフォールバック）
 function saveHtmlCore(name){
-  const r=buildSaveHtml(name);
-  dl(new Blob([r.html],{type:'text/html;charset=utf-8'}),r.safe+'.html');
+  try{
+    const r=buildSaveHtml(name);
+    dl(new Blob([r.html],{type:'text/html;charset=utf-8'}),r.safe+'.html');
+    markSaved();   // ダウンロードの完了は検知できないが、更新しないと保存しても毎回警告が出て警告が形骸化する
+    toast('保存しました');
+  }catch(err){
+    toast('保存に失敗しました','ng',saveErrText(err));
+    hint('保存に失敗しました: '+saveErrText(err));
+  }
 }
 
 function openSaveAsDialog(){
@@ -9801,8 +9944,11 @@ function importFromFile(ev){
   if(!file)return;
   const reader=new FileReader();
   reader.onload=()=>{
-    try{ if(importStateFromHtml(reader.result)) setTabTitleFromFilename(file.name); }   // v6.17追補: 取込成功時はタブ名称をインポート元ファイル名に
-    catch(err){ hint('インポート失敗: '+(err&&err.message||err)); }
+    // v8.11追補: 適用の直前にガード（ここまで来ないと中身が読めないので、選択後の確認になる）
+    guardDiscard('読み込んだ内容で現在の図は置き換えられます。',()=>{
+      try{ if(importStateFromHtml(reader.result,true)) setTabTitleFromFilename(file.name); }   // v6.17追補: 取込成功時はタブ名称をインポート元ファイル名に
+      catch(err){ hint('インポート失敗: '+(err&&err.message||err)); }
+    });
   };
   reader.onerror=()=>hint('インポート失敗: ファイルを読み込めません');
   reader.readAsText(file);
@@ -9817,12 +9963,12 @@ function extractSavedState(html){
   if(end<0)return null;
   return JSON.parse(rest.slice(0,end));
 }
-function importStateFromHtml(html){
+function importStateFromHtml(html,asked){
   const st=extractSavedState(html);
   if(!st||!Array.isArray(st.nodes)) throw new Error('編集データが見つかりません');
   // 既存の図がある場合は置き換え確認（破壊的操作のため）
   if((S.nodes&&S.nodes.length)||(S.lanes&&S.lanes.length)){
-    if(!window.confirm('現在の図はインポートする内容で置き換えられます。よろしいですか？')) return false;   // v6.17追補: 取消＝タブ名称も変えない
+    if(!asked&&!window.confirm('現在の図はインポートする内容で置き換えられます。よろしいですか？')) return false;   // v6.17追補: 取消＝タブ名称も変えない / v8.11追補: 既に4択で尋ねていれば重ねて訊かない
   }
   // インポート先ファイルの内容で全体を置き換え（init の復元処理に準拠）
   S.diagramType=st.diagramType||'swimlane';
@@ -9834,6 +9980,7 @@ function importStateFromHtml(html){
   S.docId=st.docId||null;   // v8.09: 取り込んだファイル側のIDへ切り替え
   S.gantt=Object.assign(defaultGantt(),st.gantt||{});
   S.mindBranch=(st.mindBranch==='straight')?'straight':'curve';   // v8.09: 枝の形（旧ファイルは曲線）
+  S.mindReserve=Array.isArray(st.mindReserve)?st.mindReserve:[];   // v8.11追補: 旧ファイルには無いキー
   S.mindLayout=st.mindLayout||'radial';   // C-1修正(v4.02): init同様にレイアウトモードを復元（インポート時の欠落を是正）
   S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
   migrateOrgSections();         // v7.02: 旧2段(sub)→ミニ表へ自動移行（見た目不変）
@@ -9844,6 +9991,7 @@ function importStateFromHtml(html){
   if(ni)ni.value=S_diagramName;
   applyDiagramType(); lanePanel(); snap(); render();
   hint(`インポート完了（置き換え）: ${getDT().name} / レーン${S.lanes.length} / シェイプ${S.nodes.length} / 線${S.edges.length}`);
+  markSaved();   // v8.11追補: 読み込んだ内容＝ファイルの内容なので、この時点は未保存ではない
   return true;   // v6.17追補: 取込成功（呼び出し元でタブ名称を更新）
 }
 
@@ -10017,6 +10165,25 @@ function layoutGanttHeadButtons(){
   btn.style.top=(collapsed? (headH-bhH)/2 : headH-bhH-5)+'px';
 }
 window.addEventListener('resize',layoutGanttHeadButtons);   // v8.11: 画面幅が変わったら置き直す
+// v8.11追補: 未保存のままタブを閉じる／ブラウザを終了するときの警告。
+//   ここで出るダイアログの文言もボタンもブラウザが決める固定文（離れる／キャンセルの2択）で、
+//   こちらから「上書き保存」を差し込む手段は無い（閉じられないページを作れてしまうため塞がれている）。
+//   なので、キャンセルして残ってくれた直後にこちらの選択肢を出す。
+//   clean のときは returnValue に触れないこと＝空文字を代入するだけでダイアログを出すブラウザがある。
+let _unloadT=null;
+window.addEventListener('beforeunload',ev=>{
+  if(!isDirty()) return;
+  ev.preventDefault();
+  ev.returnValue='';
+  // 離脱が取り消された＝ページが生き続けたときだけ動くタイマー。離れた場合はページごと消えるので発火しない。
+  //   この時点で閉じる操作はもう取り消されており「保存しない」に当たる動作が存在しないため3択にする。
+  clearTimeout(_unloadT);
+  _unloadT=setTimeout(()=>{
+    if(!isDirty()) return;
+    if(document.getElementById('save4-modal').style.display==='flex') return;
+    confirmSave4('保存していない変更があります。','保存しますか？（タブを閉じる操作は取り消されました）',{cancelLabel:'このまま続ける'});
+  },600);
+});
 function toggleToolbar(){
   const tb=document.getElementById('toolbar'), btn=document.getElementById('btn-show-toolbar');
   const hidden=(tb.style.display==='none');
@@ -10147,7 +10314,7 @@ function generateFromMermaid(text){
   if(!parsed.nodes.length) return {ok:false,error:'ノードが見つかりませんでした。Mermaid の flowchart 記法（例: A[開始] --> B[終了]）を確認してください。'};
   S.diagramType='flowchart'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
   S.orientation=(parsed.dir==='LR'||parsed.dir==='RL')?'horizontal':'vertical';
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.nodes.forEach(nd=>{ idMap[nd.id]=uid(); });
   parsed.nodes.forEach(nd=>{ const d=SD[nd.type]||SD.rect;
@@ -10203,7 +10370,7 @@ function generateFromMermaidSequence(text){
   const parsed=parseMermaidSequence(text);
   if(!parsed.participants.length) return {ok:false,error:'参加者が見つかりませんでした。Mermaid の sequenceDiagram 記法（例: A->>B: メッセージ）を確認してください。'};
   S.diagramType='sequence'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const d=SD.lifeline, gap=150, x0=40, llY=20;
   const idMap={};
   parsed.participants.forEach((p,i)=>{
@@ -10267,7 +10434,7 @@ function generateFromMermaidState(text){
   if(!parsed.states.length&&!parsed.transitions.length) return {ok:false,error:'状態が見つかりませんでした。Mermaid の stateDiagram 記法（例: [*] --> 待機 ／ 待機 --> 実行: 開始）を確認してください。'};
   S.diagramType='statechart'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
   S.orientation=(parsed.dir==='LR'||parsed.dir==='RL')?'horizontal':'vertical';
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.states.forEach(st=>{ const nid=uid(); idMap[st.id]=nid;
     S.nodes.push({id:nid,type:'state',x:0,y:0,w:SD.state.w,h:SD.state.h,text:st.label,lid:VIRTUAL_LANE.id}); });
@@ -10330,7 +10497,7 @@ function generateFromMermaidER(text){
   const parsed=parseMermaidER(text);
   if(!parsed.entities.length) return {ok:false,error:'エンティティが見つかりませんでした。Mermaid の erDiagram 記法（例: CUSTOMER ||--o{ ORDER : places）を確認してください。'};
   S.diagramType='er'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.entities.forEach(en=>{ const nid=uid(); idMap[en.id]=nid;
     S.nodes.push({id:nid,type:'entity',x:0,y:0,w:SD.entity.w,h:SD.entity.h,text:'',lid:VIRTUAL_LANE.id,
@@ -10410,7 +10577,7 @@ function generateFromMermaidClass(text){
   const parsed=parseMermaidClass(text);
   if(!parsed.classes.length) return {ok:false,error:'クラスが見つかりませんでした。Mermaid の classDiagram 記法（例: class Animal { +int age }）を確認してください。'};
   S.diagramType='uml'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.classes.forEach(c=>{ const nid=uid(); idMap[c.id]=nid; let node;
     if(c.stereotype==='interface'){
@@ -10492,7 +10659,7 @@ function generateFromMermaidGantt(text){
     if(t.id) byId[t.id]={start,end};
   });
   S.diagramType='gantt'; S.orientation='horizontal'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   let minStart=null; resolved.forEach(r=>{ if(r.start&&(!minStart||r.start<minStart))minStart=r.start; });
   S.gantt=defaultGantt(); if(minStart)S.gantt.startDate=minStart;
   const phaseByName={};
@@ -10530,7 +10697,7 @@ function generateFromOutline(text){
   const parsed=parseOutline(text);
   if(!parsed.items.length) return {ok:false,error:'アウトラインが空です。各行にトピックを書き、字下げ（スペース/タブ）で階層を表してください。'};
   S.diagramType='mindmap'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   if(S.mindLayout!=='tree'&&S.mindLayout!=='radial') S.mindLayout='radial';
   const tops=parsed.items.map((it,i)=>i).filter(i=>parsed.items[i].parentIdx===null);
   const idMap={}; let rootId=uid(), rootItemIdx=-1;
@@ -10564,7 +10731,7 @@ function mindValidAttr(key,v){
 function mindBuildFromItems(items,warnings){
   if(!items.length) return {ok:false,error:'トピックが見つかりません'};
   S.diagramType='mindmap'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   if(S.mindLayout!=='tree'&&S.mindLayout!=='radial') S.mindLayout='radial';
   const tops=items.map((it,i)=>i).filter(i=>items[i].parentIdx===null);
   const idMap={}; let rootId=uid(), rootItemIdx=-1;
@@ -10699,7 +10866,7 @@ function generateFromOrgCsv(text){
   const parsed=parseOrgCsv(text);
   if(!parsed.rows.length) return {ok:false,error:'データ行が見つかりませんでした。1行目を見出し（例: 役職,氏名,上司）にし、2行目以降にデータを記述してください。'};
   S.diagramType='orgchart'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};   // identity → 最初の nodeId
   parsed.rows.forEach(r=>{ const nid=uid(); r._nid=nid;
     if(r.identity && !(r.identity in idMap)) idMap[r.identity]=nid;
@@ -10785,7 +10952,7 @@ function generateFromGanttCsv(text){
     resolved.push({...r,start,end});
   });
   S.diagramType='gantt'; S.orientation='horizontal'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   let minStart=null; resolved.forEach(r=>{ if(r.start&&(!minStart||r.start<minStart))minStart=r.start; });
   S.gantt=defaultGantt(); if(minStart)S.gantt.startDate=minStart;
   const phaseByName={};
@@ -11081,6 +11248,29 @@ function closeGanttHeadEditor(commit){
   render();
 }
 function hint(msg){const h=document.getElementById('hint');h.textContent=msg;h.style.display=msg?'':'none'}
+// v8.11追補: 画面中央のトースト。保存の結果（成功／失敗）だけに使う。sub には失敗の原因を渡す。
+//   連続で呼ばれても古いタイマーが新しいトーストを消さないよう、2本（消し始め・display:none）とも
+//   clear してから張り直す。
+let _toastT1=null,_toastT2=null;
+function toast(msg,kind,sub,ms){
+  const t=document.getElementById('toast'); if(!t) return;
+  clearTimeout(_toastT1); clearTimeout(_toastT2);
+  t.textContent='';
+  const m=document.createElement('span'); m.textContent=msg; t.appendChild(m);
+  if(sub){ const s=document.createElement('span'); s.className='tsub'; s.textContent=sub; t.appendChild(s); }
+  t.className=(kind==='ng')?'ng':'';
+  t.style.display='';
+  void t.offsetWidth;            // display 変更と同フレームでは遷移しないため強制リフロー
+  t.classList.add('show');
+  const life=ms||((kind==='ng')?4200:2000);
+  _toastT1=setTimeout(()=>{ t.classList.remove('show');
+    _toastT2=setTimeout(()=>{ t.style.display='none'; },220); },life);
+}
+function toastHide(){
+  const t=document.getElementById('toast'); if(!t) return;
+  clearTimeout(_toastT1); clearTimeout(_toastT2);
+  t.className=''; t.textContent=''; t.style.display='none';
+}
 
 // ── 自動レイアウト ──
 function autoLayout(){
