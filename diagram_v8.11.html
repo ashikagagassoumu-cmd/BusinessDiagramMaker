@@ -83,6 +83,23 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .lr.drop-after{box-shadow:0 2px 0 #2563eb}
 
 #canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
+/* v8.11追補: リザーブ領域＝右サイドバー。#sidebar の対称形（#main が flex なので DOM 順どおり右に付く）。
+   一覧は min-height:0 が無いと縦スクロールが成立しない。 */
+#right-sidebar{width:238px;background:#fff;border-left:1px solid #e2e8f0;display:flex;flex-direction:column;flex-shrink:0}
+#mind-reserve-input{padding:8px;border-bottom:1px solid #f1f5f9}
+#mind-reserve-text{width:100%;box-sizing:border-box;font-size:12px;padding:6px 7px;border:1px solid #e2e8f0;border-radius:5px;background:#f9fafb;color:#334155;resize:none;height:48px;font-family:inherit;outline:none}
+#mind-reserve-text:focus{border-color:#93c5fd;background:#fff}
+#mind-reserve-add{width:100%;margin-top:5px;padding:5px;border:1.5px dashed #cbd5e1;border-radius:4px;background:none;color:#64748b;font-size:12px;cursor:pointer}
+#mind-reserve-add:hover{border-color:#3b82f6;color:#3b82f6;background:#eff6ff}
+#mind-reserve-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:7px 6px}
+#mind-reserve-empty{padding:8px 6px;font-size:11px;color:#94a3b8;line-height:1.6}
+.mr-row{display:flex;align-items:center;gap:4px;margin-bottom:5px}
+.mr-shape{flex-shrink:0;cursor:grab;display:block}
+.mr-btns{display:flex;flex-direction:column;gap:2px}
+.mr-btns button{width:26px;height:10px;padding:0;border-radius:3px;background:#f9fafb;border:1px solid #e2e8f0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:0}
+.mr-btns button:hover{border-color:#93c5fd}
+.mr-edit{flex-shrink:0;display:flex;align-items:center;box-sizing:border-box;padding:0 6px}
+.mr-edit input{width:100%;min-width:0;height:22px;font-size:11px;padding:0 5px;border:1px solid #3b82f6;border-radius:4px;background:#fff;color:#1e293b;outline:none}
 /* v8.11追補: ガントの見出し固定はブラウザの position:sticky に任せる。JS でスクロール量ぶん
    平行移動する方式だと、スクロールの描画より1フレーム遅れて追いつくため見出しがわずかに揺れる。
    幅0・高さ0の箱を本体SVGの前に置き、中のSVGを絶対配置で重ねる＝レイアウトには影響させない。
@@ -642,6 +659,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
       <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
     </svg>
+  </div>
+  <!-- v8.11追補: リザーブ領域（マインドマップ専用）。置き場所が決まらない話をここに貯めておく -->
+  <div id="right-sidebar" style="display:none">
+    <div class="ph" style="display:flex;align-items:center;justify-content:space-between">
+      <span>リザーブ</span><span id="mind-reserve-count" style="color:#94a3b8;letter-spacing:0;text-transform:none">0件</span>
+    </div>
+    <div id="mind-reserve-input">
+      <textarea id="mind-reserve-text" rows="2" placeholder="思いついた話を書いて追加" onkeydown="mindReserveKey(event)"></textarea>
+      <button id="mind-reserve-add" type="button" onclick="mindReserveAdd()" title="Enter でも追加できます（Shift+Enter で改行）">＋ 追加</button>
+    </div>
+    <div id="mind-reserve-list"></div>
   </div>
 </div>
 <div id="hint"></div>
@@ -1957,6 +1985,7 @@ function applyDiagramType(){
   document.getElementById('mind-tools').style.display=isMind?'inline-flex':'none';
   document.getElementById('mind-sep').style.display=isMind?'':'none';
   document.getElementById('mind-settings').style.display=isMind?'':'none';
+  document.getElementById('right-sidebar').style.display=isMind?'':'none';   // v8.11追補: リザーブ領域
   // v8.03: テキスト出力ボタンはマインドマップのみ有効
   const mtb=document.getElementById('btn-mindtext');
   if(mtb){ mtb.disabled=!isMind; mtb.style.opacity=isMind?'':'0.4'; mtb.style.cursor=isMind?'':'not-allowed';
@@ -5556,6 +5585,186 @@ function mindPlace(type,px,py){
   S.edges.push({id:uid(),from:parent.id,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
   S.sel=[parent.id]; snap(); render();   // 追補: 選択(=次の配置の起点)は親に残す＝連続配置で同じシェイプから分岐
 }
+// ── v8.11追補: リザーブ領域（マインドマップ専用） ──
+//   議論中に出た「今どこに置くべきか分からない話」を、図を壊さずに貯めておく場所。
+//   一覧の各行は配置後と同じシェイプそのもの＝ドラッグして置いたら何が出るかが見たまま分かる。
+//   分類ボタンの絵柄も凡例（renderMindLegend）と同じ形にしてある。
+const MR_TYPES=['mind_topic','mind_action','mind_note'];
+const MR_LABEL={mind_topic:'問題',mind_action:'対策',mind_note:'補足情報'};
+const MR_W=152, MR_H=34;
+function mindReserveKey(ev){
+  if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); mindReserveAdd(); }   // Shift+Enter は改行
+}
+function mindReserveAdd(){
+  const ta=document.getElementById('mind-reserve-text'); if(!ta)return;
+  const txt=(ta.value||'').trim(); if(!txt){ ta.focus(); return; }
+  S.mindReserve.push({id:uid(),text:txt,type:'mind_topic'});   // 登録時の既定は「問題」（未分類という状態は作らない）
+  ta.value=''; ta.focus();
+  snap(); renderMindReserve();
+}
+function mindReserveSetType(id,type){
+  const it=S.mindReserve.find(r=>r.id===id); if(!it||it.type===type)return;
+  it.type=type; snap(); renderMindReserve();
+}
+function mindReserveDelete(id){
+  S.mindReserve=S.mindReserve.filter(r=>r.id!==id);
+  snap(); renderMindReserve();
+}
+// 収まらない文章は末尾を省略（シェイプの幅は一定にして一覧の見た目を揃える）
+function mindReserveFit(txt,fs,maxW){
+  const s0=(txt||'').replace(/\s+/g,' ');
+  if(textW(s0,fs)<=maxW) return s0;
+  let s=s0;
+  while(s.length>1&&textW(s+'…',fs)>maxW) s=s.slice(0,-1);
+  return s+'…';
+}
+function mindReserveShapeSvg(item){
+  const d=SD[item.type]||SD.mind_topic;
+  const sv=e('svg',{width:MR_W,height:MR_H,'class':'mr-shape'});
+  const a={fill:d.fill,stroke:d.stroke,'stroke-width':1.4};
+  let inner=MR_W-18, dx=0;
+  if(item.type==='mind_action'){          // 右向き矢印タグ
+    a.points='1,2 '+(MR_W-18)+',2 '+(MR_W-1)+',17 '+(MR_W-18)+',32 1,32';
+    a['stroke-linejoin']='round'; sv.appendChild(e('polygon',a)); inner=MR_W-36; dx=-8;
+  } else if(item.type==='mind_note'){     // 右上が折れた付箋
+    a.d='M1,2 H'+(MR_W-16)+' L'+(MR_W-1)+',17 V32 H1 Z'; a['stroke-width']=1.3;
+    sv.appendChild(e('path',a)); inner=MR_W-34;
+  } else {                                // 角丸長方形
+    a.x=1; a.y=2; a.width=MR_W-2; a.height=MR_H-4; a.rx=7; sv.appendChild(e('rect',a));
+  }
+  const t=e('text',{x:MR_W/2+dx,y:21,'text-anchor':'middle','font-size':11,fill:'#1e293b'});
+  t.textContent=mindReserveFit(item.text,11,inner);
+  sv.appendChild(t);
+  return sv;
+}
+// 分類ボタンの中身＝同じ3つの形を極小で描いたもの（押すと左のシェイプがその形になることが判る）
+function mindReserveGlyph(type,on){
+  const col=on?SD[type].stroke:'#94a3b8';
+  const sv=e('svg',{width:14,height:6});
+  if(type==='mind_action')      sv.appendChild(e('polygon',{points:'0.5,0.5 10,0.5 13.5,3 10,5.5 0.5,5.5',fill:col}));
+  else if(type==='mind_note')   sv.appendChild(e('path',{d:'M0.5,0.5 h9.5 l3.5,2.5 v2.5 h-13 Z',fill:col}));
+  else                          sv.appendChild(e('rect',{x:0.5,y:0.5,width:13,height:5,rx:2,fill:col}));
+  return sv;
+}
+function renderMindReserve(){
+  const box=document.getElementById('mind-reserve-list'); if(!box)return;
+  // ganttPanel と同じ再構築ガード。入れないと編集中に DOM ごと消える。
+  if(document.activeElement&&box.contains(document.activeElement))return;
+  const list=Array.isArray(S.mindReserve)?S.mindReserve:[];
+  const cnt=document.getElementById('mind-reserve-count'); if(cnt)cnt.textContent=list.length+'件';
+  box.innerHTML='';
+  if(!list.length){
+    const d=document.createElement('div'); d.id='mind-reserve-empty';
+    d.textContent='まだありません。上の欄に書いて「＋ 追加」で貯めておけます。';
+    box.appendChild(d); return;
+  }
+  list.forEach(item=>{
+    const row=document.createElement('div'); row.className='mr-row';
+    const sv=mindReserveShapeSvg(item);
+    sv.setAttribute('title',(item.text||'')+'\nドラッグで図に配置 / ダブルクリックで編集');
+    sv.addEventListener('mousedown',ev=>mindReserveDragStart(ev,item.id));
+    sv.addEventListener('dblclick',ev=>{ ev.preventDefault(); mindReserveEdit(item.id); });
+    row.appendChild(sv);
+    const btns=document.createElement('div'); btns.className='mr-btns';
+    MR_TYPES.forEach(tp=>{
+      const on=(item.type===tp);
+      const b=document.createElement('button');
+      b.type='button'; b.title=MR_LABEL[tp]; b.setAttribute('aria-label',MR_LABEL[tp]);
+      if(on){ b.style.background=SD[tp].fill; b.style.borderColor=SD[tp].stroke; }
+      b.appendChild(mindReserveGlyph(tp,on));
+      b.onclick=()=>mindReserveSetType(item.id,tp);
+      btns.appendChild(b);
+    });
+    row.appendChild(btns);
+    const del=document.createElement('button');
+    del.className='ldel'; del.type='button'; del.textContent='✕'; del.title='このリザーブを削除';
+    del.onclick=()=>mindReserveDelete(item.id);
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+// ダブルクリック編集: シェイプを同じ大きさ・同じ枠色の箱＋入力欄に差し替える（形は保つ）
+function mindReserveEdit(id){
+  const it=(S.mindReserve||[]).find(r=>r.id===id); if(!it)return;
+  const box=document.getElementById('mind-reserve-list'); if(!box)return;
+  const row=box.children[S.mindReserve.indexOf(it)]; if(!row||!row.firstChild)return;
+  const d=SD[it.type]||SD.mind_topic;
+  const wrap=document.createElement('span'); wrap.className='mr-edit';
+  wrap.style.width=MR_W+'px'; wrap.style.height=MR_H+'px';
+  wrap.style.borderRadius='7px'; wrap.style.background=d.fill; wrap.style.border='1.6px solid '+d.stroke;
+  const inp=document.createElement('input'); inp.type='text'; inp.value=it.text||'';
+  wrap.appendChild(inp);
+  row.replaceChild(wrap,row.firstChild);
+  let done=false;
+  const commit=ok=>{
+    if(done)return; done=true;
+    const v=(inp.value||'').trim();
+    if(ok&&v&&v!==it.text){ it.text=v; snap(); }
+    inp.blur();               // ガードに引っかからないよう、作り直す前に選択を外す
+    renderMindReserve();
+  };
+  inp.addEventListener('keydown',ev=>{
+    if(ev.key==='Enter'){ ev.preventDefault(); commit(true); }
+    else if(ev.key==='Escape'){ ev.preventDefault(); commit(false); }
+  });
+  inp.addEventListener('blur',()=>commit(true));
+  inp.focus(); inp.select();
+}
+// ドロップ先のトピック。折り畳み・絞り込みで見えていないノードは対象外（replaceTargetAt と同じ扱い）
+function mindReserveTargetAt(x,y){
+  const hidden=mindHiddenSet();
+  for(let i=S.nodes.length-1;i>=0;i--){
+    const n=S.nodes[i];
+    if(!isMindShape(n.type)||n.x==null||n.w==null)continue;
+    if(hidden.has(n.id))continue;
+    if(x>=n.x&&x<=n.x+n.w&&y>=n.y&&y<=n.y+n.h) return n;
+  }
+  return null;
+}
+// v8.09 の「重ね置きで形状だけ入れ替え」は通さない（入れ替えると入力した文章が失われるため）。
+//   既存トピックの上に落としたらその子、空き場所なら選択中ノード（無ければ中心）の子にする。
+function mindReservePlace(item,px,py){
+  let root=mindRoot();
+  if(!root){ mindCreateRoot(); root=mindRoot(); }
+  const tgt=mindReserveTargetAt(px,py);
+  const selNode=S.sel.map(id=>S.nodes.find(n=>n.id===id)).find(n=>n&&isMindShape(n.type));
+  const parent=tgt||selNode||root;
+  const d=SD[item.type]||SD.mind_topic;
+  let x=px,y=py;
+  if(tgt){ x=tgt.x+tgt.w+40; y=tgt.y; }   // 親の上に重ねない（親の右隣に出す）
+  const n={id:uid(),type:item.type,text:item.text||d.text,x:x,y:y,w:d.w,h:d.h};
+  S.nodes.push(n);
+  S.edges.push({id:uid(),from:parent.id,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
+  S.mindReserve=S.mindReserve.filter(r=>r.id!==item.id);   // 置いたらリザーブからは消す
+  S.sel=[parent.id]; snap(); render();
+  hint('リザーブから配置しました: '+(n.text||''));
+}
+// ドラッグは HTML5 の D&D ではなくマウスイベント方式（palDragStart と同じ作法）
+function mindReserveDragStart(ev,id){
+  if(ev.button!==0)return;
+  ev.preventDefault(); ev.stopPropagation();
+  const it=(S.mindReserve||[]).find(r=>r.id===id); if(!it)return;
+  exitPasteMode();
+  if(S.mode!=='select')setMode('select');
+  const d=SD[it.type]||SD.mind_topic;
+  const ghost=document.createElement('div');
+  Object.assign(ghost.style,{position:'fixed',maxWidth:'200px',padding:'6px 10px',background:d.fill,
+    border:'2px dashed '+d.stroke,borderRadius:'6px',pointerEvents:'none',zIndex:'9999',
+    fontSize:'11px',color:'#1e293b',opacity:'.9',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',
+    left:(ev.clientX-40)+'px',top:(ev.clientY-16)+'px'});
+  ghost.textContent=it.text||d.text;
+  document.body.appendChild(ghost);
+  let moved=false;
+  const mv=evM=>{ moved=true; ghost.style.left=(evM.clientX-40)+'px'; ghost.style.top=(evM.clientY-16)+'px'; };
+  const up=evU=>{
+    ghost.remove(); document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up);
+    if(!moved)return;   // 動かさなかった＝ただのクリック
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    if(evU.clientX<r.left||evU.clientX>r.right||evU.clientY<r.top||evU.clientY>r.bottom)return;
+    mindReservePlace(it,(evU.clientX-r.left)/zoomLevel,(evU.clientY-r.top)/zoomLevel);   // #diagram-svg は scale 済みなので svgPt ではなく実測で換算
+  };
+  document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+}
 // ── 描画 ──
 function renderMindmap(){
   mindAssignBranchIdx();   // v8.10: 枝色の番号を確定（読込・追加・付け替えをここ1か所で拾う）
@@ -5574,6 +5783,7 @@ function renderMindmap(){
   applyZoom();
   updateMindToolbar();
   renderMindIssueList();          // v8.03: 未決・反対一覧を同期
+  renderMindReserve();            // v8.11追補: リザーブ領域を同期
 }
 // ── v8.04: 凡例（図内で使用中のシェイプ・属性記号だけを自動表示。g-dividers に描くため PNG/SVG/印刷にも載る） ──
 function renderMindLegend(){
