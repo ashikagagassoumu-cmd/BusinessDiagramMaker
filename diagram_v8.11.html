@@ -5786,8 +5786,10 @@ function renderMindmap(){
   renderMindReserve();            // v8.11追補: リザーブ領域を同期
 }
 // ── v8.04: 凡例（図内で使用中のシェイプ・属性記号だけを自動表示。g-dividers に描くため PNG/SVG/印刷にも載る） ──
+let _mindLegendBox=null;   // v8.11追補: 直近に描いた凡例の外接矩形（印刷の切り出し範囲に使う。描かなかったら null）
 function renderMindLegend(){
   const g=document.getElementById('g-dividers');
+  _mindLegendBox=null;   // v8.11追補: 印刷の切り出し範囲に含めるため、描いた凡例の位置を覚えておく
   const ns=S.nodes.filter(n=>isMindShape(n.type)&&n.type!=='mind_root');
   if(!ns.length)return;
   const ORDER=['high','mid','low'];
@@ -5799,6 +5801,7 @@ function renderMindLegend(){
   const rows=(useAct||useNote?1:0)+(st.length?1:0)+(imp.length?1:0)+(cf.length?1:0)+(ef.length?1:0);
   if(!rows)return;
   const x0=14,y0=14,W=308,rowH=25,H=30+rows*rowH;
+  _mindLegendBox={x:x0,y:y0,w:W,h:H};
   const box=e('g',{'pointer-events':'none'});
   box.appendChild(e('rect',{x:x0,y:y0,width:W,height:H,rx:6,fill:'#ffffff',stroke:'#cbd5e1','stroke-width':1,opacity:.95}));
   const tt=e('text',{x:x0+14,y:y0+19,'font-size':'11','font-weight':'700',fill:'#334155'});
@@ -9618,6 +9621,13 @@ function contentBBox(){
     if(n.x<x0)x0=n.x; if(n.y<y0)y0=n.y;
     if(n.x+n.w>x1)x1=n.x+n.w; if(n.y+n.h>y1)y1=n.y+n.h;
   });
+  // v8.11追補: マインドマップの凡例はキャンバス左上（x=14,y=14）に描くため、シェイプだけで切り出すと
+  //   印刷から外れて消えていた（PNG/SVGは全キャンバスを写すので出ていた）。凡例も範囲に含める。
+  if(S.diagramType==='mindmap'&&_mindLegendBox){
+    const b=_mindLegendBox;
+    if(b.x<x0)x0=b.x; if(b.y<y0)y0=b.y;
+    if(b.x+b.w>x1)x1=b.x+b.w; if(b.y+b.h>y1)y1=b.y+b.h;
+  }
   if(!isFinite(x0))return null;
   return {x:x0,y:y0,w:x1-x0,h:y1-y0};
 }
