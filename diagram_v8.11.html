@@ -83,7 +83,16 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .lr.drop-after{box-shadow:0 2px 0 #2563eb}
 
 #canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
-#diagram-svg{display:block;cursor:default;transform-origin:0 0}
+/* v8.11追補: ガントの見出し固定はブラウザの position:sticky に任せる。JS でスクロール量ぶん
+   平行移動する方式だと、スクロールの描画より1フレーム遅れて追いつくため見出しがわずかに揺れる。
+   幅0・高さ0の箱を本体SVGの前に置き、中のSVGを絶対配置で重ねる＝レイアウトには影響させない。
+   固定したい軸だけ top / left を指定する（指定しない軸は本体と一緒に流れる＝表計算の枠固定と同じ）。 */
+.gstick{position:sticky;width:0;height:0}
+.gstick>svg{position:absolute;top:0;left:0;display:block;overflow:visible;transform-origin:0 0;pointer-events:none}
+.gstick>svg>g{pointer-events:auto}
+#gstick-left{left:0;z-index:5}
+#gstick-top{top:0;z-index:6}
+#gstick-corner{top:0;left:0;z-index:7}#diagram-svg{display:block;cursor:default;transform-origin:0 0}
 #diagram-svg.cx *,#diagram-svg.cx{cursor:crosshair!important}
 /* v8.10: ハンドツール＝掴む手のカーソル。ドラッグ中は握った手に変える */
 #diagram-svg.hand *,#diagram-svg.hand{cursor:grab!important}
@@ -538,6 +547,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div>
 
   <div id="canvas-wrap">
+    <!-- v8.11: ガントの固定表示レイヤ。左＝タスク名列（横スクロールで固定）／上＝見出し欄＋時間軸ヘッダー
+         （縦スクロールで固定）／角＝左上コーナー（両方向で固定）。左→上→角の順＝重なったら角が最前面。
+         本体SVGの外に出しているのは position:sticky が SVG の中身には効かないため。座標系は本体と
+         同じなので、当たり判定（svgPt は本体SVGの行列で換算）も書き出しもそのまま流用できる。 -->
+    <div id="gstick-left" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-left"></g></svg></div>
+    <div id="gstick-top" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-top"></g></svg></div>
+    <div id="gstick-corner" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-corner"></g></svg></div>
     <svg id="diagram-svg" onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)">
       <defs>
         <marker id="arr"  markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#475569"/></marker>
@@ -575,11 +591,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <g id="g-dividers"></g>
       <!-- v8.10: レーン見出しは最前面の独立レイヤに描き、スクロール量ぶん平行移動して固定表示する -->
       <g id="g-lane-hdr"></g>
-      <!-- v8.11: ガントの固定表示レイヤ。左＝タスク名列（横スクロールで固定）／上＝見出し欄＋時間軸ヘッダー
-           （縦スクロールで固定）／角＝左上コーナー（両方向で固定）。左→上→角の順＝重なったら角が最前面。 -->
-      <g id="g-gantt-left"></g>
-      <g id="g-gantt-top"></g>
-      <g id="g-gantt-corner"></g>
+
       <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
     </svg>
   </div>
@@ -4200,7 +4212,6 @@ function renderGantt(){
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
   ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
-  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>document.getElementById(id).removeAttribute('transform'));   // v8.11: 追従ぶんを一度戻す（この後 stickyGanttHeader が当て直す）
   Array.from(document.querySelectorAll('#diagram-svg clipPath')).forEach(el=>{ if((el.id||'').indexOf('gw-clip-')===0) el.remove(); });   // v8.08追補: 段のクリップ定義を作り直す
   if(ganttWrapOn()){
     // v8.08: 段ごとに「軸原点＝段の先頭」へ差し替え、Yは平行移動グループでずらして同じ描画関数を再利用する。
@@ -4232,7 +4243,7 @@ function renderGantt(){
     renderGanttHeader();
   }
   renderGanttTitleBlock();   // v8.00: 見出し欄（表題＋承認欄＋凡例）
-  stickyGanttHeader();       // v8.11: 見出し欄・時間軸ヘッダー・タスク名列をいまのスクロール位置へ固定し直す
+  syncGanttSticky();         // v8.11: 固定レイヤの大きさ・拡大率を本体SVGへ合わせる（位置合わせは CSS の sticky）
   zoomLevel=1; applyZoom();
   // ズームラベルは列幅(px)を表示、ツールバーのスケール/開始日を同期
   document.getElementById('zoom-label').textContent=S.gantt.colWidth+'px';
@@ -5439,7 +5450,6 @@ function renderMindmap(){
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
   ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
-  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>document.getElementById(id).removeAttribute('transform'));   // v8.11: 追従ぶんを一度戻す（この後 stickyGanttHeader が当て直す）
   document.getElementById('g-lanes').appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc','pointer-events':'none'}));
   renderGrid();   // v7.00: 方眼グリッド（マインドマップも自由配置図として対象）
   const hidden=mindHiddenSet();
@@ -6172,7 +6182,7 @@ function updateUmlToolbar(){
 function render(){
   // v8.11: ガントの固定レイヤは図種をまたぐと前の図の見出し・タスク名列が浮いたまま残るので、
   //   どの図種でも描き始めに必ず空へ戻す（ガントならこの直後の renderGantt が描き直す）。
-  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{const el=document.getElementById(id); if(el){el.innerHTML=''; el.removeAttribute('transform');}});
+  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{const el=document.getElementById(id); if(el) el.innerHTML='';});
   // ガントチャート・マインドマップは専用描画パス
   if(S.diagramType==='gantt'){ renderGantt(); return; }
   if(S.diagramType==='mindmap'){ renderMindmap(); return; }
@@ -6259,7 +6269,7 @@ function renderLanes(){
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:totalLaneSpan(),fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
   }
   stickyLaneHeader();
-  stickyGanttHeader();   // v8.11: ガントの見出し・時間軸・タスク名列の追従ぶんを描き直しのたびに当て直す
+  syncGanttSticky();   // v8.11: ガント以外なので固定レイヤを畳む
 }
 // v8.10: レーン見出しをスクロールに追従させる。SVG 全体に CSS transform:scale() が掛かっているので、
 //   スクロール量を zoomLevel で割って SVG 座標へ直してから平行移動する。
@@ -6278,21 +6288,19 @@ function stickyLaneHeader(){
     gh.setAttribute('transform',dx?`translate(${dx},0)`:'translate(0,0)');
   }
 }
-// v8.11: ガントの見出し欄・時間軸ヘッダー・タスク名列をスクロールに追従させる（フリーズペイン）。
-//   レーン見出し(v8.10)と同じ方式＝専用レイヤをスクロール量ぶん平行移動する。SVG全体に CSS の
-//   transform:scale() が掛かっているのでスクロール量は zoomLevel で割ってSVG座標へ直す。
-//   上レイヤ＝縦だけ／左レイヤ＝横だけ／角レイヤ＝両方。図の座標は動かさないので保存・書き出し・
-//   当たり判定には影響しない（行ドラッグはYで判定、列幅ドラッグはXの差分で判定するため補正も不要）。
-function stickyGanttHeader(){
-  const lf=document.getElementById('g-gantt-left'), tp=document.getElementById('g-gantt-top'), cn=document.getElementById('g-gantt-corner');
-  if(!lf||!tp||!cn) return;
-  if(!ganttStickyOn()){ [lf,tp,cn].forEach(gx=>gx.removeAttribute('transform')); return; }
-  const wrap=document.getElementById('canvas-wrap'); if(!wrap) return;
-  const z=zoomLevel||1;
-  const dx=Math.max(0,wrap.scrollLeft/z), dy=Math.max(0,wrap.scrollTop/z);
-  lf.setAttribute('transform','translate('+dx+',0)');
-  tp.setAttribute('transform','translate(0,'+dy+')');
-  cn.setAttribute('transform','translate('+dx+','+dy+')');
+// v8.11: ガントの固定レイヤ（重ね箱）を本体SVGに合わせる。位置合わせ自体は CSS の position:sticky が
+//   やるので、ここでやるのは大きさ・拡大率・表示/非表示だけ＝スクロール中に走る JS は無い。
+//   （追補: 当初はスクロール量ぶん平行移動していたが、スクロールの描画に1フレーム遅れて追いつくため
+//    見出しがわずかに揺れた。ブラウザ任せに変えて完全に止めた。）
+function syncGanttSticky(){
+  const on=ganttStickyOn();
+  ['gstick-left','gstick-top','gstick-corner'].forEach(id=>{
+    const box=document.getElementById(id); if(!box) return;
+    box.style.display=on?'':'none';   // ガント以外では畳む＝他図種の当たり判定に入り込ませない
+    const sv=box.firstElementChild; if(!sv) return;
+    sv.setAttribute('width',SVG_W); sv.setAttribute('height',SVG_H);
+    sv.style.transform='scale('+(zoomLevel||1)+')';
+  });
 }
 // v8.11: 画面で掴んだ位置を「その場所に見えているもの」の座標へ読み替える。
 //   固定レイヤは図の座標を動かさずに見た目だけずらすので、固定中の見出し・タスク名列の下には
@@ -6313,7 +6321,7 @@ function ganttStickyPt(px,py){
 }
 function initStickyHeader(){
   const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
-  wrap.addEventListener('scroll',()=>{stickyLaneHeader();stickyGanttHeader();},{passive:true});   // v8.11: ガントぶんも同じスクロールで追従
+  wrap.addEventListener('scroll',stickyLaneHeader,{passive:true});
 }
 // ── v7.00: バス型接続線（樹状図/組織図の標準）──
 //   親の下中央→1本→横バス→各子の上中央（横向きは右中央→縦バス→各子の左中央）。
@@ -9174,7 +9182,6 @@ async function openImportFile(){
 function buildSaveHtml(name){
   document.getElementById('svg-editor')?.remove();
   document.getElementById('g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんを保存HTMLへ焼き込まない
-  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>document.getElementById(id)?.removeAttribute('transform'));   // v8.11: ガントの追従ぶんも同様（保存HTMLは常に先頭表示から始める）
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
@@ -9187,7 +9194,6 @@ function buildSaveHtml(name){
   html=html.replace(/\s+data-state="[^"]*"/g,'');
   html=html.replace('</head>',()=>SCR+' id="swimlane-state">window.__SWIMLANE_STATE__='+stateJson+';'+CSCR+'\n</head>');
   stickyLaneHeader();   // v8.10: 画面側の見出し追従を元に戻す（保存のために一時的に外していた）
-  stickyGanttHeader();   // v8.11: ガントぶんも戻す
   return {safe,html};
 }
 // v8.09: 従来どおりダウンロードで保存（上書き保存が使えないブラウザ・失敗時のフォールバック）
@@ -9241,7 +9247,9 @@ function buildExportSvg(skipTitle){
   svg.setAttribute('xmlns',NS);
   svg.style.transform='';
   svg.querySelector('#g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんは出力に持ち込まない
-  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>svg.querySelector('#'+id)?.removeAttribute('transform'));   // v8.11: ガントの追従ぶんも同様（PDF・画像は図の本来の位置で出す）
+  // v8.11: ガントの固定レイヤは本体SVGの外（position:sticky の重ね箱）にあるので、書き出しには明示的に取り込む。
+  //   座標系は本体と同じなので、そのまま最前面へ足せば画面と同じ絵になる。
+  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{ const src=document.getElementById(id); if(src&&src.childElementCount) svg.appendChild(src.cloneNode(true)); });
   svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
   svg.querySelectorAll('.mind-dim').forEach(el=>el.classList.remove('mind-dim'));   // v8.03: 強調表示の減光は書き出しに含めない
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
@@ -9825,6 +9833,7 @@ function applyZoom(){
   spacer.style.height=Math.round(SVG_H*zoomLevel)+'px';
   document.getElementById('zoom-label').textContent=Math.round(zoomLevel*100)+'%';
   stickyLaneHeader();   // v8.10: 再描画・ズーム変更のたびに見出しの追従位置を入れ直す
+  syncGanttSticky();    // v8.11: ガントの固定レイヤの拡大率も合わせる
 }
 function zoomIn(){
   if(S.diagramType==='gantt'){ ganttZoom(4); return; }
