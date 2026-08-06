@@ -203,6 +203,19 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #save4-discard:hover{background:#fef2f2}
 #save4-cancel{background:#f8fafc;color:#475569}
 #save4-cancel:hover{background:#f1f5f9}
+/* v8.11追補: 開いた直後に上書き保存の対象を決めるダイアログ */
+#bind-modal{position:fixed;inset:0;z-index:4200;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
+#bind-box{background:#fff;border-radius:14px;padding:24px 26px;max-width:430px;width:90%;box-shadow:0 12px 48px rgba(0,0,0,.28)}
+#bind-msg{font-size:14px;color:#0f172a;line-height:1.75}
+#bind-file{display:flex;align-items:center;gap:8px;margin:12px 0 6px;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#334155;overflow:hidden}
+#bind-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#bind-sub{font-size:12px;color:#64748b;line-height:1.7;margin-top:6px}
+#bind-btns{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+#bind-btns button{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;border:1px solid #cbd5e1}
+#bind-yes{background:#2563eb;color:#fff;border-color:#2563eb}
+#bind-yes:hover{background:#1d4ed8}
+#bind-no{background:#f8fafc;color:#475569}
+#bind-no:hover{background:#f1f5f9}
 
 /* 新規作成ダイアログ */
 #new-modal{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
@@ -836,6 +849,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <button id="save4-as" type="button" onclick="save4Pick('as')">名前を付けて保存</button>
       <button id="save4-discard" type="button" onclick="save4Pick('discard')">保存しない</button>
       <button id="save4-cancel" type="button" onclick="save4Pick('cancel')">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- v8.11追補: 開いた直後に上書き保存の対象ファイルを決めるダイアログ -->
+<div id="bind-modal" style="display:none">
+  <div id="bind-box">
+    <div id="bind-msg"></div>
+    <div id="bind-file" style="display:none">📄 <span id="bind-file-name"></span></div>
+    <div id="bind-sub"></div>
+    <div id="bind-btns">
+      <button id="bind-yes" type="button" onclick="bindPick(true)"></button>
+      <button id="bind-no" type="button" onclick="bindPick(false)"></button>
     </div>
   </div>
 </div>
@@ -2134,6 +2160,7 @@ function init(){
     applyDiagramType();
     lanePanel(); snap(); render();
     markSaved();   // v8.11追補: 開いた直後＝ファイルの内容と一致
+    askBindSaveTarget();   // v8.11追補: 上書き保存の対象を開いた直後に決める（記憶した保存先の確認）
     hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
     return;
   }
@@ -9472,6 +9499,80 @@ function saveErrText(err){
   const n=err.name||'', m=((err.message||'')+'').trim();
   if(SAVE_ERR_JA[n]) return SAVE_ERR_JA[n];
   return m? (m+'（'+(n||'Error')+'）') : (n||'原因不明');
+}
+// ── v8.11追補: 開いた直後に「上書き保存の対象ファイル」を決める ──
+//   ページが自分自身のファイルのハンドルを自力で取る手段は無い（そういう API が無い）。入手経路は
+//   「一度ピッカーで選んだものを憶えておく」だけなので、保存・読み込みのたびに docId とハンドルの組を
+//   IndexedDB へ入れてある（fhSave/fhLoad）。従来はそれを Ctrl+S のときに黙って復元していたが、
+//   ユーザーからは「今どこへ保存されるのか」が見えなかった。そこで開いた直後に一度だけ尋ねる。
+//   書き込み許可の再取得（requestPermission）はユーザー操作の直後にしか出せないため、
+//   自動ではなくこのダイアログの「はい」を押した流れで呼ぶ必要がある＝この形が都合が良い。
+let _bindCb=null;
+function showBindDialog(o){
+  _bindCb=o.onPick||null;
+  document.getElementById('bind-msg').textContent=o.msg;
+  const f=document.getElementById('bind-file');
+  if(o.file){ document.getElementById('bind-file-name').textContent=o.file; f.style.display=''; }
+  else f.style.display='none';
+  const s=document.getElementById('bind-sub'); s.textContent=o.sub||''; s.style.display=o.sub?'':'none';
+  document.getElementById('bind-yes').textContent=o.yes;
+  document.getElementById('bind-no').textContent=o.no;
+  document.getElementById('bind-modal').style.display='flex';
+}
+function hideBind(){ document.getElementById('bind-modal').style.display='none'; _bindCb=null; }
+async function bindPick(yes){ const cb=_bindCb; hideBind(); if(typeof cb==='function') await cb(yes); }
+// 保存ファイルを開いた直後に1回だけ呼ぶ（init の復元経路のみ。新規作成では呼ばない）
+async function askBindSaveTarget(){
+  if(!FSA_OK) return;
+  if(fileHandle||fileHandleTried) return;
+  fileHandleTried=true;   // ここで一度試した扱いにする＝以後 Ctrl+S で黙って復元し直さない
+  let h=null;
+  try{ h=await fhLoad(S.docId); }catch(e){ h=null; }
+  if(h){
+    showBindDialog({
+      msg:'このファイルに上書き保存しますか？', file:h.name,
+      sub:'前回このファイルへ保存しています。「上書きする」を選ぶと、以後 Ctrl+S でこのファイルへ直接書き戻します。',
+      yes:'💾 このファイルに上書きする', no:'保存のたびに場所を尋ねる',
+      onPick:async ok=>{
+        if(!ok){ fileHandle=null; hint('保存のたびに保存先を尋ねます'); return; }
+        if(!(await fhPermit(h))){ fileHandle=null; hint('ファイルへの書き込みが許可されなかったため、保存時に保存先を尋ねます'); return; }
+        // 複製したファイルから原本を上書きしないための安全弁（中身の docId ＋ ファイル名で照合）
+        if(!(await fhIsSameDoc(h))){ fileHandle=null; hint('記憶していた保存先が今開いている図と一致しないため、保存時に保存先を尋ねます'); return; }
+        fileHandle=h; setTabTitleFromFilename(h.name);
+        toast('上書き先を設定しました','',h.name);
+        hint('上書き保存の対象: '+h.name+'（Ctrl+S でこのファイルへ書き戻します）');
+      }});
+    return;
+  }
+  // 記憶が無い＝別のブラウザ／別のPC／サイトデータ消去後。一度だけ選び直せば以後は憶える。
+  showBindDialog({
+    msg:'上書き先を決めますか？', file:'',
+    sub:'このブラウザでは保存先を憶えていません。いま開いているファイルを一度だけ選べば、以後は Ctrl+S でそのまま上書きできます。',
+    yes:'📂 このファイルを選ぶ', no:'あとで決める',
+    onPick:async ok=>{ if(ok) await bindPickExisting(); else hint('保存時に保存先を尋ねます'); }});
+}
+// 「このファイルを選ぶ」＝読み込みピッカーで既存ファイルを指し、書き込み許可を得て上書き先に据える。
+//   保存ピッカーではなく読み込みピッカーを使うのは、この時点では何も書かないため（誤って別ファイルを
+//   作らせない）。書き込み許可は fhPermit が readwrite で取り直す。
+async function bindPickExisting(){
+  let h=null;
+  try{
+    const picked=await window.showOpenFilePicker({id:'bdm-save',multiple:false,
+      types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html','.htm']}}]});
+    h=picked&&picked[0];
+  }catch(err){
+    if(err&&err.name==='AbortError'){ hint('上書き先の設定を中止しました（保存時に保存先を尋ねます）'); return; }
+    hint('ファイルを選べませんでした: '+saveErrText(err)); return;
+  }
+  if(!h) return;
+  if(!(await fhPermit(h))){ hint('ファイルへの書き込みが許可されませんでした（保存時に保存先を尋ねます）'); return; }
+  // docId を持つ図だけ照合する（docId が無い古いファイルは、ユーザーが明示的に選んだものとして受け入れる）
+  if(S.docId&&!(await fhIsSameDoc(h))){ hint('選んだファイルは今開いている図と違うようです（上書き先にはしていません）'); return; }
+  if(!S.docId) S.docId=newDocId();
+  fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
+  setTabTitleFromFilename(h.name);
+  toast('上書き先を設定しました','',h.name);
+  hint('上書き保存の対象: '+h.name+'（Ctrl+S でこのファイルへ書き戻します）');
 }
 // 保存先を選んで保存（OSの保存ダイアログ）。ここで選んだファイルが以後の上書き先になる。
 async function saveAsWithPicker(){
