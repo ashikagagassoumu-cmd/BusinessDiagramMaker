@@ -18,7 +18,10 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #dtype-menu .dm-item .dm-check{width:16px;text-align:center;font-size:11px}
 /* v7.05: ツールバーは折り返し可＝ウインドウ幅が足りない時は自動で2段・3段になり、常に全ボタンが見える
    （最大化時は従来どおり1段・min-height 46px で見た目不変） */
-#toolbar{background:#1e293b;color:#f1f5f9;padding:5px 12px;min-height:46px;display:flex;flex-wrap:wrap;align-items:center;align-content:center;gap:4px 6px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+/* v8.10: 右端に「メニューを隠す」ボタンぶんの余白を確保する（padding-right）。
+   ボタンは絶対配置でバーの右下角に固定＝ボタンが折り返しに巻き込まれて左端へ回るのを防ぐ。 */
+#toolbar{background:#1e293b;color:#f1f5f9;padding:5px 128px 5px 12px;min-height:46px;display:flex;flex-wrap:wrap;align-items:center;align-content:center;gap:4px 6px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.3);position:relative}
+#btn-hide-toolbar{position:absolute;right:10px;bottom:4px}
 .tbtn.save{background:#0f4c81;border-color:#1d6aa5;color:#bfdbfe;}
 .tbtn.save:hover{background:#1d6aa5;color:#fff}
 
@@ -82,11 +85,29 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
 #diagram-svg{display:block;cursor:default;transform-origin:0 0}
 #diagram-svg.cx *,#diagram-svg.cx{cursor:crosshair!important}
-/* v8.10: ハンドツール（パン専用）＝掴む手のカーソル。ドラッグ中は握った手に変える */
+/* v8.10: ハンドツール＝掴む手のカーソル。ドラッグ中は握った手に変える */
 #diagram-svg.hand *,#diagram-svg.hand{cursor:grab!important}
+/* v8.10: シェイプの上だけは「動かせる」ことが分かるカーソルに戻す。
+   grabbing より前に置く＝同じ詳細度なので、パン中は握った手が優先される。 */
+#diagram-svg.hand [data-nid],#diagram-svg.hand [data-nid] *{cursor:move!important}
 #diagram-svg.hand.grabbing *,#diagram-svg.hand.grabbing{cursor:grabbing!important}
 
 #hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#e2e8f0;padding:5px 14px;border-radius:20px;font-size:11px;pointer-events:none;white-space:nowrap;z-index:100;display:none}
+/* v8.10: 検索パネルの見出し帯（掴んで移動）と右上の閉じるボタン */
+#search-head{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 9px;border-bottom:1px solid #e2e8f0;background:#f8fafc;border-radius:7px 7px 0 0;cursor:move;user-select:none}
+#search-head .grip{color:#cbd5e1;font-size:12px;line-height:1}
+#search-head .ttl{flex:1;font-weight:700;color:#334155;font-size:12px}
+#search-close{background:transparent;border:1px solid transparent;color:#64748b;border-radius:5px;cursor:pointer;font-size:12px;line-height:1;padding:3px 8px}
+#search-close:hover{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
+#search-body{padding:8px}
+/* v8.10: 入力欄が縮まずに ▲▼ がパネルの外へはみ出していたので min-width を外す（flexの既定は縮まない） */
+#search-body input{min-width:0}
+/* v8.10: .tbtn は暗いツールバー向けの淡い色で、白いパネルの上では読みにくかったので濃くする */
+#search-body .tbtn{color:#475569;border-color:#e2e8f0}
+#search-body .tbtn:hover{background:#e2e8f0;color:#0f172a}
+/* v8.10: メニューバーを隠している間だけ出る再表示ボタン（画面右下に常駐） */
+#btn-show-toolbar{position:fixed;right:14px;bottom:14px;z-index:110;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;box-shadow:0 4px 14px rgba(15,23,42,.28)}
+#btn-show-toolbar:hover{background:#334155;color:#fff}
 #lane-choice{position:fixed;z-index:1000;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:10px 12px;display:flex;flex-direction:column;gap:5px;min-width:120px}
 #lane-choice .lc-title{font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px}
 #lane-choice button{padding:5px 10px;border-radius:4px;border:1.5px solid #e2e8f0;cursor:pointer;font-size:12px;color:#1e293b;text-align:left;transition:all .1s}
@@ -303,8 +324,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div id="toolbar">
   <button class="tbtn on" id="btn-select" onclick="setMode('select')">▶ 選択</button>
   <button class="tbtn" id="btn-connect" onclick="setMode('connect')">→ 接続</button>
-  <!-- v8.10: ハンドツール（パン専用）。押すとパレットのシェイプ選択が外れ、ドラッグで画面が動くだけになる -->
-  <button class="tbtn" id="btn-hand" onclick="setMode('hand')" title="ハンドツール: ドラッグで画面を移動（シェイプは配置・選択されません）"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5 8.4V3.6a1 1 0 0 1 2 0v3.2m0-.4V2.9a1 1 0 0 1 2 0v3.5m0-.2V3.4a1 1 0 0 1 2 0v4m0-1.1a1 1 0 0 1 2 0v4.3c0 2.3-1.7 3.9-4 3.9-2.4 0-3.4-1-4.3-2.2L3.4 10c-.5-.7-.3-1.4.3-1.8.5-.3 1.1-.2 1.5.2l.8.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <!-- v8.10: ハンドツール。押すとパレットのシェイプ選択が外れ、余白のドラッグで画面が動く
+       v8.10: シェイプはドラッグで移動・ダブルクリックで文字編集ができる（配置・接続はしない） -->
+  <button class="tbtn" id="btn-hand" onclick="setMode('hand')" title="ハンドツール: 余白のドラッグで画面を移動／シェイプは移動・ダブルクリック編集のみ（配置・接続はしません）"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5 8.4V3.6a1 1 0 0 1 2 0v3.2m0-.4V2.9a1 1 0 0 1 2 0v3.5m0-.2V3.4a1 1 0 0 1 2 0v4m0-1.1a1 1 0 0 1 2 0v4.3c0 2.3-1.7 3.9-4 3.9-2.4 0-3.4-1-4.3-2.2L3.4 10c-.5-.7-.3-1.4.3-1.8.5-.3 1.1-.2 1.5.2l.8.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div class="sep"></div>
   <button class="tbtn" onclick="undo()">↩ 元に戻す</button>
   <button class="tbtn" onclick="redo()">↪ やり直す</button>
@@ -389,6 +411,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <button class="tbtn" onclick="openText2Diagram()" title="テキスト（Mermaid記法）から作図">📝 テキスト作図</button>
   <div style="flex:1"></div>
   <span style="font-size:11px;color:#475569">Dblクリック:テキスト編集 / 右クリック:削除</span>
+  <!-- v8.10: メニューバーを隠す（一番右下）。戻すときは画面右下の「☰ メニューを表示」から -->
+  <button class="tbtn" id="btn-hide-toolbar" onclick="toggleToolbar()" title="メニューバーを隠して図を広く使う（右下のボタンで戻せます）">▲ メニューを隠す</button>
 </div>
 
 <div id="main">
@@ -557,8 +581,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </div>
 <div id="hint"></div>
 
-<!-- 検索・置換パネル（Ctrl+F）A-2 v4.15 -->
-<div id="search-panel" style="display:none;position:fixed;top:96px;right:18px;z-index:50;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 6px 24px rgba(15,23,42,.18);padding:8px;width:300px;font-size:12px">
+<!-- 検索・置換パネル（Ctrl+F）A-2 v4.15
+     v8.10: 見出し帯を追加。帯を掴めばドラッグで移動でき、右上の ✕ で閉じられる。
+            閉じるボタンは検索欄の列から見出し帯の右上へ移した（列が詰まって見分けにくかったため）。 -->
+<div id="search-panel" style="display:none;position:fixed;top:96px;right:18px;z-index:50;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 6px 24px rgba(15,23,42,.18);width:300px;font-size:12px">
+  <div id="search-head" onmousedown="searchDragStart(event)" title="ドラッグで移動">
+    <span class="grip">⠿</span>
+    <span class="ttl">検索・置換</span>
+    <button id="search-close" onclick="closeSearch()" title="閉じる (Esc)">✕</button>
+  </div>
+  <div id="search-body">
   <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
     <input id="search-input" type="text" placeholder="検索…" autocomplete="off"
       oninput="searchUpdate()" onkeydown="searchKey(event)"
@@ -566,7 +598,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <span id="search-count" style="min-width:42px;text-align:center;color:#64748b;font-size:11px">0 / 0</span>
     <button class="tbtn" onclick="searchNav(-1)" title="前へ (Shift+Enter)">▲</button>
     <button class="tbtn" onclick="searchNav(1)" title="次へ (Enter)">▼</button>
-    <button class="tbtn" onclick="closeSearch()" title="閉じる (Esc)">✕</button>
   </div>
   <div style="display:flex;align-items:center;gap:5px">
     <input id="replace-input" type="text" placeholder="置換後…" autocomplete="off"
@@ -575,7 +606,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="tbtn" onclick="replaceCurrent()" title="現在の1件を置換">置換</button>
     <button class="tbtn" onclick="replaceAll()" title="すべて置換">全置換</button>
   </div>
+  </div>
 </div>
+
+<!-- v8.10: メニューバーを隠している間だけ出る再表示ボタン（画面右下） -->
+<button id="btn-show-toolbar" onclick="toggleToolbar()" title="メニューバーを再表示" style="display:none">☰ メニューを表示</button>
 
 <!-- v8.03: マインドマップ テキスト出力モーダル -->
 <div id="mindexp-modal" style="display:none;position:fixed;inset:0;z-index:60">
@@ -2737,7 +2772,10 @@ function ungroupSel(){
 }
 
 // ── テキスト揃え（左/中/右）（D-5 v4.28）──
-// 選択シェイプに textAlign を設定。主ラベル（縦モード）と note/state_detail のタイトルに反映。
+// 選択シェイプに textAlign を設定。
+// v8.10: 反映先を広げた。従来は「横書きの汎用シェイプ本文」と「付箋のタイトル（縦モード）」
+//   だけに効いていたため、マインドマップ・樹状図・UML・グループ枠などでボタンを押しても
+//   何も起きなかった。下の alignH / alignVCy を各描画へ通して、本文の揃えを共通化する。
 function setTextAlign(align){
   const ids=selWithGroup(S.sel).filter(id=>S.nodes.some(n=>n.id===id));
   if(!ids.length){ hint('テキストを揃えるシェイプを選択してください'); return; }
@@ -2745,6 +2783,22 @@ function setTextAlign(align){
   ids.forEach(id=>{ const n=S.nodes.find(x=>x.id===id); if(n){ n.textAlign=align; cnt++; } });
   snap(); render();
   hint(`${cnt}個のシェイプのテキストを${align==='left'?'左':align==='right'?'右':'中央'}揃えにしました`);
+}
+// v8.10: 文字揃えの共通ヘルパ。
+//   横書き＝枠 [x0, x0+w] の中で左端／中央／右端へ寄せる（pad は左右の余白）。
+//   縦書き＝行が上から下へ流れるので、左揃え＝上（行頭）／右揃え＝下（行末）と読み替える。
+//     縦書きに「左右」はないが、横書きを90度倒したときに対応するのは上下なので同じボタンで扱う。
+function nodeAlign(n){ return (n&&n.textAlign)||'center'; }
+function alignH(al,x0,w,pad){
+  if(al==='left') return {x:x0+pad,anchor:'start'};
+  if(al==='right')return {x:x0+w-pad,anchor:'end'};
+  return {x:x0+w/2,anchor:'middle'};
+}
+// 縦書き用: 総高 th の文字列を枠 [y0, y0+h] の中で寄せたときの中心Y（中央揃えは呼び出し側の cy を使う）
+function alignVCy(al,y0,h,th,pad){
+  if(al==='left') return y0+pad+th/2;
+  if(al==='right')return y0+h-pad-th/2;
+  return y0+h/2;
 }
 // ── Edges ──
 function addEdge(f,t,opts={}){
@@ -4487,19 +4541,23 @@ function renderGanttTaskBar(gg,n,sel){
     else { fs=12; inside=false; }
   }
   t.setAttribute('font-size',String(fs));
-  t.setAttribute('text-anchor','start');
+  // v8.10: バー内に収まるラベルは文字揃えに従う（既定は従来どおり左詰め）。
+  //   収まらずバーの上へ出す場合は、左端に合わせないと隣のバーの文字と重なるので従来のまま。
+  const _ba=(inside&&n.textAlign)?alignH(n.textAlign,_lx,_lw,8):{x:(inside?_lx+8:_lx),anchor:'start'};
+  t.setAttribute('text-anchor',_ba.anchor);
   if(inside){
-    t.setAttribute('x', _lx+8); t.setAttribute('y', n.y+n.h/2); t.setAttribute('dominant-baseline','middle');
+    t.setAttribute('x', _ba.x); t.setAttribute('y', n.y+n.h/2); t.setAttribute('dominant-baseline','middle');
   } else {
     // 収まらない場合: シェイプ上に左揃え（バー左端に合わせ、上辺の少し上）
-    t.setAttribute('x', _lx); t.setAttribute('y', n.y-3); t.setAttribute('dominant-baseline','auto');
+    t.setAttribute('x', _ba.x); t.setAttribute('y', n.y-3); t.setAttribute('dominant-baseline','auto');
   }
   // v5.00 ②: 完了日で表示範囲を区切ったとき、右端(SVG_W)からはみ出すバー文字は右詰めに
   //   切り替えて枠内に収める（バー位置・列幅・レイアウトは変えない＝変えるのは文字だけ）。
   if(label && (S.gantt.endDate||ganttWrapOn())){   // v8.08追補③: 折り返しONは完了日の指定に関係なく段の右端で収める
-    const startX=inside? _lx+8 : _lx;
     const approxW=label.length*fs;            // 全角想定の概算幅
-    if(startX+approxW > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
+    // 揃えに応じた文字列の右端（右詰めなら基準Xがそのまま右端・中央なら半分ぶん先）
+    const rightX=_ba.anchor==='end'?_ba.x:(_ba.anchor==='middle'?_ba.x+approxW/2:_ba.x+approxW);
+    if(rightX > ganttRightEdge()){ t.setAttribute('text-anchor','end'); t.setAttribute('x', ganttRightEdge()-4); }
   }
   t.textContent=label; grp.appendChild(t);
   attachGanttNodeHandlers(grp,n);
@@ -4802,6 +4860,7 @@ function renderGanttEdges(){
 }
 // ノードハンドラ（選択＋水平ドラッグ移動）
 function attachGanttNodeHandlers(grp,n){
+  grp.setAttribute('data-nid',n.id);   // v8.10: ハンドツール中に触れるシェイプの目印（汎用ノードと揃える）
   grp.style.cursor=S.mode==='connect'?'crosshair':'grab';
   grp.addEventListener('mousedown',ev=>{ev.stopPropagation();ganttNodeMD(ev,n.id);});
   grp.addEventListener('dblclick',ev=>{ev.stopPropagation();
@@ -5533,8 +5592,11 @@ function renderMindNodes(hidden,dim){
     grp.appendChild(mindShapeEl(n,outAttrs,0));
     if(isNote)grp.appendChild(e('path',{d:`M${n.x+n.w-MIND_NOTE_FOLD},${n.y} v${MIND_NOTE_FOLD} h${MIND_NOTE_FOLD} Z`,
       fill:ganttLighten(nbc.stroke,0.45),stroke:nbc.stroke,'stroke-width':1.1,'pointer-events':'none'}));   // v8.05: 付箋の折れ角＝枝色系
-    const fs=mindNodeFont(n), tcx=n.x+(n.w-(isAction?MIND_ARROW_TIP:0))/2;
-    const t=e('text',{x:tcx,y:n.y+n.h/2,'text-anchor':'middle','dominant-baseline':'middle',
+    // v8.10: 文字揃えを反映（従来はマインドマップだけ常に中央固定で、揃えのボタンが効かなかった）。
+    //   矢印タグは先端ぶんを除いた矩形部を枠とし、左右の余白は自動リサイズと同じ pad の半分に合わせる。
+    const fs=mindNodeFont(n), tw=n.w-(isAction?MIND_ARROW_TIP:0);
+    const _ma=alignH(nodeAlign(n),n.x,tw,mindImpSize(n).pad/2), tcx=_ma.x;
+    const t=e('text',{x:tcx,y:n.y+n.h/2,'text-anchor':_ma.anchor,'dominant-baseline':'middle',
       'font-size':String(fs),'font-weight':isRoot?'700':(n.importance==='high'?'600':'500'),
       fill:isRoot?'#f8fafc':(isNote?nbc.stroke:'#1e293b'),'pointer-events':'none'});
     // 追補: Alt+Enterの改行を複数行(tspan)で表示＝ライブSVGなのでPNG/SVG/印刷にも反映
@@ -5619,7 +5681,7 @@ function mindEditNode(id){
   // 追補: 常に複数行エディタ（Alt+Enterで改行）。表示高さは最低46pxを確保
   // v8.10: 入力中も大きさを追従（calcMindNodeSize は renderMindmap の冒頭で毎回走る）
   openSvgEditor(n.x,n.y,Math.max(n.w,90),Math.max(n.h,46),n.text||'',v=>{n.text=v.trim();snap();render();},'名称',
-    {multiline:true,onInput:(v,fo)=>{
+    {multiline:true,align:n.textAlign||'center',onInput:(v,fo)=>{   // v8.10: 編集欄も同じ揃えで表示
       n.text=v; render();
       fo.setAttribute('x',n.x); fo.setAttribute('y',n.y);
       fo.setAttribute('width',Math.max(n.w,90)); fo.setAttribute('height',Math.max(n.h,46));
@@ -6628,7 +6690,8 @@ function drawReconnectGhost(fixedPt,pt,candId,pin){
 }
 // ── 縦書きテキスト描画ヘルパー ──
 // 横モード時: 1文字ずつ縦に並べる。縦モード時: 通常の横書き。
-function appendVText(parent,text,cx,cy,fontSize,attrs){
+// v8.10: vbox={al,y0,h,pad} を渡すと縦書きの行を上／中央／下へ寄せる（左揃え＝上・右揃え＝下）
+function appendVText(parent,text,cx,cy,fontSize,attrs,vbox){
   attrs=attrs||{};
   const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
   if(isV()){
@@ -6638,7 +6701,8 @@ function appendVText(parent,text,cx,cy,fontSize,attrs){
     const chars=[...text];
     const charH=fontSize*1.5;
     const totalH=chars.length*charH;
-    const startY=cy-totalH/2+charH/2;
+    const acy=(vbox&&vbox.al&&vbox.al!=='center')?alignVCy(vbox.al,vbox.y0,vbox.h,totalH,vbox.pad):cy;
+    const startY=acy-totalH/2+charH/2;
     chars.forEach((ch,i)=>{
       const t=e('text',{x:cx,y:startY+i*charH,...baseAttrs});
       t.textContent=ch; parent.appendChild(t);
@@ -6648,7 +6712,8 @@ function appendVText(parent,text,cx,cy,fontSize,attrs){
 
 // v8.10: 縦書きラベルの列折り返し。1列に収まらないぶんを次の列（左方向）へ送る。
 //   列の並びは日本語の縦書きに合わせて右から左。列幅は AUTO_LINE_H（横書きの行高と同じ）。
-function appendVTextWrap(parent,text,cx,cy,fontSize,maxColH,attrs){
+// v8.10: vbox={al,y0,h,pad} を渡すと各列を上／中央／下へ寄せる（縦書きの行頭／行末揃え）
+function appendVTextWrap(parent,text,cx,cy,fontSize,maxColH,attrs,vbox){
   attrs=attrs||{};
   const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
   const charH=fontSize*1.5, colW=VTEXT_COL;
@@ -6656,7 +6721,9 @@ function appendVTextWrap(parent,text,cx,cy,fontSize,maxColH,attrs){
   const startX=cx+(cols.length-1)*colW/2;   // 右端の列から始めて左へ送る
   cols.forEach((col,ci)=>{
     const chars=[...col];
-    const startY=cy-chars.length*charH/2+charH/2;
+    const th=chars.length*charH;
+    const acy=(vbox&&vbox.al&&vbox.al!=='center')?alignVCy(vbox.al,vbox.y0,vbox.h,th,vbox.pad):cy;
+    const startY=acy-th/2+charH/2;
     chars.forEach((ch,i)=>{
       const t=e('text',{x:startX-ci*colW,y:startY+i*charH,...baseAttrs});
       t.textContent=ch; parent.appendChild(t);
@@ -7032,25 +7099,27 @@ function renderNodes(){
     } else if(n.sections&&n.sections.length){
       const offs=sectionOffsets(n);
       if(tV()){   // v7.00: 組織図は横向きでも横書き（職制一覧表の形）
+        // v8.10: 見出し段・副見出し段・一覧行に文字揃えを反映（ミニ表のセルは列の揃えが優先なので対象外）
+        const _sa=alignH(nodeAlign(n),n.x,n.w,8);
         n.sections.forEach((sec,si)=>{
           const secH=sectionSize(sec,n.type==='org_node');
           if(sec.style==='header'){
             const stereo=isUmlShape(n.type)?(sec.stereotype==='interface'?'«interface»':(n.abstract?'«abstract»':'')):'';
             if(stereo){
-              const st1=e('text',{x:n.x+n.w/2,y:offs[si]+secH/2-7,'text-anchor':'middle','dominant-baseline':'middle','font-size':'10','font-style':'italic',fill:'#64748b','pointer-events':'none'});
+              const st1=e('text',{x:_sa.x,y:offs[si]+secH/2-7,'text-anchor':_sa.anchor,'dominant-baseline':'middle','font-size':'10','font-style':'italic',fill:'#64748b','pointer-events':'none'});
               st1.textContent=stereo; ng.appendChild(st1);
-              const t=e('text',{x:n.x+n.w/2,y:offs[si]+secH/2+7,'text-anchor':'middle','dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
+              const t=e('text',{x:_sa.x,y:offs[si]+secH/2+7,'text-anchor':_sa.anchor,'dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
               if(n.abstract)t.setAttribute('font-style','italic');
               t.textContent=sec.text||''; ng.appendChild(t);
             } else {
               const hdrY=(n.type==='org_node'&&n.sections.length===1)?n.y+n.h/2:offs[si]+secH/2;
               const isPlain=n.type==='org_node'&&n.sections.length===1;
-              const t=e('text',{x:n.x+n.w/2,y:hdrY,'text-anchor':'middle','dominant-baseline':'middle','font-size':isPlain?'11':'12','font-weight':isPlain?'normal':'600',fill:isPlain?'#475569':'#1e293b','pointer-events':'none'});
+              const t=e('text',{x:_sa.x,y:hdrY,'text-anchor':_sa.anchor,'dominant-baseline':'middle','font-size':isPlain?'11':'12','font-weight':isPlain?'normal':'600',fill:isPlain?'#475569':'#1e293b','pointer-events':'none'});
               if(isUmlShape(n.type)&&n.abstract)t.setAttribute('font-style','italic');
               t.textContent=sec.text||''; ng.appendChild(t);
             }
           } else if(sec.style==='sub'){
-            const t=e('text',{x:n.x+n.w/2,y:offs[si]+secH/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
+            const t=e('text',{x:_sa.x,y:offs[si]+secH/2,'text-anchor':_sa.anchor,'dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
             t.textContent=sec.text||''; ng.appendChild(t);
           } else if(sec.style==='table'){
             // v7.02: 行×列ミニ表（タイトル段の下の表部。1列1行＝旧「氏名」段と同じ見た目）
@@ -7079,9 +7148,11 @@ function renderNodes(){
               }
             }
           } else if(sec.rows){
+            // v8.10: UMLの属性・操作行は既定が左詰め。揃えを指定したときだけ従う（未指定は従来のまま）
+            const _ra=n.textAlign?_sa:{x:n.x+8,anchor:'start'};
             sec.rows.forEach((row,ri)=>{
-              const t=e('text',{x:n.x+8,y:offs[si]+SECT_PAD+ri*SECT_ROW_H+SECT_ROW_H/2,
-                'text-anchor':'start','dominant-baseline':'middle','font-size':'11',fill:'#374151','pointer-events':'none'});
+              const t=e('text',{x:_ra.x,y:offs[si]+SECT_PAD+ri*SECT_ROW_H+SECT_ROW_H/2,
+                'text-anchor':_ra.anchor,'dominant-baseline':'middle','font-size':'11',fill:'#374151','pointer-events':'none'});
               t.textContent=row; ng.appendChild(t);
             });
           }
@@ -7094,12 +7165,13 @@ function renderNodes(){
           ng.appendChild(ha);
         });
       } else {
+        const _sv={al:nodeAlign(n),y0:n.y,h:n.h,pad:8};   // v8.10: 縦書きの揃え（左＝上・右＝下）
         n.sections.forEach((sec,si)=>{
           const secW=sectionSize(sec);
           if(sec.style==='header'){
-            appendVText(ng,sec.text||'',offs[si]+secW/2,n.y+n.h/2,12,{'font-weight':'600'});
+            appendVText(ng,sec.text||'',offs[si]+secW/2,n.y+n.h/2,12,{'font-weight':'600'},_sv);
           } else if(sec.style==='sub'){
-            appendVText(ng,sec.text||'',offs[si]+secW/2,n.y+n.h/2,11,{fill:'#475569'});
+            appendVText(ng,sec.text||'',offs[si]+secW/2,n.y+n.h/2,11,{fill:'#475569'},_sv);
           } else if(sec.rows){
             sec.rows.forEach((row,ri)=>{
               appendVText(ng,row,offs[si]+SECT_PAD+ri*SECT_ROW_H+SECT_ROW_H/2,n.y+n.h/2,11,{fill:'#374151'});
@@ -7139,7 +7211,7 @@ function renderNodes(){
         // 横モード: タイトル左（縦書き）、説明右（縦書き）
         const divX=n.x+NOTE_TITLE_H;
         const titleCx=n.x+NOTE_TITLE_H/2;
-        appendVText(ng,n.text,titleCx,cy,12);
+        appendVText(ng,n.text,titleCx,cy,12,null,{al:nodeAlign(n),y0:n.y,h:n.h,pad:8});   // v8.10: 揃え（縦書きは上／下）
         if(n.note){
           const chars=[...(n.note||'').replace(/\n/g,'')];
           const charH=15;
@@ -7169,11 +7241,14 @@ function renderNodes(){
       }
     } else if(n.type==='org_group'||n.type==='group_box'){
       // v7.02: タイトル帯の中に表示（帯＝枠上端22px）
-      const t=e('text',{x:n.x+10,y:n.y+11,'text-anchor':'start','dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#334155','pointer-events':'none'});
+      // v8.10: 揃えを反映。既定は従来どおり左詰め（帯の見出しは左が読みやすいため）
+      const _ga=n.textAlign?alignH(n.textAlign,n.x,n.w,10):{x:n.x+10,anchor:'start'};
+      const t=e('text',{x:_ga.x,y:n.y+11,'text-anchor':_ga.anchor,'dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#334155','pointer-events':'none'});
       t.textContent=n.text; ng.appendChild(t);
     } else if(n.type==='lifeline'){
-      // ライフラインヘッダーのテキスト（中央配置）
-      const t=e('text',{x:n.x+n.w/2,y:n.y+n.h/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
+      // ライフラインヘッダーのテキスト（中央配置）／ v8.10: 揃えを反映
+      const _la=alignH(nodeAlign(n),n.x,n.w,8);
+      const t=e('text',{x:_la.x,y:n.y+n.h/2,'text-anchor':_la.anchor,'dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
       t.textContent=n.text; ng.appendChild(t);
     } else if(n.type==='activation'){
       // 活性区間: リサイズハンドル（上下）
@@ -7188,7 +7263,9 @@ function renderNodes(){
       }
     } else if(n.type==='event'||n.type==='gateway_xor'||n.type==='gateway_par'){
       if(n.text){
-        const lt=e('text',{x:n.x+n.w/2,y:n.y+n.h+14,'text-anchor':'middle','dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
+        // v8.10: シェイプ下の外付けラベルにも揃えを反映（シェイプの左端／中央／右端に合わせる）
+        const _ea=alignH(nodeAlign(n),n.x,n.w,0);
+        const lt=e('text',{x:_ea.x,y:n.y+n.h+14,'text-anchor':_ea.anchor,'dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
         lt.textContent=n.text; ng.appendChild(lt);
       }
     } else {
@@ -7205,9 +7282,11 @@ function renderNodes(){
           t.textContent=ln; ng.appendChild(t);
         });
       } else if(autoFitTarget(n)){
-        appendVTextWrap(ng,n.text,cx,textCy,12,Math.max(24,n.h-autoFitPad(n)));   // v8.10: 縦書きも列で折り返す
+        // v8.10: 縦書きも列で折り返す ／ v8.10: 揃え（縦書きは上＝行頭・下＝行末）を反映
+        appendVTextWrap(ng,n.text,cx,textCy,12,Math.max(24,n.h-autoFitPad(n)),null,
+          {al:nodeAlign(n),y0:n.y,h:n.h,pad:autoFitPad(n)/2});
       } else {
-        appendVText(ng,n.text,cx,textCy,12);
+        appendVText(ng,n.text,cx,textCy,12,null,{al:nodeAlign(n),y0:n.y,h:n.h,pad:8});
       }
     }
     if(sel&&S.mode==='connect'){
@@ -7225,7 +7304,8 @@ function renderNodes(){
         ng.appendChild(e('circle',{cx,cy,r:6,fill:'#2563eb',opacity:.7,'pointer-events':'none'}));
       }
     }
-    if(n.type==='crosslane'&&S.mode!=='connect'){
+    // v8.10: 幅調整ハンドルは選択モードのみ（ハンドツール中は「移動まで」に留める）
+    if(n.type==='crosslane'&&S.mode==='select'){
       const hw=8;
       if(isV()){
         const lHandle=e('rect',{x:n.x,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
@@ -7339,8 +7419,9 @@ function setMode(m){
   document.getElementById('btn-'+m)?.classList.add('on');
   document.getElementById('diagram-svg').setAttribute('class',m==='connect'?'cx':(m==='hand'?'hand':''));
   if(m==='connect'){clearPal();hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)')}
-  // v8.10: ハンドツールはパン専用。パレットのシェイプ選択を解除し、配置・選択・接続をすべて無効にする
-  else if(m==='hand'){clearPal();hint('ハンドツール: ドラッグで画面を移動（Escまたは「▶ 選択」で戻る）')}
+  // v8.10: ハンドツールはパレットのシェイプ選択を解除し、配置・接続を無効にする
+  // v8.10: シェイプの移動とダブルクリック編集だけは残す
+  else if(m==='hand'){clearPal();hint('ハンドツール: 余白のドラッグで画面を移動／シェイプはドラッグで移動・ダブルクリックで文字編集（Escまたは「▶ 選択」で戻る）')}
   else hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
   render();
 }
@@ -7778,22 +7859,40 @@ function nodeMD(ev,nid){
   S_didDrag=false;
 }
 
-// ── v8.10: ハンドツール（パン専用）──
+// ── v8.10: ハンドツール ──
 //   #canvas-wrap のキャプチャフェーズで拾うので、SVG やノード <g> のハンドラより先に走る。
-//   ここで stopPropagation すれば、配置・選択・接続・ダブルクリック編集を個別にガードしなくても
-//   すべて止まる。画面移動は #canvas-wrap のネイティブスクロールをそのまま動かす（ズーム非依存）。
+//   ここで stopPropagation すれば、配置・選択・接続を個別にガードしなくてもすべて止まる。
+//   画面移動は #canvas-wrap のネイティブスクロールをそのまま動かす（ズーム非依存）。
+//
+// v8.10: シェイプの上だけは握りつぶさず、通常どおりのハンドラへ通す。
+//   ＝ハンドツール中でもシェイプは掴んで動かせ、ダブルクリックで文字を編集できる。
+//   通すのはシェイプ本体 <g data-nid> と文字編集欄 #svg-editor の中だけ。余白・接続線・
+//   レーン見出しは従来どおりパンになる。移動より先の操作（リサイズ・接続・右クリック削除）は
+//   通さない＝各ハンドルは選択モードでしか描かず、contextmenu はここで握りつぶす。
 let panState=null;
+function handPassThrough(t){
+  return !!(t&&t.closest&&(t.closest('[data-nid]')||t.closest('#svg-editor')));
+}
 function initHandTool(){
   const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
   wrap.addEventListener('mousedown',ev=>{
     if(S.mode!=='hand'||ev.button!==0)return;
+    if(handPassThrough(ev.target))return;   // v8.10: シェイプ／編集欄の上は通常の操作へ委ねる
+    // v8.10: 文字編集中に余白を押したら確定するだけ（画面は動かさない）。選択モードの
+    //   「余白クリックは確定だけ」(v8.10⑦) と同じ挙動に揃える。
+    if(closeSvgEditor())return;
     ev.preventDefault(); ev.stopPropagation();
     panState={sx:ev.clientX,sy:ev.clientY,sl:wrap.scrollLeft,st:wrap.scrollTop};
     document.getElementById('diagram-svg').classList.add('grabbing');
   },true);
-  // 押した後に発生するクリック系も握りつぶす（配置・選択・編集を起こさない）
+  // 押した後に発生するクリック系も握りつぶす（配置・余白ダブルクリックでの箱追加を起こさない）。
+  // シェイプ上の click（選択）と dblclick（文字編集）だけは通す。右クリック削除は通さない。
   ['click','dblclick','contextmenu'].forEach(t=>{
-    wrap.addEventListener(t,ev=>{ if(S.mode==='hand'){ev.preventDefault();ev.stopPropagation();} },true);
+    wrap.addEventListener(t,ev=>{
+      if(S.mode!=='hand')return;
+      if(t!=='contextmenu'&&handPassThrough(ev.target))return;
+      ev.preventDefault(); ev.stopPropagation();
+    },true);
   });
 }
 document.addEventListener('mousemove',ev=>{
@@ -8605,7 +8704,8 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
   if(!isMulti) inp.type='text';
   inp.style.cssText=`width:100%;height:100%;border:2px solid #3b82f6;border-radius:4px;`+
     `padding:${isMulti?'4px 6px':'2px 6px'};font:${isMulti?'12':'11'}px 'Segoe UI',sans-serif;`+
-    `text-align:center;resize:none;outline:none;background:#ffffff;box-sizing:border-box;`;
+    // v8.10: 編集欄の文字寄せもシェイプの揃えに合わせる（打っている間と確定後で位置が変わらないように）
+    `text-align:${(opts&&opts.align)||'center'};resize:none;outline:none;background:#ffffff;box-sizing:border-box;`;
   inp.value=initVal;
   if(placeholder)inp.placeholder=placeholder;
   fo.appendChild(inp);
@@ -8647,8 +8747,9 @@ function editText(nid){
   const n=S.nodes.find(n=>n.id===nid);
   if(!n)return;
   S.sel=[nid]; render();
+  const _al=n.textAlign||'center';   // v8.10: 編集欄も同じ揃えで表示
   if((n.type==='note'||n.type==='state_detail')&&!isV()){
-    openSvgEditor(n.x,n.y,NOTE_TITLE_H,n.h,n.text,v=>{n.text=v;snap();render();});
+    openSvgEditor(n.x,n.y,NOTE_TITLE_H,n.h,n.text,v=>{n.text=v;snap();render();},undefined,{align:_al});
   } else {
     const h=(n.type==='note'||n.type==='state_detail')?NOTE_TITLE_H:n.h;
     // v8.10: 入力のたびに本文を反映して再描画し、育った箱に編集欄を合わせる（履歴は確定時のみ）
@@ -8656,8 +8757,8 @@ function editText(nid){
       n.text=v; render();
       fo.setAttribute('x',n.x); fo.setAttribute('y',n.y);
       fo.setAttribute('width',n.w); fo.setAttribute('height',n.h);
-    }}:undefined;
-    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();},undefined,grow);
+    }}:{};
+    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();},undefined,{...grow,align:_al});
   }
 }
 function editNote(nid){
@@ -9756,6 +9857,37 @@ function openSearch(){
 function closeSearch(){
   document.getElementById('search-panel').style.display='none';
   _searchMatches=[]; _searchIdx=-1; render(); clearGuides();   // 強調枠を消す
+}
+// ── v8.10: 検索パネルの移動（見出し帯をドラッグ）──
+//   初期位置は right 指定なので、掴んだ時点で left/top 指定へ切り替えてから動かす。
+//   置いた位置は開き直しても保つ（探しながら図を見たい場所へ寄せられるようにするため）。
+let searchDragState=null;
+function searchDragStart(ev){
+  if(ev.button!==0||ev.target.closest('#search-close'))return;
+  const p=document.getElementById('search-panel'), r=p.getBoundingClientRect();
+  p.style.left=r.left+'px'; p.style.top=r.top+'px'; p.style.right='auto';
+  searchDragState={dx:ev.clientX-r.left,dy:ev.clientY-r.top,w:r.width,h:r.height};
+  ev.preventDefault();
+}
+document.addEventListener('mousemove',ev=>{
+  if(!searchDragState)return;
+  const p=document.getElementById('search-panel'), s=searchDragState;
+  // 画面外へ出して掴めなくならないよう、四辺で止める
+  p.style.left=Math.max(0,Math.min(window.innerWidth -s.w,ev.clientX-s.dx))+'px';
+  p.style.top =Math.max(0,Math.min(window.innerHeight-s.h,ev.clientY-s.dy))+'px';
+});
+document.addEventListener('mouseup',()=>{ searchDragState=null; });
+
+// ── v8.10: メニューバー（ツールバー）の表示切替 ──
+//   隠すと図の表示領域がツールバーのぶんだけ広がる。戻すボタンは画面右下に常駐させ、
+//   隠している間だけ出す（隠したことに気づけないと戻せなくなるため）。
+//   図の見出し（アプリ名・図種）は残す＝図種の切替はここからしか行えないため。
+function toggleToolbar(){
+  const tb=document.getElementById('toolbar'), btn=document.getElementById('btn-show-toolbar');
+  const hidden=(tb.style.display==='none');
+  tb.style.display=hidden?'':'none';
+  btn.style.display=hidden?'none':'block';
+  hint(hidden?'':'メニューバーを隠しました（右下の「☰ メニューを表示」で戻せます）');
 }
 function replaceCurrent(){
   if(_searchIdx<0||!_searchMatches.length||!_searchQuery)return;

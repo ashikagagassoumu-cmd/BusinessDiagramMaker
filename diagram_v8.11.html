@@ -18,7 +18,7 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #dtype-menu .dm-item .dm-check{width:16px;text-align:center;font-size:11px}
 /* v7.05: ツールバーは折り返し可＝ウインドウ幅が足りない時は自動で2段・3段になり、常に全ボタンが見える
    （最大化時は従来どおり1段・min-height 46px で見た目不変） */
-/* v8.11: 右端に「メニューを隠す」ボタンぶんの余白を確保する（padding-right）。
+/* v8.10: 右端に「メニューを隠す」ボタンぶんの余白を確保する（padding-right）。
    ボタンは絶対配置でバーの右下角に固定＝ボタンが折り返しに巻き込まれて左端へ回るのを防ぐ。 */
 #toolbar{background:#1e293b;color:#f1f5f9;padding:5px 128px 5px 12px;min-height:46px;display:flex;flex-wrap:wrap;align-items:center;align-content:center;gap:4px 6px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.3);position:relative}
 #btn-hide-toolbar{position:absolute;right:10px;bottom:4px}
@@ -83,31 +83,80 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .lr.drop-after{box-shadow:0 2px 0 #2563eb}
 
 #canvas-wrap{flex:1;overflow:auto;background:#dde3ea;position:relative}
-#diagram-svg{display:block;cursor:default;transform-origin:0 0}
+/* v8.11追補: リザーブ領域＝右サイドバー。#sidebar の対称形（#main が flex なので DOM 順どおり右に付く）。
+   一覧は min-height:0 が無いと縦スクロールが成立しない。 */
+#right-sidebar{width:238px;background:#fff;border-left:1px solid #e2e8f0;display:flex;flex-direction:column;flex-shrink:0}
+#mind-reserve-input{padding:8px;border-bottom:1px solid #f1f5f9}
+#mind-reserve-text{width:100%;box-sizing:border-box;font-size:12px;padding:6px 7px;border:1px solid #e2e8f0;border-radius:5px;background:#f9fafb;color:#334155;resize:none;height:48px;font-family:inherit;outline:none}
+#mind-reserve-text:focus{border-color:#93c5fd;background:#fff}
+#mind-reserve-add{width:100%;margin-top:5px;padding:5px;border:1.5px dashed #cbd5e1;border-radius:4px;background:none;color:#64748b;font-size:12px;cursor:pointer}
+#mind-reserve-add:hover{border-color:#3b82f6;color:#3b82f6;background:#eff6ff}
+#mind-reserve-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:7px 6px}
+#mind-reserve-empty{padding:8px 6px;font-size:11px;color:#94a3b8;line-height:1.6}
+.mr-row{display:flex;align-items:center;gap:4px;margin-bottom:5px}
+.mr-shape{flex-shrink:0;cursor:grab;display:block}
+.mr-btns{display:flex;flex-direction:column;gap:2px}
+.mr-btns button{width:26px;height:10px;padding:0;border-radius:3px;background:#f9fafb;border:1px solid #e2e8f0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:0}
+.mr-btns button:hover{border-color:#93c5fd}
+.mr-edit{flex-shrink:0;display:flex;align-items:center;box-sizing:border-box;padding:0 6px}
+.mr-edit input{width:100%;min-width:0;height:22px;font-size:11px;padding:0 5px;border:1px solid #3b82f6;border-radius:4px;background:#fff;color:#1e293b;outline:none}
+/* v8.11追補: ガントの見出し固定はブラウザの position:sticky に任せる。JS でスクロール量ぶん
+   平行移動する方式だと、スクロールの描画より1フレーム遅れて追いつくため見出しがわずかに揺れる。
+   幅0・高さ0の箱を本体SVGの前に置き、中のSVGを絶対配置で重ねる＝レイアウトには影響させない。
+   固定したい軸だけ top / left を指定する（指定しない軸は本体と一緒に流れる＝表計算の枠固定と同じ）。 */
+.gstick{position:sticky;width:0;height:0}
+.gstick>svg{position:absolute;top:0;left:0;display:block;overflow:visible;transform-origin:0 0;pointer-events:none}
+.gstick>svg>g{pointer-events:auto}
+#gstick-lane{z-index:4}   /* top / left は向きに応じて JS が設定する */
+#gstick-left{left:0;z-index:5}
+#gstick-top{top:0;z-index:6}
+#gstick-corner{top:0;left:0;z-index:7}#diagram-svg{display:block;cursor:default;transform-origin:0 0}
 #diagram-svg.cx *,#diagram-svg.cx{cursor:crosshair!important}
 /* v8.10: ハンドツール＝掴む手のカーソル。ドラッグ中は握った手に変える */
 #diagram-svg.hand *,#diagram-svg.hand{cursor:grab!important}
-/* v8.11: シェイプの上だけは「動かせる」ことが分かるカーソルに戻す。
+/* v8.10: シェイプの上だけは「動かせる」ことが分かるカーソルに戻す。
    grabbing より前に置く＝同じ詳細度なので、パン中は握った手が優先される。 */
 #diagram-svg.hand [data-nid],#diagram-svg.hand [data-nid] *{cursor:move!important}
 #diagram-svg.hand.grabbing *,#diagram-svg.hand.grabbing{cursor:grabbing!important}
 
 #hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#e2e8f0;padding:5px 14px;border-radius:20px;font-size:11px;pointer-events:none;white-space:nowrap;z-index:100;display:none}
-/* v8.11: 検索パネルの見出し帯（掴んで移動）と右上の閉じるボタン */
+/* v8.11追補: 保存の結果だけを画面中央に出すトースト。#hint は100箇所以上から呼ばれる常設の
+   ステータス行なので置き換えず併設する（中央＝保存の結果／下段＝従来どおりの詳細）。
+   pointer-events:none ＝中央に不透明な箱を置くので、これが無いとキャンバスの真ん中が押せなくなる。
+   z-index は #confirm-modal(4000) の上・#dtype-menu(9999) の下。 */
+#toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5000;pointer-events:none;max-width:70vw;
+  background:rgba(15,23,42,.92);color:#e2e8f0;border:1px solid rgba(148,163,184,.35);border-radius:10px;
+  padding:13px 26px;font-size:14px;line-height:1.6;text-align:center;opacity:0;transition:opacity .18s ease}
+#toast.show{opacity:1}
+#toast.ng{background:rgba(69,10,10,.94);border-color:#f87171;color:#fee2e2}
+#toast .tsub{display:block;margin-top:7px;font-size:12px;color:#cbd5e1}
+#toast.ng .tsub{color:#fecaca}
+/* v8.10: 検索パネルの見出し帯（掴んで移動）と右上の閉じるボタン */
 #search-head{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 9px;border-bottom:1px solid #e2e8f0;background:#f8fafc;border-radius:7px 7px 0 0;cursor:move;user-select:none}
 #search-head .grip{color:#cbd5e1;font-size:12px;line-height:1}
 #search-head .ttl{flex:1;font-weight:700;color:#334155;font-size:12px}
 #search-close{background:transparent;border:1px solid transparent;color:#64748b;border-radius:5px;cursor:pointer;font-size:12px;line-height:1;padding:3px 8px}
 #search-close:hover{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
 #search-body{padding:8px}
-/* v8.11: 入力欄が縮まずに ▲▼ がパネルの外へはみ出していたので min-width を外す（flexの既定は縮まない） */
+/* v8.10: 入力欄が縮まずに ▲▼ がパネルの外へはみ出していたので min-width を外す（flexの既定は縮まない） */
 #search-body input{min-width:0}
-/* v8.11: .tbtn は暗いツールバー向けの淡い色で、白いパネルの上では読みにくかったので濃くする */
+/* v8.10: .tbtn は暗いツールバー向けの淡い色で、白いパネルの上では読みにくかったので濃くする */
 #search-body .tbtn{color:#475569;border-color:#e2e8f0}
 #search-body .tbtn:hover{background:#e2e8f0;color:#0f172a}
-/* v8.11: メニューバーを隠している間だけ出る再表示ボタン（画面右下に常駐） */
-#btn-show-toolbar{position:fixed;right:14px;bottom:14px;z-index:110;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;box-shadow:0 4px 14px rgba(15,23,42,.28)}
+/* v8.10→v8.11: メニューバーを隠している間だけ出る再表示ボタン。画面右下に浮かせていたが、
+   隠したあと唯一残る見出しバーの右端へ移した＝メニューが「畳まれた先」が一目で分かるため。
+   見出しバーは flex なので margin-left:auto で右端へ寄せる。 */
+#btn-show-toolbar{margin-left:auto;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:400;letter-spacing:0;cursor:pointer;flex-shrink:0}
 #btn-show-toolbar:hover{background:#334155;color:#fff}
+/* v8.11: ガント見出し欄の開閉ボタン。SVGではなくHTMLの重ねボタンにしたのは2つ理由がある。
+   ①見出し欄はキャンバス幅いっぱいなので、SVGに描くと「右端」が画面の外になり押せない。
+   ②PDF・画像の書き出しは見出しレイヤをそのまま取り込むので、SVGに描くと出力に操作ボタンが載る。
+   置き場所は見出しレイヤと同じ position:sticky の重ね箱。こうすると、見出しを固定している
+   ときはボタンも画面上端に留まり、固定しない折り返し表示中は見出しと一緒にスクロールする
+   ＝どちらでもボタンが見出しから離れない。左右位置だけ layoutGanttHeadButtons が合わせる。 */
+#gstick-headbtn>button{position:absolute;white-space:nowrap;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;box-shadow:0 1px 4px rgba(15,23,42,.12)}
+#btn-gh-hide:hover,#btn-gh-show:hover{background:#e2e8f0;color:#0f172a}
+#gstick-headbtn{left:0;z-index:8}
 #lane-choice{position:fixed;z-index:1000;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:10px 12px;display:flex;flex-direction:column;gap:5px;min-width:120px}
 #lane-choice .lc-title{font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px}
 #lane-choice button{padding:5px 10px;border-radius:4px;border:1.5px solid #e2e8f0;cursor:pointer;font-size:12px;color:#1e293b;text-align:left;transition:all .1s}
@@ -138,6 +187,22 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 #confirm-no:hover{background:#f1f5f9}
 #confirm-yes{background:#ef4444;color:#fff;border-color:#ef4444}
 #confirm-yes:hover{background:#dc2626}
+/* v8.11追補: 未保存のまま今の図を捨てる操作の前に出す4択。上書き保存／名前を付けて保存／保存しない／
+   キャンセルのどれも起こりうるので、どれも1クリックで選べるよう縦に並べる（横1列だと収まらない）。 */
+#save4-modal{position:fixed;inset:0;z-index:4100;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
+#save4-box{background:#fff;border-radius:14px;padding:24px 26px;max-width:430px;width:90%;box-shadow:0 12px 48px rgba(0,0,0,.28)}
+#save4-msg{font-size:14px;color:#0f172a;line-height:1.75}
+#save4-sub{font-size:12px;color:#64748b;line-height:1.7;margin-top:6px}
+#save4-btns{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+#save4-btns button{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;border:1px solid #cbd5e1;background:#fff;color:#334155}
+#save4-btns button:hover{background:#f1f5f9}
+#save4-over{background:#2563eb;color:#fff;border-color:#2563eb}
+#save4-over:hover{background:#1d4ed8}
+#save4-file{float:right;font-weight:400;font-size:11px;color:#bfdbfe;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#save4-discard{color:#b91c1c;border-color:#fecaca}
+#save4-discard:hover{background:#fef2f2}
+#save4-cancel{background:#f8fafc;color:#475569}
+#save4-cancel:hover{background:#f1f5f9}
 
 /* 新規作成ダイアログ */
 #new-modal{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6)}
@@ -320,12 +385,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   ビジネスダイアグラムメーカー v8.11
   <span class="diagram-type-label" id="dtype-label" onclick="toggleDTypeMenu(event)"></span>
   <div id="dtype-menu" style="display:none"></div>
+  <!-- v8.11: メニューバーを隠している間だけ出る再表示ボタン（このバーの右端） -->
+  <button id="btn-show-toolbar" onclick="toggleToolbar()" title="メニューバーを再表示" style="display:none">☰ メニューを表示</button>
 </div>
 <div id="toolbar">
   <button class="tbtn on" id="btn-select" onclick="setMode('select')">▶ 選択</button>
   <button class="tbtn" id="btn-connect" onclick="setMode('connect')">→ 接続</button>
   <!-- v8.10: ハンドツール。押すとパレットのシェイプ選択が外れ、余白のドラッグで画面が動く
-       v8.11: シェイプはドラッグで移動・ダブルクリックで文字編集ができる（配置・接続はしない） -->
+       v8.10: シェイプはドラッグで移動・ダブルクリックで文字編集ができる（配置・接続はしない） -->
   <button class="tbtn" id="btn-hand" onclick="setMode('hand')" title="ハンドツール: 余白のドラッグで画面を移動／シェイプは移動・ダブルクリック編集のみ（配置・接続はしません）"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5 8.4V3.6a1 1 0 0 1 2 0v3.2m0-.4V2.9a1 1 0 0 1 2 0v3.5m0-.2V3.4a1 1 0 0 1 2 0v4m0-1.1a1 1 0 0 1 2 0v4.3c0 2.3-1.7 3.9-4 3.9-2.4 0-3.4-1-4.3-2.2L3.4 10c-.5-.7-.3-1.4.3-1.8.5-.3 1.1-.2 1.5.2l.8.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div class="sep"></div>
   <button class="tbtn" onclick="undo()">↩ 元に戻す</button>
@@ -411,8 +478,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <button class="tbtn" onclick="openText2Diagram()" title="テキスト（Mermaid記法）から作図">📝 テキスト作図</button>
   <div style="flex:1"></div>
   <span style="font-size:11px;color:#475569">Dblクリック:テキスト編集 / 右クリック:削除</span>
-  <!-- v8.11: メニューバーを隠す（一番右下）。戻すときは画面右下の「☰ メニューを表示」から -->
-  <button class="tbtn" id="btn-hide-toolbar" onclick="toggleToolbar()" title="メニューバーを隠して図を広く使う（右下のボタンで戻せます）">▲ メニューを隠す</button>
+  <!-- v8.10: メニューバーを隠す（一番右下）。戻すときは画面右下の「☰ メニューを表示」から -->
+  <button class="tbtn" id="btn-hide-toolbar" onclick="toggleToolbar()" title="メニューバーを隠して図を広く使う（見出しバー右端のボタンで戻せます）">▲ メニューを隠す</button>
 </div>
 
 <div id="main">
@@ -538,6 +605,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div>
 
   <div id="canvas-wrap">
+    <!-- v8.11: ガントの固定表示レイヤ。左＝タスク名列（横スクロールで固定）／上＝見出し欄＋時間軸ヘッダー
+         （縦スクロールで固定）／角＝左上コーナー（両方向で固定）。左→上→角の順＝重なったら角が最前面。
+         本体SVGの外に出しているのは position:sticky が SVG の中身には効かないため。座標系は本体と
+         同じなので、当たり判定（svgPt は本体SVGの行列で換算）も書き出しもそのまま流用できる。 -->
+    <!-- v8.11追補: レーン見出し（スイムレーン／BPMN）も同じ作りへ。縦モードは上端・横モードは左端に
+         固定するので、どちらの軸を止めるかは向きに応じて JS で top / left を切り替える。 -->
+    <!-- v8.11: ガント見出し欄の開閉ボタン。畳んでいる間も工事名は残し、戻すボタンはその帯の右端に出す。 -->
+    <div id="gstick-headbtn" class="gstick">
+      <button id="btn-gh-hide" onclick="ganttToggleHead()" title="見出しを畳んで図を広く使う（工事名は残ります）" style="display:none">▲ 見出しを隠す</button>
+      <button id="btn-gh-show" onclick="ganttToggleHead()" title="見出しを元に戻す" style="display:none">☰ 見出しを表示</button>
+    </div>
+    <div id="gstick-lane" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-lane-hdr"></g></svg></div>
+    <div id="gstick-left" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-left"></g></svg></div>
+    <div id="gstick-top" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-top"></g></svg></div>
+    <div id="gstick-corner" class="gstick"><svg onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)"><g id="g-gantt-corner"></g></svg></div>
     <svg id="diagram-svg" onmousedown="svgMD(event)" ondblclick="svgDbl(event)" oncontextmenu="svgRC(event)">
       <defs>
         <marker id="arr"  markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#475569"/></marker>
@@ -574,15 +656,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <g id="g-replace-hl" style="pointer-events:none"></g>
       <g id="g-dividers"></g>
       <!-- v8.10: レーン見出しは最前面の独立レイヤに描き、スクロール量ぶん平行移動して固定表示する -->
-      <g id="g-lane-hdr"></g>
+
       <path id="prev-edge" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,4" fill="none" marker-end="url(#arrP)" style="display:none;pointer-events:none"/>
     </svg>
   </div>
+  <!-- v8.11追補: リザーブ領域（マインドマップ専用）。置き場所が決まらない話をここに貯めておく -->
+  <div id="right-sidebar" style="display:none">
+    <div class="ph" style="display:flex;align-items:center;justify-content:space-between">
+      <span>リザーブ</span><span id="mind-reserve-count" style="color:#94a3b8;letter-spacing:0;text-transform:none">0件</span>
+    </div>
+    <div id="mind-reserve-input">
+      <textarea id="mind-reserve-text" rows="2" placeholder="思いついた話を書いて追加" onkeydown="mindReserveKey(event)"></textarea>
+      <button id="mind-reserve-add" type="button" onclick="mindReserveAdd()" title="Enter でも追加できます（Shift+Enter で改行）">＋ 追加</button>
+    </div>
+    <div id="mind-reserve-list"></div>
+  </div>
 </div>
 <div id="hint"></div>
+<div id="toast" role="status" aria-live="polite" style="display:none"></div>
 
 <!-- 検索・置換パネル（Ctrl+F）A-2 v4.15
-     v8.11: 見出し帯を追加。帯を掴めばドラッグで移動でき、右上の ✕ で閉じられる。
+     v8.10: 見出し帯を追加。帯を掴めばドラッグで移動でき、右上の ✕ で閉じられる。
             閉じるボタンは検索欄の列から見出し帯の右上へ移した（列が詰まって見分けにくかったため）。 -->
 <div id="search-panel" style="display:none;position:fixed;top:96px;right:18px;z-index:50;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 6px 24px rgba(15,23,42,.18);width:300px;font-size:12px">
   <div id="search-head" onmousedown="searchDragStart(event)" title="ドラッグで移動">
@@ -608,9 +702,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div>
   </div>
 </div>
-
-<!-- v8.11: メニューバーを隠している間だけ出る再表示ボタン（画面右下） -->
-<button id="btn-show-toolbar" onclick="toggleToolbar()" title="メニューバーを再表示" style="display:none">☰ メニューを表示</button>
 
 <!-- v8.03: マインドマップ テキスト出力モーダル -->
 <div id="mindexp-modal" style="display:none;position:fixed;inset:0;z-index:60">
@@ -735,6 +826,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div>
 </div>
 
+<!-- v8.11追補: 未保存のまま今の図を捨てる操作の前に出す4択 -->
+<div id="save4-modal" style="display:none">
+  <div id="save4-box">
+    <div id="save4-msg"></div>
+    <div id="save4-sub"></div>
+    <div id="save4-btns">
+      <button id="save4-over" type="button" onclick="save4Pick('over')">上書き保存<span id="save4-file"></span></button>
+      <button id="save4-as" type="button" onclick="save4Pick('as')">名前を付けて保存</button>
+      <button id="save4-discard" type="button" onclick="save4Pick('discard')">保存しない</button>
+      <button id="save4-cancel" type="button" onclick="save4Pick('cancel')">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <!-- 新規作成 図種選択ダイアログ -->
 <div id="new-modal" style="display:none">
   <div id="new-modal-box">
@@ -830,6 +935,8 @@ const GANTT_BAR_H={gantt_task:30.24,gantt_milestone:20,gantt_summary:21.6}; // �
 const GANTT_SCALE_COL_W={hour:24,day:32,week:48,month:80}; // スケール別の既定列幅（v8.06: hour=1時間=24px）
 const GANTT_SHADE_NIGHT='#f3f6f9';  // v8.07: 時モードの夜間帯（20:00〜翌6:00）の薄グレー
 const GANTT_SHADE_FULL='#eef2f6';   // v8.07: 休日の終日グレー（従来の土日網掛けと同トーン）
+const GANTT_HEAD_BTN_H=24;   // v8.11: 見出し欄の右下に置く「見出しを隠す」ボタンぶんの余白（重ならないよう見出し欄を高くする）
+const GANTT_HEAD_COLLAPSED_H=62;   // v8.11: 畳んだときの見出し欄の高さ＝工事名（ベースラインy=42）と下線(y=52)が収まる
 const GANTT_HEAD_MIN_W=1120; // 見出し欄（承認欄＋凡例）が収まる最小キャンバス幅（v8.00）。v8.08追補②: 折り返しONはこの幅まで列幅を広げる
 const GANTT_BAND_LABEL_H=22;  // v8.08: 折り返し時の段見出し（帯）の高さ
 const GANTT_BAND_GAP=14;      // v8.08: 段と段のあいだの余白
@@ -1093,7 +1200,7 @@ function renderFlowControls(){
 }
 function toggleStepNums(){ S.stepNums=!S.stepNums; render(); hint(S.stepNums?'ステップ番号を表示しました（配置順で自動採番）':'ステップ番号を非表示にしました'); }
 
-let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null,mindBranch:'curve'};   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
+let S={diagramType:'swimlane',orientation:'vertical',lanes:[],nodes:[],edges:[],sel:[],mode:'select',conn:null,drag:null,hist:[],hi:-1,uid:0,gantt:defaultGantt(),mindLayout:'radial',gridOn:true,style:'standard',stepNums:false,docId:null,mindBranch:'curve',mindReserve:[]};   // v8.11追補: mindReserve=マインドマップのリザーブ領域（未配置のトピック）   // v7.00: gridOn=方眼グリッド / v8.01: style=デザインテンプレート, stepNums=番号バッジ表示
 // ガントチャート時間軸モデルの初期値
 //   v4.01: 開始日の既定を「当月初日」に、概要(descW)/担当者(assigneeW)列幅を追加
 function ganttFirstOfThisMonth(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';}
@@ -1104,6 +1211,7 @@ function defaultGantt(){const s=ganttFirstOfThisMonth();return{startDate:s,scale
 //   approval.slots は描画順（左→右）に格納＝[承認,確認,作成]（紙面では右から作成・確認・承認）。
 function defaultGanttHeader(){return{
   show:true,
+  collapsed:false,   // v8.11: 畳んだ状態（工事名だけ残す）
   title:'',
   rows:[
     {label:'工事場所',value:''},
@@ -1122,7 +1230,8 @@ function defaultGanttLegend(){return{show:true,auto:true,overrides:{},extra:[]};
 function ganttEnsureHeader(){
   if(!S.gantt) return;
   if(!S.gantt.header) S.gantt.header=defaultGanttHeader();
-  else{ const h=S.gantt.header; if(!Array.isArray(h.rows))h.rows=[]; if(!h.approval)h.approval={show:false,slots:[{role:'承認',name:''},{role:'確認',name:''},{role:'作成',name:''}]}; if(!Array.isArray(h.approval.slots))h.approval.slots=[]; }
+  else{ const h=S.gantt.header; if(h.collapsed==null)h.collapsed=false;   // v8.11: 旧ファイルは展開状態
+    if(!Array.isArray(h.rows))h.rows=[]; if(!h.approval)h.approval={show:false,slots:[{role:'承認',name:''},{role:'確認',name:''},{role:'作成',name:''}]}; if(!Array.isArray(h.approval.slots))h.approval.slots=[]; }
   if(!S.gantt.legend) S.gantt.legend=defaultGanttLegend();
   else{ const lg=S.gantt.legend; if(!lg.overrides)lg.overrides={}; if(!Array.isArray(lg.extra))lg.extra=[]; }
 }
@@ -1459,6 +1568,16 @@ function ganttLayer(id){
   }
   return g;
 }
+// ── v8.11: ガントの見出し固定（フリーズペイン）──
+//   見出し欄＋時間軸ヘッダーは縦スクロールで上に、タスク名列（＋フェーズ列）は横スクロールで左に留める。
+//   仕組みはレーン見出し(v8.10)と同じで、専用レイヤへ描いてスクロール量ぶん平行移動するだけ＝
+//   図の座標そのものは動かさないので、保存・書き出し・当たり判定の座標計算は従来のまま。
+//   折り返し表示中は段ごとに時間軸ヘッダーを持ち、横スクロールも起きないので固定しない。
+function ganttStickyOn(){ return S.diagramType==='gantt' && !ganttWrapOn(); }
+//   sticky=固定レイヤ / それ以外は従来のレイヤへ描く（折り返し中・他図種）。
+function ganttHdrLayer(fallbackId){ return ganttStickyOn()? document.getElementById('g-gantt-top') : ganttLayer(fallbackId); }
+function ganttCornerLayer(fallbackId){ return ganttStickyOn()? document.getElementById('g-gantt-corner') : ganttLayer(fallbackId); }
+function ganttLeftLayer(fallbackId){ return ganttStickyOn()? document.getElementById('g-gantt-left') : ganttLayer(fallbackId); }
 // 折り返し中の「1段の帯幅／行の下端」。通常描画ではキャンバス全体を返す。
 function ganttStripW(){ return ganttWrapOn()? (ganttLeftW()+ganttTotalUnits()*ganttColW()) : SVG_W; }
 function ganttStripBottom(){ return ganttWrapOn()? ganttLayout().bottom : SVG_H; }
@@ -1678,6 +1797,41 @@ function hideConfirm(){
   _confirmYesCb=null;
 }
 function confirmYes(){ const cb=_confirmYesCb; hideConfirm(); if(typeof cb==='function')cb(); }
+// v8.11追補: 未保存のまま今の図を捨てる操作の前に出す4択。
+//   保存を選んだときは「保存が成立したときだけ」次へ進む。失敗したのに図が消えると取り返しがつかない
+//   ため、失敗・中止ならダイアログは開いたまま（原因は赤トーストに出る）。
+let _save4Opts=null;
+function confirmSave4(msg,sub,opts){
+  _save4Opts=opts||{};
+  document.getElementById('save4-msg').textContent=msg;
+  const s=document.getElementById('save4-sub'); s.textContent=sub||''; s.style.display=sub?'':'none';
+  // 一度も保存していない＝上書き先が無いので「上書き保存」は出さない（記憶した保存先が残っている
+  //   可能性がある場合は出す＝押せば overwriteSave が保存先を思い出す）
+  const canOver=FSA_OK&&(!!fileHandle||(!fileHandleTried&&!!S.docId));
+  document.getElementById('save4-over').style.display=canOver?'':'none';
+  document.getElementById('save4-file').textContent=fileHandle?(' '+fileHandle.name):'';
+  const dis=document.getElementById('save4-discard');
+  dis.style.display=_save4Opts.onDiscard?'':'none';
+  dis.textContent=_save4Opts.discardLabel||'保存しない';
+  document.getElementById('save4-cancel').textContent=_save4Opts.cancelLabel||'キャンセル';
+  document.getElementById('save4-modal').style.display='flex';
+}
+function hideSave4(){ document.getElementById('save4-modal').style.display='none'; _save4Opts=null; }
+async function save4Pick(which){
+  const o=_save4Opts||{};
+  if(which==='cancel'){ hideSave4(); return; }
+  if(which==='discard'){ hideSave4(); if(typeof o.onDiscard==='function') o.onDiscard(); return; }
+  const before=savedSeq;
+  if(which==='over') await overwriteSave(); else await saveAsWithPicker();
+  if(savedSeq===before) return;   // 保存できなかった＝ダイアログは開いたまま
+  hideSave4();
+  if(typeof o.onSaved==='function') o.onSaved();
+}
+// 今の図を捨てる操作の共通ガード。未保存なら4択を出し、保存できた／保存しないを選んだときだけ進む。
+function guardDiscard(sub,next){
+  if(!isDirty()){ next(); return; }
+  confirmSave4('保存していない変更があります。',sub,{onSaved:next,onDiscard:next});
+}
 // v6.04: 新規ガントの初期サンプル（3フェーズ×2タスク＝6タスク）。
 //   完成イメージを掴みやすくするため、開始日(=当月初日)を起点に階段状の日程・進捗・担当・
 //   フェーズ色をあらかじめ投入する。空のキャンバス前提で selectDiagramType('gantt') からのみ呼ぶ
@@ -1712,8 +1866,15 @@ function selectDiagramType(type){
   // v7.07: 図種を切り替えると作図内容をすべてリセットする。内容がある時は確認ダイアログを挟み、
   //   「はい」でリセット＋新図種を初期化、「いいえ」でキャンセル。空のキャンバスは確認なしで即実行。
   //   新規作成ダイアログのカード／タイトルバーの図種切替メニューの両方からここを通る。
-  if(S.nodes.length>0||S.edges.length>0){
+  // v8.11追補: シェイプが無くても、レーン名や図の名称を変えていれば失われる＝未保存なら必ず確認する
+  if(S.nodes.length>0||S.edges.length>0||isDirty()){
     const nm=(DIAGRAM_TYPES[type]&&DIAGRAM_TYPES[type].name)||type;
+    // v8.11追補: 未保存なら「捨てるか保存するか」を選ばせる（従来は はい/いいえ だけで保存の逃げ道が無かった）
+    if(isDirty()){
+      confirmSave4('保存していない変更があります。','現在の作図内容をすべてリセットして「'+nm+'」に切り替えます。',
+        {onSaved:()=>doSelectDiagramType(type),onDiscard:()=>doSelectDiagramType(type)});
+      return;
+    }
     showConfirm('現在の作図内容をすべてリセットして「'+nm+'」に切り替えます。\nよろしいですか？',()=>doSelectDiagramType(type));
   } else {
     doSelectDiagramType(type);
@@ -1724,7 +1885,7 @@ function doSelectDiagramType(type){
   //   積み増しされないよう冪等化）。通常フローでは init() 初回のみ呼ばれ既に空なので無害。
   //   ガント初期サンプルの二重投入（同一ページでガントを選び直すと 6タスク×3フェーズが重複し、
   //   Excel出力で「結合済みセル」エラーになる既存バグ）を根本対処。
-  S.nodes=[]; S.edges=[]; S.lanes=[]; S.sel=[]; S.conn=null;
+  S.nodes=[]; S.edges=[]; S.lanes=[]; S.sel=[]; S.conn=null; S.mindReserve=[];
   S.diagramType=type;
   S.orientation='vertical';
   // 新規ガントは開始日を当月初日にリセット（保存ファイル読込時は init で保存値を維持）
@@ -1735,6 +1896,7 @@ function doSelectDiagramType(type){
   for(let i=0;i<dt.defaultLanes;i++) addLane();
   if(type==='mindmap'&&!S.nodes.some(n=>n.type==='mind_root')) mindCreateRoot();
   snap(); render();
+  if(savedFingerprint===null) markSaved();   // v8.11追補: 起動直後の新規作成だけ基準を作る（2回目以降の図種切替は未保存にする）
   hint(type==='mindmap'
     ?'パレットの「問題」「対策」「補足情報」をクリックして枝を追加 / ダブルクリックで名称編集'
     :'シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
@@ -1823,6 +1985,7 @@ function applyDiagramType(){
   document.getElementById('mind-tools').style.display=isMind?'inline-flex':'none';
   document.getElementById('mind-sep').style.display=isMind?'':'none';
   document.getElementById('mind-settings').style.display=isMind?'':'none';
+  document.getElementById('right-sidebar').style.display=isMind?'':'none';   // v8.11追補: リザーブ領域
   // v8.03: テキスト出力ボタンはマインドマップのみ有効
   const mtb=document.getElementById('btn-mindtext');
   if(mtb){ mtb.disabled=!isMind; mtb.style.opacity=isMind?'':'0.4'; mtb.style.cursor=isMind?'':'not-allowed';
@@ -1944,7 +2107,6 @@ function init(){
   document.getElementById('diagram-svg').setAttribute('class','');
   document.getElementById('prev-edge').style.display='none';
   initHandTool();       // v8.10: ハンドツール（パン専用）のキャプチャ用リスナ
-  initStickyHeader();   // v8.10: レーン見出しのスクロール追従
 
   let st=null;
   if(window.__SWIMLANE_STATE__)st=window.__SWIMLANE_STATE__;
@@ -1960,6 +2122,7 @@ function init(){
     S.gantt=Object.assign(defaultGantt(),st.gantt||{});
     S.mindLayout=st.mindLayout||'radial';
     S.mindBranch=(st.mindBranch==='straight')?'straight':'curve';   // v8.09: 枝の形（旧ファイルは曲線）
+    S.mindReserve=Array.isArray(st.mindReserve)?st.mindReserve:[];   // v8.11追補: 旧ファイルには無いキー
     S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
     S.style=(st.style&&STYLES[st.style])?st.style:'standard';   // v8.01: デザインテンプレートを復元（旧ファイルは標準）
     S.stepNums=!!st.stepNums;   // v8.01: 番号バッジ表示状態
@@ -1970,6 +2133,7 @@ function init(){
     if(ni)ni.value=S_diagramName;
     applyDiagramType();
     lanePanel(); snap(); render();
+    markSaved();   // v8.11追補: 開いた直後＝ファイルの内容と一致
     hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
     return;
   }
@@ -2283,6 +2447,7 @@ function placeShape(type,px,py){
 // ── ガントチャート: タスク配置 ──
 function ganttMaxRow(){let m=-1;S.nodes.forEach(n=>{if(n.type==='gantt_task'||n.type==='gantt_milestone')m=Math.max(m,n.row||0);});return m;}
 function ganttPlace(type,px,py){
+  ({x:px,y:py}=ganttStickyPt(px,py));   // v8.11: 固定中の見出し・タスク名列を掴んだときは、その帯の中の座標として扱う
   const g=S.gantt;
   const dt=getDT();
   // フェーズ（v4.17）: 行ではなく、選択タスク（なければ最下タスク）を初期メンバーにした縦バンドを作る
@@ -2773,7 +2938,7 @@ function ungroupSel(){
 
 // ── テキスト揃え（左/中/右）（D-5 v4.28）──
 // 選択シェイプに textAlign を設定。
-// v8.11: 反映先を広げた。従来は「横書きの汎用シェイプ本文」と「付箋のタイトル（縦モード）」
+// v8.10: 反映先を広げた。従来は「横書きの汎用シェイプ本文」と「付箋のタイトル（縦モード）」
 //   だけに効いていたため、マインドマップ・樹状図・UML・グループ枠などでボタンを押しても
 //   何も起きなかった。下の alignH / alignVCy を各描画へ通して、本文の揃えを共通化する。
 function setTextAlign(align){
@@ -2784,7 +2949,7 @@ function setTextAlign(align){
   snap(); render();
   hint(`${cnt}個のシェイプのテキストを${align==='left'?'左':align==='right'?'右':'中央'}揃えにしました`);
 }
-// v8.11: 文字揃えの共通ヘルパ。
+// v8.10: 文字揃えの共通ヘルパ。
 //   横書き＝枠 [x0, x0+w] の中で左端／中央／右端へ寄せる（pad は左右の余白）。
 //   縦書き＝行が上から下へ流れるので、左揃え＝上（行頭）／右揃え＝下（行末）と読み替える。
 //     縦書きに「左右」はないが、横書きを90度倒したときに対応するのは上下なので同じボタンで扱う。
@@ -2822,12 +2987,12 @@ function addEdge(f,t,opts={}){
 
 // ── History ──
 function snap(){
-  const d=JSON.stringify({lanes:S.lanes,nodes:S.nodes,edges:S.edges,gantt:S.gantt,mindLayout:S.mindLayout});
+  const d=JSON.stringify({lanes:S.lanes,nodes:S.nodes,edges:S.edges,gantt:S.gantt,mindLayout:S.mindLayout,mindReserve:S.mindReserve});   // v8.11追補: リザーブの追加・分類・削除も元に戻せるようにする
   S.hist=S.hist.slice(0,S.hi+1); S.hist.push(d);
   if(S.hist.length>80)S.hist.shift();
   S.hi=S.hist.length-1;
 }
-function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;if(p.gantt)S.gantt=p.gantt;if(p.mindLayout)S.mindLayout=p.mindLayout;ganttMigrateColLabels();S.sel=[];S.conn=null;lanePanel();render()}
+function restore(d){const p=JSON.parse(d);S.lanes=p.lanes;S.nodes=p.nodes;S.edges=p.edges;if(p.gantt)S.gantt=p.gantt;if(p.mindLayout)S.mindLayout=p.mindLayout;if(Array.isArray(p.mindReserve))S.mindReserve=p.mindReserve;ganttMigrateColLabels();S.sel=[];S.conn=null;lanePanel();render()}
 function undo(){if(S.hi>0){S.hi--;restore(S.hist[S.hi])}}
 function redo(){if(S.hi<S.hist.length-1){S.hi++;restore(S.hist[S.hi])}}
 
@@ -4057,6 +4222,9 @@ function ganttLegendItems(){
 function ganttHeadModel(){
   if(_ganttHeadModel) return _ganttHeadModel;
   const h=S.gantt.header, lg=S.gantt.legend||{};
+  // v8.11: 畳んでいるときは工事名だけ＝高さも情報行・承認欄・凡例を見ずに決める。
+  if(h.collapsed){ _ganttHeadModel={H:GANTT_HEAD_COLLAPSED_H,baseH:GANTT_HEAD_COLLAPSED_H,rpc:1,infoRowH:30,titleBottom:52,
+    appOn:false,lgItems:[],lgOn:false,lgInline:false,lgTop:0,lgRows:0,lgH:0,collapsed:true}; return _ganttHeadModel; }
   const rows=(h.rows||[]).filter(r=>r); const rpc=Math.max(1,Math.ceil(rows.length/2));
   const titleBottom=52, infoRowH=30;
   const leftBottom = rows.length? (titleBottom+8+rpc*infoRowH) : titleBottom;
@@ -4074,8 +4242,9 @@ function ganttHeadModel(){
   const rightBottom=Math.max(dateBottom,appBottom,lgInline?0:(lgOn?lgTopStacked+lgH:0));
   const baseH=Math.max(leftBottom,rightBottom)+14;   // 表題・情報行・承認欄までの高さ（情報行の下詰めの基準）
   const lgTop=lgInline?(baseH+2):lgTopStacked;
-  const H=lgInline?(lgTop+lgH+6):baseH;
-  _ganttHeadModel={H,baseH,rpc,infoRowH,titleBottom,appOn,lgItems,lgOn,lgInline,lgTop,lgRows,lgH};
+  // v8.11: 右下の「見出しを隠す」ボタンぶんの余白を最後に足す（凡例・承認欄と重ねないため）。
+  const H=(lgInline?(lgTop+lgH+6):baseH)+GANTT_HEAD_BTN_H;
+  _ganttHeadModel={H,baseH,rpc,infoRowH,titleBottom,appOn,lgItems,lgOn,lgInline,lgTop,lgRows,lgH,collapsed:false};
   return _ganttHeadModel;
 }
 // 凡例の色見本（種類別）
@@ -4096,7 +4265,7 @@ function ganttLegendSwatch(gg,it,x,y){
 // 見出しブロックをライブSVGに描画（y:0..ganttHeadH()）。エクスポート時はクローンに自動で乗る。
 function renderGanttTitleBlock(){
   const h=S.gantt&&S.gantt.header; if(!h||!h.show) return;
-  const m=ganttHeadModel(), W=SVG_W, gg=document.getElementById('g-dividers');
+  const m=ganttHeadModel(), W=SVG_W, gg=ganttHdrLayer('g-dividers');   // v8.11: 固定時は上レイヤへ
   const padX=16, mLab=(s,fs)=>{let w=0;for(const ch of (s||''))w+=(ch.charCodeAt(0)>255?fs:fs*0.55);return w;};
   gg.appendChild(e('rect',{x:0,y:0,width:W,height:m.H,fill:'#ffffff','pointer-events':'none'}));
   // 微修正(v8.00据置): 見出し全体を覆う透明ヒット矩形。ダブルクリックで見出し編集ダイアログを開く。
@@ -4113,6 +4282,7 @@ function renderGanttTitleBlock(){
   else { tt.setAttribute('fill','#cbd5e1'); tt.textContent='（工事名）'; }
   gg.appendChild(tt);
   gg.appendChild(e('line',{x1:padX,y1:52,x2:Math.min(700,W*0.62),y2:52,stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
+  if(m.collapsed) return;   // v8.11: 畳んでいるときはここまで＝工事名だけ残す
   // 情報行（2列・下詰め）
   const rows=(h.rows||[]).filter(r=>r), rpc=m.rpc;
   const lastBase=(m.baseH||m.H)-14, firstBase=lastBase-(rpc-1)*m.infoRowH;   // v8.08追補⑤: 凡例の行ぶんは含めない
@@ -4183,7 +4353,7 @@ function renderGantt(){
   calcCanvasSize();
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
-  ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers'].forEach(id=>{document.getElementById(id).innerHTML='';});
+  ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
   Array.from(document.querySelectorAll('#diagram-svg clipPath')).forEach(el=>{ if((el.id||'').indexOf('gw-clip-')===0) el.remove(); });   // v8.08追補: 段のクリップ定義を作り直す
   if(ganttWrapOn()){
     // v8.08: 段ごとに「軸原点＝段の先頭」へ差し替え、Yは平行移動グループでずらして同じ描画関数を再利用する。
@@ -4215,6 +4385,8 @@ function renderGantt(){
     renderGanttHeader();
   }
   renderGanttTitleBlock();   // v8.00: 見出し欄（表題＋承認欄＋凡例）
+  syncGanttSticky();         // v8.11: 固定レイヤの大きさ・拡大率を本体SVGへ合わせる（位置合わせは CSS の sticky）
+  layoutGanttHeadButtons();  // v8.11: 見出し欄の開閉ボタンを見出しの右端へ置く
   zoomLevel=1; applyZoom();
   // ズームラベルは列幅(px)を表示、ツールバーのスケール/開始日を同期
   document.getElementById('zoom-label').textContent=S.gantt.colWidth+'px';
@@ -4319,8 +4491,9 @@ function renderGanttGrid(){
 }
 // 時間軸ヘッダー（2段）
 function renderGanttHeader(){
-  const g=S.gantt, _gd=ganttLayer('g-dividers'), _oy=ganttHeadH()+(ganttWrapOn()?GANTT_BAND_LABEL_H:0);   // v8.08: 折り返し時は段見出しぶんも下げる
+  const g=S.gantt, _gd=ganttHdrLayer('g-dividers'), _oy=ganttHeadH()+(ganttWrapOn()?GANTT_BAND_LABEL_H:0);   // v8.08: 折り返し時は段見出しぶんも下げる
   const gg=_oy?e('g',{transform:'translate(0,'+_oy+')'}):_gd;   // v8.00: 見出しぶん時間軸ヘッダーを下げる（座標は不変・グループ平行移動）
+  if(ganttStickyOn()) _gd.appendChild(ganttStickyShield(0,0,ganttStripW(),ganttBodyTop()));   // v8.11: 上の固定帯のシールド（レイヤ先頭＝以降の描画より下）
   const cw=ganttColW(), x0=ganttLeftW(), units=ganttTotalUnits(), topH=GANTT_HEADER_H/2;
   gg.appendChild(e('rect',{x:0,y:0,width:ganttStripW(),height:GANTT_HEADER_H,fill:'#1e293b','pointer-events':'none'}));
   const drawTopCell=(x,w,label)=>{
@@ -4430,17 +4603,22 @@ function renderGanttHeader(){
     }
   }
   // 左上コーナー（単一ラベル列ヘッダー）v4.04
+  // v8.11: コーナーだけは別レイヤ（cg）へ描く。時間軸は縦だけ・タスク名列は横だけ固定するので、
+  //   その交点にあたるここは縦横どちらのスクロールでも動かさない＝常に列の見出しとして残す。
+  const _cd=ganttCornerLayer('g-dividers');
+  const cg=_oy?e('g',{transform:'translate(0,'+_oy+')'}):_cd;
   const leftW=ganttLeftW();
-  gg.appendChild(e('rect',{x:0,y:0,width:leftW,height:GANTT_HEADER_H,fill:'#0f172a','pointer-events':'none'}));
+  if(ganttStickyOn()) cg.appendChild(ganttStickyShield(0,0,leftW,GANTT_HEADER_H));   // v8.11: 角のシールド（列幅ハンドル・⊕・列削除アイコンはこの後＝上に載る）
+  cg.appendChild(e('rect',{x:0,y:0,width:leftW,height:GANTT_HEADER_H,fill:'#0f172a','pointer-events':'none'}));
   const bx=ganttPhaseColW();   // v4.17: フェーズ列ぶん見出しを右へ
   if(bx){
-    gg.appendChild(e('line',{x1:bx,y1:0,x2:bx,y2:GANTT_HEADER_H,stroke:'#475569','stroke-width':1,'pointer-events':'none'}));
+    cg.appendChild(e('line',{x1:bx,y1:0,x2:bx,y2:GANTT_HEADER_H,stroke:'#475569','stroke-width':1,'pointer-events':'none'}));
     const pt=e('text',{x:8,y:GANTT_HEADER_H/2,'dominant-baseline':'middle','font-size':'12','font-weight':'700',fill:'#e2e8f0','pointer-events':'none'});
-    pt.textContent='フェーズ'; gg.appendChild(pt);
+    pt.textContent='フェーズ'; cg.appendChild(pt);
   }
   const ct=e('text',{x:bx+8,y:GANTT_HEADER_H/2,'dominant-baseline':'middle','font-size':'12','font-weight':'700',fill:'#e2e8f0','pointer-events':'none'});
-  ct.textContent='タスク / 概要 / 担当'; gg.appendChild(ct);
-  gg.appendChild(e('line',{x1:leftW,y1:0,x2:leftW,y2:GANTT_HEADER_H,stroke:'#475569','stroke-width':1,'pointer-events':'none'}));
+  ct.textContent='タスク / 概要 / 担当'; cg.appendChild(ct);
+  cg.appendChild(e('line',{x1:leftW,y1:0,x2:leftW,y2:GANTT_HEADER_H,stroke:'#475569','stroke-width':1,'pointer-events':'none'}));
   // v5.00 列モデル: 各列の右境界に列幅リサイズハンドル（⇔・全高）
   let hx=ganttPhaseColW();
   ganttColList().forEach((col,ci)=>{
@@ -4449,7 +4627,7 @@ function renderGanttHeader(){
     const rh=e('rect',{x:handleX-3,y:0,width:6,height:SVG_H,fill:'transparent',cursor:'col-resize'});
     rh.addEventListener('mousedown',ev=>{ev.stopPropagation();const pt=svgPt(ev);
       ganttDragState={mode:'colw',colIdx:ci,startX:pt.x,startY:pt.y,startW:col.width,moved:false};});
-    gg.appendChild(rh);
+    cg.appendChild(rh);
     // 微修正(v8.00据置): 追加列の削除アイコン（既定列c0は対象外）。列の上端中央に置き、
     //   カーソルを近づけた時だけ表示（既定opacity:0→ホバーで1）。クリックでganttDeleteColumn（確認あり）。
     if(col.id!=='c0'){
@@ -4467,7 +4645,7 @@ function renderGanttHeader(){
       icon.addEventListener('mousedown',ev=>ev.stopPropagation());
       icon.addEventListener('click',ev=>{ev.stopPropagation();ganttDeleteColumn(col.id);});
       dgrp.appendChild(zone); dgrp.appendChild(icon);
-      gg.appendChild(dgrp);
+      cg.appendChild(dgrp);
     }
   });
   // v5.00: ⊕ 列追加ボタン（情報欄と時間軸の境目付近・ヘッダー行）
@@ -4479,8 +4657,9 @@ function renderGanttHeader(){
   const ptt=e('title'); ptt.textContent='列を追加'; pgrp.appendChild(ptt);
   pgrp.addEventListener('mousedown',ev=>{ev.stopPropagation();});
   pgrp.addEventListener('click',ev=>{ev.stopPropagation();ganttAddColumn();});
-  if(_gwBand===null||_gwBand===0) gg.appendChild(pgrp);   // v8.08: 「列を追加」ボタンは先頭の段にだけ出す
+  if(_gwBand===null||_gwBand===0) cg.appendChild(pgrp);   // v8.08: 「列を追加」ボタンは先頭の段にだけ出す
   if(_oy) _gd.appendChild(gg);   // v8.00: 平行移動グループを実レイヤーへ
+  if(_oy) _cd.appendChild(cg);   // v8.11: コーナーも同じだけ下げてから実レイヤーへ
 }
 // タスクバー群
 function renderGanttTasks(){
@@ -4541,7 +4720,7 @@ function renderGanttTaskBar(gg,n,sel){
     else { fs=12; inside=false; }
   }
   t.setAttribute('font-size',String(fs));
-  // v8.11: バー内に収まるラベルは文字揃えに従う（既定は従来どおり左詰め）。
+  // v8.10: バー内に収まるラベルは文字揃えに従う（既定は従来どおり左詰め）。
   //   収まらずバーの上へ出す場合は、左端に合わせないと隣のバーの文字と重なるので従来のまま。
   const _ba=(inside&&n.textAlign)?alignH(n.textAlign,_lx,_lw,8):{x:(inside?_lx+8:_lx),anchor:'start'};
   t.setAttribute('text-anchor',_ba.anchor);
@@ -4651,7 +4830,8 @@ function renderGanttPhaseBars(){
 }
 // 左側タスク名列
 function renderGanttNameCol(){
-  const gg=ganttLayer('g-nodes');
+  const gg=ganttLeftLayer('g-nodes');   // v8.11: 固定時は左レイヤへ（横スクロールで左端に留める）
+  if(ganttStickyOn()) gg.appendChild(ganttStickyShield(0,ganttBodyTop(),ganttLeftW(),ganttStripBottom()-ganttBodyTop()));   // v8.11: 左の固定列のシールド
   const leftW=ganttLeftW(), L=ganttLayout();
   const bx=ganttBracketW(), nw=leftW-bx;   // v4.11: ラベル列はブラケット列ぶん右へシフト（nw=ラベル列幅）
   // 列背景（ヘッダー下から）
@@ -4774,7 +4954,7 @@ function renderGanttNameCol(){
 // メンバー行の高さに描画。上下端ドラッグで包括範囲を編集（v4.17 E-7）。
 function renderGanttPhases(){
   const pw=ganttPhaseColW(); if(!pw) return;   // フェーズが無ければ列ごと非表示
-  const gg=ganttLayer('g-nodes');
+  const gg=ganttLeftLayer('g-nodes');   // v8.11: タスク名列と同じ左レイヤへ（フェーズ列も一緒に固定）
   // 列背景＋右境界（ラベル列との境界）
   gg.appendChild(e('rect',{x:0,y:ganttBodyTop(),width:pw,height:ganttStripBottom()-ganttBodyTop(),fill:'#f8fafc','pointer-events':'none'}));
   gg.appendChild(e('line',{x1:pw,y1:ganttBodyTop(),x2:pw,y2:ganttStripBottom(),stroke:'#e2e8f0','stroke-width':1,'pointer-events':'none'}));
@@ -4860,7 +5040,7 @@ function renderGanttEdges(){
 }
 // ノードハンドラ（選択＋水平ドラッグ移動）
 function attachGanttNodeHandlers(grp,n){
-  grp.setAttribute('data-nid',n.id);   // v8.11: ハンドツール中に触れるシェイプの目印（汎用ノードと揃える）
+  grp.setAttribute('data-nid',n.id);   // v8.10: ハンドツール中に触れるシェイプの目印（汎用ノードと揃える）
   grp.style.cursor=S.mode==='connect'?'crosshair':'grab';
   grp.addEventListener('mousedown',ev=>{ev.stopPropagation();ganttNodeMD(ev,n.id);});
   grp.addEventListener('dblclick',ev=>{ev.stopPropagation();
@@ -5405,6 +5585,186 @@ function mindPlace(type,px,py){
   S.edges.push({id:uid(),from:parent.id,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
   S.sel=[parent.id]; snap(); render();   // 追補: 選択(=次の配置の起点)は親に残す＝連続配置で同じシェイプから分岐
 }
+// ── v8.11追補: リザーブ領域（マインドマップ専用） ──
+//   議論中に出た「今どこに置くべきか分からない話」を、図を壊さずに貯めておく場所。
+//   一覧の各行は配置後と同じシェイプそのもの＝ドラッグして置いたら何が出るかが見たまま分かる。
+//   分類ボタンの絵柄も凡例（renderMindLegend）と同じ形にしてある。
+const MR_TYPES=['mind_topic','mind_action','mind_note'];
+const MR_LABEL={mind_topic:'問題',mind_action:'対策',mind_note:'補足情報'};
+const MR_W=152, MR_H=34;
+function mindReserveKey(ev){
+  if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); mindReserveAdd(); }   // Shift+Enter は改行
+}
+function mindReserveAdd(){
+  const ta=document.getElementById('mind-reserve-text'); if(!ta)return;
+  const txt=(ta.value||'').trim(); if(!txt){ ta.focus(); return; }
+  S.mindReserve.push({id:uid(),text:txt,type:'mind_topic'});   // 登録時の既定は「問題」（未分類という状態は作らない）
+  ta.value=''; ta.focus();
+  snap(); renderMindReserve();
+}
+function mindReserveSetType(id,type){
+  const it=S.mindReserve.find(r=>r.id===id); if(!it||it.type===type)return;
+  it.type=type; snap(); renderMindReserve();
+}
+function mindReserveDelete(id){
+  S.mindReserve=S.mindReserve.filter(r=>r.id!==id);
+  snap(); renderMindReserve();
+}
+// 収まらない文章は末尾を省略（シェイプの幅は一定にして一覧の見た目を揃える）
+function mindReserveFit(txt,fs,maxW){
+  const s0=(txt||'').replace(/\s+/g,' ');
+  if(textW(s0,fs)<=maxW) return s0;
+  let s=s0;
+  while(s.length>1&&textW(s+'…',fs)>maxW) s=s.slice(0,-1);
+  return s+'…';
+}
+function mindReserveShapeSvg(item){
+  const d=SD[item.type]||SD.mind_topic;
+  const sv=e('svg',{width:MR_W,height:MR_H,'class':'mr-shape'});
+  const a={fill:d.fill,stroke:d.stroke,'stroke-width':1.4};
+  let inner=MR_W-18, dx=0;
+  if(item.type==='mind_action'){          // 右向き矢印タグ
+    a.points='1,2 '+(MR_W-18)+',2 '+(MR_W-1)+',17 '+(MR_W-18)+',32 1,32';
+    a['stroke-linejoin']='round'; sv.appendChild(e('polygon',a)); inner=MR_W-36; dx=-8;
+  } else if(item.type==='mind_note'){     // 右上が折れた付箋
+    a.d='M1,2 H'+(MR_W-16)+' L'+(MR_W-1)+',17 V32 H1 Z'; a['stroke-width']=1.3;
+    sv.appendChild(e('path',a)); inner=MR_W-34;
+  } else {                                // 角丸長方形
+    a.x=1; a.y=2; a.width=MR_W-2; a.height=MR_H-4; a.rx=7; sv.appendChild(e('rect',a));
+  }
+  const t=e('text',{x:MR_W/2+dx,y:21,'text-anchor':'middle','font-size':11,fill:'#1e293b'});
+  t.textContent=mindReserveFit(item.text,11,inner);
+  sv.appendChild(t);
+  return sv;
+}
+// 分類ボタンの中身＝同じ3つの形を極小で描いたもの（押すと左のシェイプがその形になることが判る）
+function mindReserveGlyph(type,on){
+  const col=on?SD[type].stroke:'#94a3b8';
+  const sv=e('svg',{width:14,height:6});
+  if(type==='mind_action')      sv.appendChild(e('polygon',{points:'0.5,0.5 10,0.5 13.5,3 10,5.5 0.5,5.5',fill:col}));
+  else if(type==='mind_note')   sv.appendChild(e('path',{d:'M0.5,0.5 h9.5 l3.5,2.5 v2.5 h-13 Z',fill:col}));
+  else                          sv.appendChild(e('rect',{x:0.5,y:0.5,width:13,height:5,rx:2,fill:col}));
+  return sv;
+}
+function renderMindReserve(){
+  const box=document.getElementById('mind-reserve-list'); if(!box)return;
+  // ganttPanel と同じ再構築ガード。入れないと編集中に DOM ごと消える。
+  if(document.activeElement&&box.contains(document.activeElement))return;
+  const list=Array.isArray(S.mindReserve)?S.mindReserve:[];
+  const cnt=document.getElementById('mind-reserve-count'); if(cnt)cnt.textContent=list.length+'件';
+  box.innerHTML='';
+  if(!list.length){
+    const d=document.createElement('div'); d.id='mind-reserve-empty';
+    d.textContent='まだありません。上の欄に書いて「＋ 追加」で貯めておけます。';
+    box.appendChild(d); return;
+  }
+  list.forEach(item=>{
+    const row=document.createElement('div'); row.className='mr-row';
+    const sv=mindReserveShapeSvg(item);
+    sv.setAttribute('title',(item.text||'')+'\nドラッグで図に配置 / ダブルクリックで編集');
+    sv.addEventListener('mousedown',ev=>mindReserveDragStart(ev,item.id));
+    sv.addEventListener('dblclick',ev=>{ ev.preventDefault(); mindReserveEdit(item.id); });
+    row.appendChild(sv);
+    const btns=document.createElement('div'); btns.className='mr-btns';
+    MR_TYPES.forEach(tp=>{
+      const on=(item.type===tp);
+      const b=document.createElement('button');
+      b.type='button'; b.title=MR_LABEL[tp]; b.setAttribute('aria-label',MR_LABEL[tp]);
+      if(on){ b.style.background=SD[tp].fill; b.style.borderColor=SD[tp].stroke; }
+      b.appendChild(mindReserveGlyph(tp,on));
+      b.onclick=()=>mindReserveSetType(item.id,tp);
+      btns.appendChild(b);
+    });
+    row.appendChild(btns);
+    const del=document.createElement('button');
+    del.className='ldel'; del.type='button'; del.textContent='✕'; del.title='このリザーブを削除';
+    del.onclick=()=>mindReserveDelete(item.id);
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+// ダブルクリック編集: シェイプを同じ大きさ・同じ枠色の箱＋入力欄に差し替える（形は保つ）
+function mindReserveEdit(id){
+  const it=(S.mindReserve||[]).find(r=>r.id===id); if(!it)return;
+  const box=document.getElementById('mind-reserve-list'); if(!box)return;
+  const row=box.children[S.mindReserve.indexOf(it)]; if(!row||!row.firstChild)return;
+  const d=SD[it.type]||SD.mind_topic;
+  const wrap=document.createElement('span'); wrap.className='mr-edit';
+  wrap.style.width=MR_W+'px'; wrap.style.height=MR_H+'px';
+  wrap.style.borderRadius='7px'; wrap.style.background=d.fill; wrap.style.border='1.6px solid '+d.stroke;
+  const inp=document.createElement('input'); inp.type='text'; inp.value=it.text||'';
+  wrap.appendChild(inp);
+  row.replaceChild(wrap,row.firstChild);
+  let done=false;
+  const commit=ok=>{
+    if(done)return; done=true;
+    const v=(inp.value||'').trim();
+    if(ok&&v&&v!==it.text){ it.text=v; snap(); }
+    inp.blur();               // ガードに引っかからないよう、作り直す前に選択を外す
+    renderMindReserve();
+  };
+  inp.addEventListener('keydown',ev=>{
+    if(ev.key==='Enter'){ ev.preventDefault(); commit(true); }
+    else if(ev.key==='Escape'){ ev.preventDefault(); commit(false); }
+  });
+  inp.addEventListener('blur',()=>commit(true));
+  inp.focus(); inp.select();
+}
+// ドロップ先のトピック。折り畳み・絞り込みで見えていないノードは対象外（replaceTargetAt と同じ扱い）
+function mindReserveTargetAt(x,y){
+  const hidden=mindHiddenSet();
+  for(let i=S.nodes.length-1;i>=0;i--){
+    const n=S.nodes[i];
+    if(!isMindShape(n.type)||n.x==null||n.w==null)continue;
+    if(hidden.has(n.id))continue;
+    if(x>=n.x&&x<=n.x+n.w&&y>=n.y&&y<=n.y+n.h) return n;
+  }
+  return null;
+}
+// v8.09 の「重ね置きで形状だけ入れ替え」は通さない（入れ替えると入力した文章が失われるため）。
+//   既存トピックの上に落としたらその子、空き場所なら選択中ノード（無ければ中心）の子にする。
+function mindReservePlace(item,px,py){
+  let root=mindRoot();
+  if(!root){ mindCreateRoot(); root=mindRoot(); }
+  const tgt=mindReserveTargetAt(px,py);
+  const selNode=S.sel.map(id=>S.nodes.find(n=>n.id===id)).find(n=>n&&isMindShape(n.type));
+  const parent=tgt||selNode||root;
+  const d=SD[item.type]||SD.mind_topic;
+  let x=px,y=py;
+  if(tgt){ x=tgt.x+tgt.w+40; y=tgt.y; }   // 親の上に重ねない（親の右隣に出す）
+  const n={id:uid(),type:item.type,text:item.text||d.text,x:x,y:y,w:d.w,h:d.h};
+  S.nodes.push(n);
+  S.edges.push({id:uid(),from:parent.id,to:n.id,label:'',fromLabel:'',toLabel:'',fromLid:null,toLid:null});
+  S.mindReserve=S.mindReserve.filter(r=>r.id!==item.id);   // 置いたらリザーブからは消す
+  S.sel=[parent.id]; snap(); render();
+  hint('リザーブから配置しました: '+(n.text||''));
+}
+// ドラッグは HTML5 の D&D ではなくマウスイベント方式（palDragStart と同じ作法）
+function mindReserveDragStart(ev,id){
+  if(ev.button!==0)return;
+  ev.preventDefault(); ev.stopPropagation();
+  const it=(S.mindReserve||[]).find(r=>r.id===id); if(!it)return;
+  exitPasteMode();
+  if(S.mode!=='select')setMode('select');
+  const d=SD[it.type]||SD.mind_topic;
+  const ghost=document.createElement('div');
+  Object.assign(ghost.style,{position:'fixed',maxWidth:'200px',padding:'6px 10px',background:d.fill,
+    border:'2px dashed '+d.stroke,borderRadius:'6px',pointerEvents:'none',zIndex:'9999',
+    fontSize:'11px',color:'#1e293b',opacity:'.9',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',
+    left:(ev.clientX-40)+'px',top:(ev.clientY-16)+'px'});
+  ghost.textContent=it.text||d.text;
+  document.body.appendChild(ghost);
+  let moved=false;
+  const mv=evM=>{ moved=true; ghost.style.left=(evM.clientX-40)+'px'; ghost.style.top=(evM.clientY-16)+'px'; };
+  const up=evU=>{
+    ghost.remove(); document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up);
+    if(!moved)return;   // 動かさなかった＝ただのクリック
+    const r=document.getElementById('diagram-svg').getBoundingClientRect();
+    if(evU.clientX<r.left||evU.clientX>r.right||evU.clientY<r.top||evU.clientY>r.bottom)return;
+    mindReservePlace(it,(evU.clientX-r.left)/zoomLevel,(evU.clientY-r.top)/zoomLevel);   // #diagram-svg は scale 済みなので svgPt ではなく実測で換算
+  };
+  document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+}
 // ── 描画 ──
 function renderMindmap(){
   mindAssignBranchIdx();   // v8.10: 枝色の番号を確定（読込・追加・付け替えをここ1か所で拾う）
@@ -5412,7 +5772,7 @@ function renderMindmap(){
   calcCanvasSize();
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
-  ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers'].forEach(id=>{document.getElementById(id).innerHTML='';});
+  ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
   document.getElementById('g-lanes').appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc','pointer-events':'none'}));
   renderGrid();   // v7.00: 方眼グリッド（マインドマップも自由配置図として対象）
   const hidden=mindHiddenSet();
@@ -5423,6 +5783,7 @@ function renderMindmap(){
   applyZoom();
   updateMindToolbar();
   renderMindIssueList();          // v8.03: 未決・反対一覧を同期
+  renderMindReserve();            // v8.11追補: リザーブ領域を同期
 }
 // ── v8.04: 凡例（図内で使用中のシェイプ・属性記号だけを自動表示。g-dividers に描くため PNG/SVG/印刷にも載る） ──
 function renderMindLegend(){
@@ -5592,7 +5953,7 @@ function renderMindNodes(hidden,dim){
     grp.appendChild(mindShapeEl(n,outAttrs,0));
     if(isNote)grp.appendChild(e('path',{d:`M${n.x+n.w-MIND_NOTE_FOLD},${n.y} v${MIND_NOTE_FOLD} h${MIND_NOTE_FOLD} Z`,
       fill:ganttLighten(nbc.stroke,0.45),stroke:nbc.stroke,'stroke-width':1.1,'pointer-events':'none'}));   // v8.05: 付箋の折れ角＝枝色系
-    // v8.11: 文字揃えを反映（従来はマインドマップだけ常に中央固定で、揃えのボタンが効かなかった）。
+    // v8.10: 文字揃えを反映（従来はマインドマップだけ常に中央固定で、揃えのボタンが効かなかった）。
     //   矢印タグは先端ぶんを除いた矩形部を枠とし、左右の余白は自動リサイズと同じ pad の半分に合わせる。
     const fs=mindNodeFont(n), tw=n.w-(isAction?MIND_ARROW_TIP:0);
     const _ma=alignH(nodeAlign(n),n.x,tw,mindImpSize(n).pad/2), tcx=_ma.x;
@@ -5681,7 +6042,7 @@ function mindEditNode(id){
   // 追補: 常に複数行エディタ（Alt+Enterで改行）。表示高さは最低46pxを確保
   // v8.10: 入力中も大きさを追従（calcMindNodeSize は renderMindmap の冒頭で毎回走る）
   openSvgEditor(n.x,n.y,Math.max(n.w,90),Math.max(n.h,46),n.text||'',v=>{n.text=v.trim();snap();render();},'名称',
-    {multiline:true,align:n.textAlign||'center',onInput:(v,fo)=>{   // v8.11: 編集欄も同じ揃えで表示
+    {multiline:true,align:n.textAlign||'center',onInput:(v,fo)=>{   // v8.10: 編集欄も同じ揃えで表示
       n.text=v; render();
       fo.setAttribute('x',n.x); fo.setAttribute('y',n.y);
       fo.setAttribute('width',Math.max(n.w,90)); fo.setAttribute('height',Math.max(n.h,46));
@@ -6143,6 +6504,10 @@ function updateUmlToolbar(){
 }
 
 function render(){
+  // v8.11: ガントの固定レイヤは図種をまたぐと前の図の見出し・タスク名列が浮いたまま残るので、
+  //   どの図種でも描き始めに必ず空へ戻す（ガントならこの直後の renderGantt が描き直す）。
+  ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{const el=document.getElementById(id); if(el) el.innerHTML='';});
+  layoutGanttHeadButtons();   // v8.11: ガント以外なら見出しの開閉ボタンを引っ込める
   // ガントチャート・マインドマップは専用描画パス
   if(S.diagramType==='gantt'){ renderGantt(); return; }
   if(S.diagramType==='mindmap'){ renderMindmap(); return; }
@@ -6184,11 +6549,11 @@ function render(){
   if(S.diagramType==='uml') updateUmlToolbar();
 }
 // v8.10: レーン本体（背景・区切り線・外枠）は g-lanes、見出し帯は最前面の g-lane-hdr に分けて描く。
-//   見出しを別レイヤにしたのは、スクロール量ぶん平行移動して固定表示するため（stickyLaneHeader）。
+//   見出しを別レイヤにしたのは、position:sticky の重ね箱に載せて固定表示するため（syncLaneSticky）。
 //   分けても描く内容・座標は従来と同一なので、見た目・レーンドラッグの操作感は変わらない。
 function renderLanes(){
   const g=document.getElementById('g-lanes'); g.innerHTML='';
-  const gh=document.getElementById('g-lane-hdr'); if(gh){gh.innerHTML=''; gh.removeAttribute('transform');}
+  const gh=document.getElementById('g-lane-hdr'); if(gh) gh.innerHTML='';
   if(!usesLanes()){
     // レーンなし: 単色背景
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc',stroke:'#94a3b8','stroke-width':1.5}));
@@ -6228,30 +6593,54 @@ function renderLanes(){
     });
     g.appendChild(e('rect',{x:0,y:0,width:SVG_W,height:totalLaneSpan(),fill:'none',stroke:'#94a3b8','stroke-width':1.5}));
   }
-  stickyLaneHeader();
+  syncLaneSticky();
+  syncGanttSticky();   // v8.11: ガント以外なので固定レイヤを畳む
 }
-// v8.10: レーン見出しをスクロールに追従させる。SVG 全体に CSS transform:scale() が掛かっているので、
-//   スクロール量を zoomLevel で割って SVG 座標へ直してから平行移動する。
-//   縦モードは上端に固定（Y方向）、横モードは左端に固定（X方向）。
-//   レーン並べ替えが見るのは縦モード=X・横モード=Y と、動かす軸と直交するため座標補正は要らない。
-function stickyLaneHeader(){
-  const gh=document.getElementById('g-lane-hdr'); if(!gh)return;
-  if(!usesLanes()||S.diagramType==='gantt'||S.diagramType==='mindmap'){gh.removeAttribute('transform');return;}
-  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
+// v8.10→v8.11追補: レーン見出し（スイムレーン／BPMN）の固定。縦モードは上端・横モードは左端に留める。
+//   当初はスクロール量ぶん JS で平行移動していたが、スクロールの描画に1フレーム遅れて追いつくため
+//   スクロール中に見出しが揺れた。ガントと同じく position:sticky の重ね箱に載せ替え、ここでやるのは
+//   大きさ・拡大率・表示切替と「どちらの軸を止めるか」の指定だけにした＝スクロール中に走る JS は無い。
+//   レーン並べ替えが見るのは縦モード=X・横モード=Y と、止める軸と直交するため座標補正は要らない。
+function syncLaneSticky(){
+  const box=document.getElementById('gstick-lane'); if(!box) return;
+  const on=usesLanes()&&S.diagramType!=='gantt'&&S.diagramType!=='mindmap';
+  box.style.display=on?'':'none';
+  box.style.top =(on&&isV())?'0px':'auto';    // 縦モード＝上端に固定（横は本体と一緒に流れる）
+  box.style.left=(on&&!isV())?'0px':'auto';   // 横モード＝左端に固定
+  const sv=box.firstElementChild; if(!sv) return;
+  sv.setAttribute('width',SVG_W); sv.setAttribute('height',SVG_H);
+  sv.style.transform='scale('+(zoomLevel||1)+')';
+}
+// v8.11: ガントの固定レイヤ（重ね箱）を本体SVGに合わせる。位置合わせ自体は CSS の position:sticky が
+//   やるので、ここでやるのは大きさ・拡大率・表示/非表示だけ＝スクロール中に走る JS は無い。
+function syncGanttSticky(){
+  const on=ganttStickyOn();
+  ['gstick-left','gstick-top','gstick-corner'].forEach(id=>{
+    const box=document.getElementById(id); if(!box) return;
+    box.style.display=on?'':'none';   // ガント以外では畳む＝他図種の当たり判定に入り込ませない
+    const sv=box.firstElementChild; if(!sv) return;
+    sv.setAttribute('width',SVG_W); sv.setAttribute('height',SVG_H);
+    sv.style.transform='scale('+(zoomLevel||1)+')';
+  });
+}
+// v8.11: 固定レイヤの一番下に敷く透明の板。固定中は見出し・列の下に本体の行やバーが潜り込むので、
+//   これが無いと「見出しの上をクリックしたのに下のバーを掴んでしまう」。自前のハンドラは持たせず
+//   イベントは canvas 側へ通す＝従来どおり「情報欄をクリックして工程を追加」も効いたままにする
+//   （通ったあと ganttPlace が ganttStickyPt で見えているとおりの座標に読み替える）。
+//   レーン見出しは帯の全面が掴めるドラッグ用の矩形で埋まっているため、この板は要らない。
+function ganttStickyShield(x,y,w,h){ return e('rect',{x:x,y:y,width:Math.max(0,w),height:Math.max(0,h),fill:'transparent'}); }
+// v8.11: 画面で掴んだ位置を「その場所に見えているもの」の座標へ読み替える。
+//   固定レイヤは図の座標を動かさずに見た目だけずらすので、固定中の見出し・タスク名列の下には
+//   本体の行が潜り込んでいる。読み替えないと、見出しを掴んだのに下の工程が反応する／タスク名列を
+//   掴んだのに「時間軸の上」と判定されて日付から工程が置かれる、という取り違えが起きる。
+//   固定していない図・折り返し表示中・スクロール量0のときは、そのままの座標を返す。
+function ganttStickyPt(px,py){
+  if(!ganttStickyOn()) return {x:px,y:py};
+  const wrap=document.getElementById('canvas-wrap'); if(!wrap) return {x:px,y:py};
   const z=zoomLevel||1;
-  if(isV()){
-    const dy=Math.max(0,wrap.scrollTop/z);
-    gh.setAttribute('transform',dy?`translate(0,${dy})`:'translate(0,0)');
-  } else {
-    const dx=Math.max(0,wrap.scrollLeft/z);
-    gh.setAttribute('transform',dx?`translate(${dx},0)`:'translate(0,0)');
-  }
-}
-function initStickyHeader(){
-  const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
-  wrap.addEventListener('scroll',stickyLaneHeader,{passive:true});
-}
-// ── v7.00: バス型接続線（樹状図/組織図の標準）──
+  const dx=Math.max(0,wrap.scrollLeft/z), dy=Math.max(0,wrap.scrollTop/z);
+  return {x:((px-dx)<ganttLeftW()? px-dx : px), y:((py-dy)<ganttBodyTop()? py-dy : py)};
+}// ── v7.00: バス型接続線（樹状図/組織図の標準）──
 //   親の下中央→1本→横バス→各子の上中央（横向きは右中央→縦バス→各子の左中央）。
 //   バス位置＝親ノードの busPos（親下端〜最寄り子上端の割合 0〜1・既定0.5）。選択エッジの
 //   白四角ハンドルで上下(左右)調整・ダブルクリックで既定へ。手動支点(waypoints)付きエッジと
@@ -6690,7 +7079,7 @@ function drawReconnectGhost(fixedPt,pt,candId,pin){
 }
 // ── 縦書きテキスト描画ヘルパー ──
 // 横モード時: 1文字ずつ縦に並べる。縦モード時: 通常の横書き。
-// v8.11: vbox={al,y0,h,pad} を渡すと縦書きの行を上／中央／下へ寄せる（左揃え＝上・右揃え＝下）
+// v8.10: vbox={al,y0,h,pad} を渡すと縦書きの行を上／中央／下へ寄せる（左揃え＝上・右揃え＝下）
 function appendVText(parent,text,cx,cy,fontSize,attrs,vbox){
   attrs=attrs||{};
   const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
@@ -6712,7 +7101,7 @@ function appendVText(parent,text,cx,cy,fontSize,attrs,vbox){
 
 // v8.10: 縦書きラベルの列折り返し。1列に収まらないぶんを次の列（左方向）へ送る。
 //   列の並びは日本語の縦書きに合わせて右から左。列幅は AUTO_LINE_H（横書きの行高と同じ）。
-// v8.11: vbox={al,y0,h,pad} を渡すと各列を上／中央／下へ寄せる（縦書きの行頭／行末揃え）
+// v8.10: vbox={al,y0,h,pad} を渡すと各列を上／中央／下へ寄せる（縦書きの行頭／行末揃え）
 function appendVTextWrap(parent,text,cx,cy,fontSize,maxColH,attrs,vbox){
   attrs=attrs||{};
   const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
@@ -7099,7 +7488,7 @@ function renderNodes(){
     } else if(n.sections&&n.sections.length){
       const offs=sectionOffsets(n);
       if(tV()){   // v7.00: 組織図は横向きでも横書き（職制一覧表の形）
-        // v8.11: 見出し段・副見出し段・一覧行に文字揃えを反映（ミニ表のセルは列の揃えが優先なので対象外）
+        // v8.10: 見出し段・副見出し段・一覧行に文字揃えを反映（ミニ表のセルは列の揃えが優先なので対象外）
         const _sa=alignH(nodeAlign(n),n.x,n.w,8);
         n.sections.forEach((sec,si)=>{
           const secH=sectionSize(sec,n.type==='org_node');
@@ -7148,7 +7537,7 @@ function renderNodes(){
               }
             }
           } else if(sec.rows){
-            // v8.11: UMLの属性・操作行は既定が左詰め。揃えを指定したときだけ従う（未指定は従来のまま）
+            // v8.10: UMLの属性・操作行は既定が左詰め。揃えを指定したときだけ従う（未指定は従来のまま）
             const _ra=n.textAlign?_sa:{x:n.x+8,anchor:'start'};
             sec.rows.forEach((row,ri)=>{
               const t=e('text',{x:_ra.x,y:offs[si]+SECT_PAD+ri*SECT_ROW_H+SECT_ROW_H/2,
@@ -7165,7 +7554,7 @@ function renderNodes(){
           ng.appendChild(ha);
         });
       } else {
-        const _sv={al:nodeAlign(n),y0:n.y,h:n.h,pad:8};   // v8.11: 縦書きの揃え（左＝上・右＝下）
+        const _sv={al:nodeAlign(n),y0:n.y,h:n.h,pad:8};   // v8.10: 縦書きの揃え（左＝上・右＝下）
         n.sections.forEach((sec,si)=>{
           const secW=sectionSize(sec);
           if(sec.style==='header'){
@@ -7211,7 +7600,7 @@ function renderNodes(){
         // 横モード: タイトル左（縦書き）、説明右（縦書き）
         const divX=n.x+NOTE_TITLE_H;
         const titleCx=n.x+NOTE_TITLE_H/2;
-        appendVText(ng,n.text,titleCx,cy,12,null,{al:nodeAlign(n),y0:n.y,h:n.h,pad:8});   // v8.11: 揃え（縦書きは上／下）
+        appendVText(ng,n.text,titleCx,cy,12,null,{al:nodeAlign(n),y0:n.y,h:n.h,pad:8});   // v8.10: 揃え（縦書きは上／下）
         if(n.note){
           const chars=[...(n.note||'').replace(/\n/g,'')];
           const charH=15;
@@ -7241,12 +7630,12 @@ function renderNodes(){
       }
     } else if(n.type==='org_group'||n.type==='group_box'){
       // v7.02: タイトル帯の中に表示（帯＝枠上端22px）
-      // v8.11: 揃えを反映。既定は従来どおり左詰め（帯の見出しは左が読みやすいため）
+      // v8.10: 揃えを反映。既定は従来どおり左詰め（帯の見出しは左が読みやすいため）
       const _ga=n.textAlign?alignH(n.textAlign,n.x,n.w,10):{x:n.x+10,anchor:'start'};
       const t=e('text',{x:_ga.x,y:n.y+11,'text-anchor':_ga.anchor,'dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#334155','pointer-events':'none'});
       t.textContent=n.text; ng.appendChild(t);
     } else if(n.type==='lifeline'){
-      // ライフラインヘッダーのテキスト（中央配置）／ v8.11: 揃えを反映
+      // ライフラインヘッダーのテキスト（中央配置）／ v8.10: 揃えを反映
       const _la=alignH(nodeAlign(n),n.x,n.w,8);
       const t=e('text',{x:_la.x,y:n.y+n.h/2,'text-anchor':_la.anchor,'dominant-baseline':'middle','font-size':'12','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
       t.textContent=n.text; ng.appendChild(t);
@@ -7263,7 +7652,7 @@ function renderNodes(){
       }
     } else if(n.type==='event'||n.type==='gateway_xor'||n.type==='gateway_par'){
       if(n.text){
-        // v8.11: シェイプ下の外付けラベルにも揃えを反映（シェイプの左端／中央／右端に合わせる）
+        // v8.10: シェイプ下の外付けラベルにも揃えを反映（シェイプの左端／中央／右端に合わせる）
         const _ea=alignH(nodeAlign(n),n.x,n.w,0);
         const lt=e('text',{x:_ea.x,y:n.y+n.h+14,'text-anchor':_ea.anchor,'dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
         lt.textContent=n.text; ng.appendChild(lt);
@@ -7282,7 +7671,7 @@ function renderNodes(){
           t.textContent=ln; ng.appendChild(t);
         });
       } else if(autoFitTarget(n)){
-        // v8.10: 縦書きも列で折り返す ／ v8.11: 揃え（縦書きは上＝行頭・下＝行末）を反映
+        // v8.10: 縦書きも列で折り返す ／ v8.10: 揃え（縦書きは上＝行頭・下＝行末）を反映
         appendVTextWrap(ng,n.text,cx,textCy,12,Math.max(24,n.h-autoFitPad(n)),null,
           {al:nodeAlign(n),y0:n.y,h:n.h,pad:autoFitPad(n)/2});
       } else {
@@ -7304,7 +7693,7 @@ function renderNodes(){
         ng.appendChild(e('circle',{cx,cy,r:6,fill:'#2563eb',opacity:.7,'pointer-events':'none'}));
       }
     }
-    // v8.11: 幅調整ハンドルは選択モードのみ（ハンドツール中は「移動まで」に留める）
+    // v8.10: 幅調整ハンドルは選択モードのみ（ハンドツール中は「移動まで」に留める）
     if(n.type==='crosslane'&&S.mode==='select'){
       const hw=8;
       if(isV()){
@@ -7420,7 +7809,7 @@ function setMode(m){
   document.getElementById('diagram-svg').setAttribute('class',m==='connect'?'cx':(m==='hand'?'hand':''));
   if(m==='connect'){clearPal();hint('接続元ノードをクリック → 接続先ノードをクリック (Escでキャンセル)')}
   // v8.10: ハンドツールはパレットのシェイプ選択を解除し、配置・接続を無効にする
-  // v8.11: シェイプの移動とダブルクリック編集だけは残す
+  // v8.10: シェイプの移動とダブルクリック編集だけは残す
   else if(m==='hand'){clearPal();hint('ハンドツール: 余白のドラッグで画面を移動／シェイプはドラッグで移動・ダブルクリックで文字編集（Escまたは「▶ 選択」で戻る）')}
   else hint('シェイプをパレットからドラッグ、またはクリックしてキャンバスに配置');
   render();
@@ -7864,7 +8253,7 @@ function nodeMD(ev,nid){
 //   ここで stopPropagation すれば、配置・選択・接続を個別にガードしなくてもすべて止まる。
 //   画面移動は #canvas-wrap のネイティブスクロールをそのまま動かす（ズーム非依存）。
 //
-// v8.11: シェイプの上だけは握りつぶさず、通常どおりのハンドラへ通す。
+// v8.10: シェイプの上だけは握りつぶさず、通常どおりのハンドラへ通す。
 //   ＝ハンドツール中でもシェイプは掴んで動かせ、ダブルクリックで文字を編集できる。
 //   通すのはシェイプ本体 <g data-nid> と文字編集欄 #svg-editor の中だけ。余白・接続線・
 //   レーン見出しは従来どおりパンになる。移動より先の操作（リサイズ・接続・右クリック削除）は
@@ -7877,14 +8266,22 @@ function initHandTool(){
   const wrap=document.getElementById('canvas-wrap'); if(!wrap)return;
   wrap.addEventListener('mousedown',ev=>{
     if(S.mode!=='hand'||ev.button!==0)return;
-    if(handPassThrough(ev.target))return;   // v8.11: シェイプ／編集欄の上は通常の操作へ委ねる
-    // v8.11: 文字編集中に余白を押したら確定するだけ（画面は動かさない）。選択モードの
+    if(handPassThrough(ev.target))return;   // v8.10: シェイプ／編集欄の上は通常の操作へ委ねる
+    // v8.10: 文字編集中に余白を押したら確定するだけ（画面は動かさない）。選択モードの
     //   「余白クリックは確定だけ」(v8.10⑦) と同じ挙動に揃える。
     if(closeSvgEditor())return;
     ev.preventDefault(); ev.stopPropagation();
     panState={sx:ev.clientX,sy:ev.clientY,sl:wrap.scrollLeft,st:wrap.scrollTop};
     document.getElementById('diagram-svg').classList.add('grabbing');
   },true);
+  // v8.11: ハンドツール中はホイールを拡大縮小に割り当てる。掴んで動かすモードでは画面の移動は
+  //   ドラッグで行うので、ホイールはスクロールより拡大縮小のほうが噛み合う。
+  //   ズームの中身は図種ごとの既存処理へ委ねる（ガントは列幅・他は zoomLevel）。
+  wrap.addEventListener('wheel',ev=>{
+    if(S.mode!=='hand')return;
+    ev.preventDefault(); ev.stopPropagation();
+    if(ev.deltaY<0) zoomIn(); else if(ev.deltaY>0) zoomOut();
+  },{capture:true,passive:false});
   // 押した後に発生するクリック系も握りつぶす（配置・余白ダブルクリックでの箱追加を起こさない）。
   // シェイプ上の click（選択）と dblclick（文字編集）だけは通す。右クリック削除は通さない。
   ['click','dblclick','contextmenu'].forEach(t=>{
@@ -8704,7 +9101,7 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
   if(!isMulti) inp.type='text';
   inp.style.cssText=`width:100%;height:100%;border:2px solid #3b82f6;border-radius:4px;`+
     `padding:${isMulti?'4px 6px':'2px 6px'};font:${isMulti?'12':'11'}px 'Segoe UI',sans-serif;`+
-    // v8.11: 編集欄の文字寄せもシェイプの揃えに合わせる（打っている間と確定後で位置が変わらないように）
+    // v8.10: 編集欄の文字寄せもシェイプの揃えに合わせる（打っている間と確定後で位置が変わらないように）
     `text-align:${(opts&&opts.align)||'center'};resize:none;outline:none;background:#ffffff;box-sizing:border-box;`;
   inp.value=initVal;
   if(placeholder)inp.placeholder=placeholder;
@@ -8747,7 +9144,7 @@ function editText(nid){
   const n=S.nodes.find(n=>n.id===nid);
   if(!n)return;
   S.sel=[nid]; render();
-  const _al=n.textAlign||'center';   // v8.11: 編集欄も同じ揃えで表示
+  const _al=n.textAlign||'center';   // v8.10: 編集欄も同じ揃えで表示
   if((n.type==='note'||n.type==='state_detail')&&!isV()){
     openSvgEditor(n.x,n.y,NOTE_TITLE_H,n.h,n.text,v=>{n.text=v;snap();render();},undefined,{align:_al});
   } else {
@@ -8998,6 +9395,25 @@ let fileHandle=null;         // このセッションで確定した保存先（
 let fileHandleTried=false;   // IndexedDB からの復元を既に試したか
 function newDocId(){ return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); }
 function curSaveName(){ return exportDiagramName()||'ダイアグラム'; }
+// v8.11追補: 未保存判定（指紋方式）。snap() の履歴は lanes/nodes/edges/gantt/mindLayout の5キーしか
+//   積まないため、方眼のオン・オフ／デザインテンプレート／図の名称／レーン名などは履歴に載らない。
+//   そこで「保存する内容そのもの」を文字列化し、最後に保存した時点の文字列と比べる＝取りこぼしが無い。
+//   uid は除く: restore() が巻き戻さない単調増加カウンタなので、1つ足して Ctrl+Z しても値だけ進み
+//   永久に未保存扱いになる。docId も除く: 保存先照合用の内部IDで読み込み直後に遅延生成されるため、
+//   含めると開いた瞬間に未保存になる。
+function docState(){
+  return {diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,
+          diagramName:exportDiagramName(),gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,
+          style:S.style,stepNums:S.stepNums,mindBranch:S.mindBranch,mindReserve:S.mindReserve||[]};
+}
+function docFingerprint(){ return JSON.stringify(docState()); }
+let savedFingerprint=null;   // null＝基準がまだ無い（起動直後・新規作成ダイアログ表示中）
+let savedSeq=0;              // 保存が成立した回数。内容が同一でも増えるので「保存できたか」の判定に使う
+function markSaved(){ try{ savedFingerprint=docFingerprint(); }catch(e){ savedFingerprint=null; } savedSeq++; }
+function isDirty(){
+  try{ return savedFingerprint!==null && docFingerprint()!==savedFingerprint; }
+  catch(e){ return false; }   // 判定できないことを理由にタブを閉じられなくしない
+}
 // ダブルクリックで開いた場合の自分自身のファイル名（file:// のときだけ得られる。それ以外は空）
 function curFileName(){
   try{ if(location.protocol!=='file:') return '';
@@ -9036,6 +9452,24 @@ async function fhIsSameDoc(h){
   }catch(e){ return false; }
 }
 async function fhWrite(h,html){ const w=await h.createWritable(); await w.write(new Blob([html],{type:'text/html;charset=utf-8'})); await w.close(); }
+// v8.11追補: 保存の失敗理由を日本語にする。DOMException の name はブラウザ共通なので name で引く。
+//   知らない name のときは元のメッセージに name を添えて出す（黙って握り潰さない）。
+const SAVE_ERR_JA={
+  NotAllowedError:'ファイルへの書き込みが許可されませんでした',
+  NoModificationAllowedError:'ファイルが他のアプリで開かれているため書き込めません',
+  NotFoundError:'保存先のファイルが見つかりません（移動・削除・名前の変更）',
+  QuotaExceededError:'保存先の空き容量が足りません',
+  SecurityError:'ブラウザの制限により保存できませんでした',
+  InvalidStateError:'保存先の状態が変わったため書き込めません（開き直してください）',
+  AbortError:'保存が中止されました',
+  TypeError:'保存の処理を開始できませんでした',
+};
+function saveErrText(err){
+  if(!err) return '原因不明';
+  const n=err.name||'', m=((err.message||'')+'').trim();
+  if(SAVE_ERR_JA[n]) return SAVE_ERR_JA[n];
+  return m? (m+'（'+(n||'Error')+'）') : (n||'原因不明');
+}
 // 保存先を選んで保存（OSの保存ダイアログ）。ここで選んだファイルが以後の上書き先になる。
 async function saveAsWithPicker(){
   const name=curSaveName();
@@ -9047,7 +9481,7 @@ async function saveAsWithPicker(){
       types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html']}}],
     });
   }catch(err){
-    if(err&&err.name==='AbortError') return;          // ユーザーが取り消した
+    if(err&&err.name==='AbortError'){ hint('保存を中止しました（変更は保存されていません）'); return; }   // v8.11追補: 従来は完全に無言だった
     hint('保存ダイアログを開けないため、ダウンロードで保存します'); saveHtmlCore(name); return;
   }
   try{
@@ -9056,8 +9490,13 @@ async function saveAsWithPicker(){
     await fhWrite(h,r.html);
     fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
     setTabTitleFromFilename(h.name);
+    markSaved();
+    toast('保存しました');
     hint('保存しました: '+h.name+'（以後は「上書き保存」／Ctrl+S でこのファイルに上書きします）');
-  }catch(err){ hint('保存に失敗しました: '+((err&&err.message)||err)); }
+  }catch(err){
+    toast('保存に失敗しました','ng',saveErrText(err));
+    hint('保存に失敗しました: '+saveErrText(err));
+  }
 }
 // 上書き保存（Ctrl+S）。保存先が未確定のときだけ一度だけ場所を尋ね、以後は無確認で同じファイルへ書き戻す。
 async function overwriteSave(){
@@ -9079,14 +9518,19 @@ async function overwriteSave(){
     await fhWrite(h,r.html);
     fileHandle=h; await fhSave(S.docId,h);
     setTabTitleFromFilename(h.name);
+    markSaved();
+    toast('上書き保存しました');
     hint('上書き保存しました: '+h.name);
   }catch(err){
     fileHandle=null;
-    hint('上書き保存に失敗しました: '+((err&&err.message)||err)+' — 保存先を指定し直してください');
+    toast('上書き保存に失敗しました','ng',saveErrText(err));
+    hint('上書き保存に失敗しました: '+saveErrText(err)+' — 保存先を指定し直してください');
   }
 }
 // インポート＝保存した.htmlを開く。対応ブラウザではハンドルも取得し、そのまま Ctrl+S で上書きできるようにする。
-async function openImportFile(){
+async function openImportFile(asked){
+  // v8.11追補: ファイルを選ばせる前に、今の図が未保存でないかを確かめる
+  if(!asked&&isDirty()){ guardDiscard('読み込んだ内容で現在の図は置き換えられます。',()=>openImportFile(true)); return; }
   const fallback=()=>document.getElementById('import-file').click();
   if(!FSA_OK){ fallback(); return; }
   let h=null;
@@ -9094,14 +9538,15 @@ async function openImportFile(){
     const picked=await window.showOpenFilePicker({id:'bdm-save',multiple:false,
       types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html','.htm']}}]});
     h=picked&&picked[0];
-  }catch(err){ if(err&&err.name==='AbortError') return; fallback(); return; }
+  }catch(err){ if(err&&err.name==='AbortError'){ hint('読み込みを中止しました'); return; } fallback(); return; }
   if(!h) return;
   try{
     const txt=await (await h.getFile()).text();
-    if(!importStateFromHtml(txt)) return;             // 置き換え確認で取消＝保存先も変えない
+    if(!importStateFromHtml(txt,asked)) return;       // 置き換え確認で取消＝保存先も変えない
     setTabTitleFromFilename(h.name);
     if(!S.docId) S.docId=newDocId();
     fileHandle=h; fileHandleTried=true; await fhSave(S.docId,h);
+    markSaved();   // 読み込んだ直後＝ファイルの内容と一致
     hint('読み込みました: '+h.name+'（「上書き保存」／Ctrl+S でこのファイルに上書きします）');
   }catch(err){ hint('インポート失敗: '+((err&&err.message)||err)); }
 }
@@ -9109,11 +9554,11 @@ async function openImportFile(){
 // v8.09: 保存用HTMLの生成。生成（ここ）と書き出し（ダウンロード／上書き）を分離した。
 function buildSaveHtml(name){
   document.getElementById('svg-editor')?.remove();
-  document.getElementById('g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんを保存HTMLへ焼き込まない
+  toastHide();   // v8.11追補: outerHTML を丸ごと文字列化するため、表示中のトーストが保存ファイルへ焼き込まれる
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
-  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
+  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch,mindReserve:S.mindReserve};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
   const SCR='<scr'+'ipt',CSCR='</scr'+'ipt>';
   const stateJson=JSON.stringify(st).replace(new RegExp(CSCR,'gi'),'<\\/script>');
   let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
@@ -9121,13 +9566,19 @@ function buildSaveHtml(name){
   html=html.replace(new RegExp(SCR+' id="swimlane-state">[\\s\\S]*?'+CSCR+'\\s*','g'),'');
   html=html.replace(/\s+data-state="[^"]*"/g,'');
   html=html.replace('</head>',()=>SCR+' id="swimlane-state">window.__SWIMLANE_STATE__='+stateJson+';'+CSCR+'\n</head>');
-  stickyLaneHeader();   // v8.10: 画面側の見出し追従を元に戻す（保存のために一時的に外していた）
   return {safe,html};
 }
 // v8.09: 従来どおりダウンロードで保存（上書き保存が使えないブラウザ・失敗時のフォールバック）
 function saveHtmlCore(name){
-  const r=buildSaveHtml(name);
-  dl(new Blob([r.html],{type:'text/html;charset=utf-8'}),r.safe+'.html');
+  try{
+    const r=buildSaveHtml(name);
+    dl(new Blob([r.html],{type:'text/html;charset=utf-8'}),r.safe+'.html');
+    markSaved();   // ダウンロードの完了は検知できないが、更新しないと保存しても毎回警告が出て警告が形骸化する
+    toast('保存しました');
+  }catch(err){
+    toast('保存に失敗しました','ng',saveErrText(err));
+    hint('保存に失敗しました: '+saveErrText(err));
+  }
 }
 
 function openSaveAsDialog(){
@@ -9174,7 +9625,10 @@ function buildExportSvg(skipTitle){
   const svg=document.getElementById('diagram-svg').cloneNode(true);
   svg.setAttribute('xmlns',NS);
   svg.style.transform='';
-  svg.querySelector('#g-lane-hdr')?.removeAttribute('transform');   // v8.10: 見出しの追従ぶんは出力に持ち込まない
+  // v8.11追補: レーン見出しも本体SVGの外（重ね箱）にあるので、ガントの3レイヤと同じく取り込む。
+  // v8.11: ガントの固定レイヤは本体SVGの外（position:sticky の重ね箱）にあるので、書き出しには明示的に取り込む。
+  //   座標系は本体と同じなので、そのまま最前面へ足せば画面と同じ絵になる。
+  ['g-lane-hdr','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{ const src=document.getElementById(id); if(src&&src.childElementCount) svg.appendChild(src.cloneNode(true)); });
   svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
   svg.querySelectorAll('.mind-dim').forEach(el=>el.classList.remove('mind-dim'));   // v8.03: 強調表示の減光は書き出しに含めない
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
@@ -9700,8 +10154,11 @@ function importFromFile(ev){
   if(!file)return;
   const reader=new FileReader();
   reader.onload=()=>{
-    try{ if(importStateFromHtml(reader.result)) setTabTitleFromFilename(file.name); }   // v6.17追補: 取込成功時はタブ名称をインポート元ファイル名に
-    catch(err){ hint('インポート失敗: '+(err&&err.message||err)); }
+    // v8.11追補: 適用の直前にガード（ここまで来ないと中身が読めないので、選択後の確認になる）
+    guardDiscard('読み込んだ内容で現在の図は置き換えられます。',()=>{
+      try{ if(importStateFromHtml(reader.result,true)) setTabTitleFromFilename(file.name); }   // v6.17追補: 取込成功時はタブ名称をインポート元ファイル名に
+      catch(err){ hint('インポート失敗: '+(err&&err.message||err)); }
+    });
   };
   reader.onerror=()=>hint('インポート失敗: ファイルを読み込めません');
   reader.readAsText(file);
@@ -9716,12 +10173,12 @@ function extractSavedState(html){
   if(end<0)return null;
   return JSON.parse(rest.slice(0,end));
 }
-function importStateFromHtml(html){
+function importStateFromHtml(html,asked){
   const st=extractSavedState(html);
   if(!st||!Array.isArray(st.nodes)) throw new Error('編集データが見つかりません');
   // 既存の図がある場合は置き換え確認（破壊的操作のため）
   if((S.nodes&&S.nodes.length)||(S.lanes&&S.lanes.length)){
-    if(!window.confirm('現在の図はインポートする内容で置き換えられます。よろしいですか？')) return false;   // v6.17追補: 取消＝タブ名称も変えない
+    if(!asked&&!window.confirm('現在の図はインポートする内容で置き換えられます。よろしいですか？')) return false;   // v6.17追補: 取消＝タブ名称も変えない / v8.11追補: 既に4択で尋ねていれば重ねて訊かない
   }
   // インポート先ファイルの内容で全体を置き換え（init の復元処理に準拠）
   S.diagramType=st.diagramType||'swimlane';
@@ -9733,6 +10190,7 @@ function importStateFromHtml(html){
   S.docId=st.docId||null;   // v8.09: 取り込んだファイル側のIDへ切り替え
   S.gantt=Object.assign(defaultGantt(),st.gantt||{});
   S.mindBranch=(st.mindBranch==='straight')?'straight':'curve';   // v8.09: 枝の形（旧ファイルは曲線）
+  S.mindReserve=Array.isArray(st.mindReserve)?st.mindReserve:[];   // v8.11追補: 旧ファイルには無いキー
   S.mindLayout=st.mindLayout||'radial';   // C-1修正(v4.02): init同様にレイアウトモードを復元（インポート時の欠落を是正）
   S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
   migrateOrgSections();         // v7.02: 旧2段(sub)→ミニ表へ自動移行（見た目不変）
@@ -9743,6 +10201,7 @@ function importStateFromHtml(html){
   if(ni)ni.value=S_diagramName;
   applyDiagramType(); lanePanel(); snap(); render();
   hint(`インポート完了（置き換え）: ${getDT().name} / レーン${S.lanes.length} / シェイプ${S.nodes.length} / 線${S.edges.length}`);
+  markSaved();   // v8.11追補: 読み込んだ内容＝ファイルの内容なので、この時点は未保存ではない
   return true;   // v6.17追補: 取込成功（呼び出し元でタブ名称を更新）
 }
 
@@ -9757,7 +10216,8 @@ function applyZoom(){
   spacer.style.width=Math.round(SVG_W*zoomLevel)+'px';
   spacer.style.height=Math.round(SVG_H*zoomLevel)+'px';
   document.getElementById('zoom-label').textContent=Math.round(zoomLevel*100)+'%';
-  stickyLaneHeader();   // v8.10: 再描画・ズーム変更のたびに見出しの追従位置を入れ直す
+  syncLaneSticky();     // v8.10→v8.11追補: レーン見出しの重ね箱の拡大率を合わせる
+  syncGanttSticky();    // v8.11: ガントの固定レイヤの拡大率も合わせる
 }
 function zoomIn(){
   if(S.diagramType==='gantt'){ ganttZoom(4); return; }
@@ -9858,7 +10318,7 @@ function closeSearch(){
   document.getElementById('search-panel').style.display='none';
   _searchMatches=[]; _searchIdx=-1; render(); clearGuides();   // 強調枠を消す
 }
-// ── v8.11: 検索パネルの移動（見出し帯をドラッグ）──
+// ── v8.10: 検索パネルの移動（見出し帯をドラッグ）──
 //   初期位置は right 指定なので、掴んだ時点で left/top 指定へ切り替えてから動かす。
 //   置いた位置は開き直しても保つ（探しながら図を見たい場所へ寄せられるようにするため）。
 let searchDragState=null;
@@ -9878,16 +10338,69 @@ document.addEventListener('mousemove',ev=>{
 });
 document.addEventListener('mouseup',()=>{ searchDragState=null; });
 
-// ── v8.11: メニューバー（ツールバー）の表示切替 ──
-//   隠すと図の表示領域がツールバーのぶんだけ広がる。戻すボタンは画面右下に常駐させ、
-//   隠している間だけ出す（隠したことに気づけないと戻せなくなるため）。
+// ── v8.10: メニューバー（ツールバー）の表示切替 ──
+//   隠すと図の表示領域がツールバーのぶんだけ広がる。戻すボタンは隠している間だけ出す
+//   （隠したことに気づけないと戻せなくなるため）。v8.11: 位置は画面右下から見出しバーの右端へ。
 //   図の見出し（アプリ名・図種）は残す＝図種の切替はここからしか行えないため。
+// v8.11: ガントの見出し欄を畳む／戻す。畳んでいる間も工事名だけは残す＝どの工事の工程表なのかが
+//   分からなくなるのを防ぐため。戻すボタンはその帯の右端に出す（メニューバーと同じ考え方）。
+//   表示の切替なので履歴には積まない（方眼・ステップ番号・枝の形と同じ扱い）。状態は
+//   S.gantt.header.collapsed に持つので、保存すれば次に開いたときも畳んだままになる。
+function ganttToggleHead(){
+  const h=(S.diagramType==='gantt'&&S.gantt)?S.gantt.header:null; if(!h) return;
+  h.collapsed=!h.collapsed;
+  render();
+  hint(h.collapsed?'見出しを畳みました（工事名の右端の「☰ 見出しを表示」で戻せます）':'');
+}
+// v8.11: 開閉ボタンの表示と位置合わせ。ボタンは見出しレイヤと同じ position:sticky の重ね箱に
+//   入れてあるので、縦位置の追従は CSS 任せ＝見出しを固定しているときは画面上端に留まり、
+//   固定しない折り返し表示中は見出しと一緒にスクロールする。ここで決めるのは
+//   「どちらのボタンを出すか」「重ね箱を縦に止めるか」「左右と上下のオフセット」だけ。
+function layoutGanttHeadButtons(){
+  const box=document.getElementById('gstick-headbtn');
+  const bh=document.getElementById('btn-gh-hide'), bs=document.getElementById('btn-gh-show');
+  if(!box||!bh||!bs) return;
+  const h=(S.diagramType==='gantt'&&S.gantt)?S.gantt.header:null;
+  const on=!!(h&&h.show), collapsed=on&&!!h.collapsed;
+  box.style.display=on?'':'none';
+  bh.style.display=(on&&!collapsed)?'block':'none';
+  bs.style.display=collapsed?'block':'none';
+  if(!on) return;
+  box.style.top=ganttStickyOn()?'0px':'auto';   // 見出しを固定しないとき（折り返し）は一緒に流す
+  const wrap=document.getElementById('canvas-wrap'); if(!wrap) return;
+  const z=zoomLevel||1, headH=ganttHeadH()*z;
+  const btn=collapsed?bs:bh, bw=btn.offsetWidth||96, bhH=btn.offsetHeight||24;
+  btn.style.left=Math.max(0,wrap.clientWidth-bw-14)+'px';   // 画面の右端（縦スクロールバーの内側）
+  // 展開中は見出し欄の下端寄り／畳んだときは帯の中央
+  btn.style.top=(collapsed? (headH-bhH)/2 : headH-bhH-5)+'px';
+}
+window.addEventListener('resize',layoutGanttHeadButtons);   // v8.11: 画面幅が変わったら置き直す
+// v8.11追補: 未保存のままタブを閉じる／ブラウザを終了するときの警告。
+//   ここで出るダイアログの文言もボタンもブラウザが決める固定文（離れる／キャンセルの2択）で、
+//   こちらから「上書き保存」を差し込む手段は無い（閉じられないページを作れてしまうため塞がれている）。
+//   なので、キャンセルして残ってくれた直後にこちらの選択肢を出す。
+//   clean のときは returnValue に触れないこと＝空文字を代入するだけでダイアログを出すブラウザがある。
+let _unloadT=null;
+window.addEventListener('beforeunload',ev=>{
+  if(!isDirty()) return;
+  ev.preventDefault();
+  ev.returnValue='';
+  // 離脱が取り消された＝ページが生き続けたときだけ動くタイマー。離れた場合はページごと消えるので発火しない。
+  //   この時点で閉じる操作はもう取り消されており「保存しない」に当たる動作が存在しないため3択にする。
+  clearTimeout(_unloadT);
+  _unloadT=setTimeout(()=>{
+    if(!isDirty()) return;
+    if(document.getElementById('save4-modal').style.display==='flex') return;
+    confirmSave4('保存していない変更があります。','保存しますか？（タブを閉じる操作は取り消されました）',{cancelLabel:'このまま続ける'});
+  },600);
+});
 function toggleToolbar(){
   const tb=document.getElementById('toolbar'), btn=document.getElementById('btn-show-toolbar');
   const hidden=(tb.style.display==='none');
   tb.style.display=hidden?'':'none';
   btn.style.display=hidden?'none':'block';
-  hint(hidden?'':'メニューバーを隠しました（右下の「☰ メニューを表示」で戻せます）');
+  hint(hidden?'':'メニューバーを隠しました（見出しバー右端の「☰ メニューを表示」で戻せます）');
+  layoutGanttHeadButtons();   // v8.11: ツールバーの有無でキャンバスの上端が動くので、見出しの開閉ボタンも置き直す
 }
 function replaceCurrent(){
   if(_searchIdx<0||!_searchMatches.length||!_searchQuery)return;
@@ -10011,7 +10524,7 @@ function generateFromMermaid(text){
   if(!parsed.nodes.length) return {ok:false,error:'ノードが見つかりませんでした。Mermaid の flowchart 記法（例: A[開始] --> B[終了]）を確認してください。'};
   S.diagramType='flowchart'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
   S.orientation=(parsed.dir==='LR'||parsed.dir==='RL')?'horizontal':'vertical';
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.nodes.forEach(nd=>{ idMap[nd.id]=uid(); });
   parsed.nodes.forEach(nd=>{ const d=SD[nd.type]||SD.rect;
@@ -10067,7 +10580,7 @@ function generateFromMermaidSequence(text){
   const parsed=parseMermaidSequence(text);
   if(!parsed.participants.length) return {ok:false,error:'参加者が見つかりませんでした。Mermaid の sequenceDiagram 記法（例: A->>B: メッセージ）を確認してください。'};
   S.diagramType='sequence'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const d=SD.lifeline, gap=150, x0=40, llY=20;
   const idMap={};
   parsed.participants.forEach((p,i)=>{
@@ -10131,7 +10644,7 @@ function generateFromMermaidState(text){
   if(!parsed.states.length&&!parsed.transitions.length) return {ok:false,error:'状態が見つかりませんでした。Mermaid の stateDiagram 記法（例: [*] --> 待機 ／ 待機 --> 実行: 開始）を確認してください。'};
   S.diagramType='statechart'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
   S.orientation=(parsed.dir==='LR'||parsed.dir==='RL')?'horizontal':'vertical';
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.states.forEach(st=>{ const nid=uid(); idMap[st.id]=nid;
     S.nodes.push({id:nid,type:'state',x:0,y:0,w:SD.state.w,h:SD.state.h,text:st.label,lid:VIRTUAL_LANE.id}); });
@@ -10194,7 +10707,7 @@ function generateFromMermaidER(text){
   const parsed=parseMermaidER(text);
   if(!parsed.entities.length) return {ok:false,error:'エンティティが見つかりませんでした。Mermaid の erDiagram 記法（例: CUSTOMER ||--o{ ORDER : places）を確認してください。'};
   S.diagramType='er'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.entities.forEach(en=>{ const nid=uid(); idMap[en.id]=nid;
     S.nodes.push({id:nid,type:'entity',x:0,y:0,w:SD.entity.w,h:SD.entity.h,text:'',lid:VIRTUAL_LANE.id,
@@ -10274,7 +10787,7 @@ function generateFromMermaidClass(text){
   const parsed=parseMermaidClass(text);
   if(!parsed.classes.length) return {ok:false,error:'クラスが見つかりませんでした。Mermaid の classDiagram 記法（例: class Animal { +int age }）を確認してください。'};
   S.diagramType='uml'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};
   parsed.classes.forEach(c=>{ const nid=uid(); idMap[c.id]=nid; let node;
     if(c.stereotype==='interface'){
@@ -10356,7 +10869,7 @@ function generateFromMermaidGantt(text){
     if(t.id) byId[t.id]={start,end};
   });
   S.diagramType='gantt'; S.orientation='horizontal'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   let minStart=null; resolved.forEach(r=>{ if(r.start&&(!minStart||r.start<minStart))minStart=r.start; });
   S.gantt=defaultGantt(); if(minStart)S.gantt.startDate=minStart;
   const phaseByName={};
@@ -10394,7 +10907,7 @@ function generateFromOutline(text){
   const parsed=parseOutline(text);
   if(!parsed.items.length) return {ok:false,error:'アウトラインが空です。各行にトピックを書き、字下げ（スペース/タブ）で階層を表してください。'};
   S.diagramType='mindmap'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   if(S.mindLayout!=='tree'&&S.mindLayout!=='radial') S.mindLayout='radial';
   const tops=parsed.items.map((it,i)=>i).filter(i=>parsed.items[i].parentIdx===null);
   const idMap={}; let rootId=uid(), rootItemIdx=-1;
@@ -10428,7 +10941,7 @@ function mindValidAttr(key,v){
 function mindBuildFromItems(items,warnings){
   if(!items.length) return {ok:false,error:'トピックが見つかりません'};
   S.diagramType='mindmap'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   if(S.mindLayout!=='tree'&&S.mindLayout!=='radial') S.mindLayout='radial';
   const tops=items.map((it,i)=>i).filter(i=>items[i].parentIdx===null);
   const idMap={}; let rootId=uid(), rootItemIdx=-1;
@@ -10563,7 +11076,7 @@ function generateFromOrgCsv(text){
   const parsed=parseOrgCsv(text);
   if(!parsed.rows.length) return {ok:false,error:'データ行が見つかりませんでした。1行目を見出し（例: 役職,氏名,上司）にし、2行目以降にデータを記述してください。'};
   S.diagramType='orgchart'; S.orientation='vertical'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   const idMap={};   // identity → 最初の nodeId
   parsed.rows.forEach(r=>{ const nid=uid(); r._nid=nid;
     if(r.identity && !(r.identity in idMap)) idMap[r.identity]=nid;
@@ -10649,7 +11162,7 @@ function generateFromGanttCsv(text){
     resolved.push({...r,start,end});
   });
   S.diagramType='gantt'; S.orientation='horizontal'; S.lanes=[]; S.sel=[]; S.conn=null; activePal=null;
-  S.nodes=[]; S.edges=[];
+  S.nodes=[]; S.edges=[]; S.mindReserve=[];   // v8.11追補: 図ごと作り直すのでリザーブも空にする
   let minStart=null; resolved.forEach(r=>{ if(r.start&&(!minStart||r.start<minStart))minStart=r.start; });
   S.gantt=defaultGantt(); if(minStart)S.gantt.startDate=minStart;
   const phaseByName={};
@@ -10945,6 +11458,29 @@ function closeGanttHeadEditor(commit){
   render();
 }
 function hint(msg){const h=document.getElementById('hint');h.textContent=msg;h.style.display=msg?'':'none'}
+// v8.11追補: 画面中央のトースト。保存の結果（成功／失敗）だけに使う。sub には失敗の原因を渡す。
+//   連続で呼ばれても古いタイマーが新しいトーストを消さないよう、2本（消し始め・display:none）とも
+//   clear してから張り直す。
+let _toastT1=null,_toastT2=null;
+function toast(msg,kind,sub,ms){
+  const t=document.getElementById('toast'); if(!t) return;
+  clearTimeout(_toastT1); clearTimeout(_toastT2);
+  t.textContent='';
+  const m=document.createElement('span'); m.textContent=msg; t.appendChild(m);
+  if(sub){ const s=document.createElement('span'); s.className='tsub'; s.textContent=sub; t.appendChild(s); }
+  t.className=(kind==='ng')?'ng':'';
+  t.style.display='';
+  void t.offsetWidth;            // display 変更と同フレームでは遷移しないため強制リフロー
+  t.classList.add('show');
+  const life=ms||((kind==='ng')?4200:2000);
+  _toastT1=setTimeout(()=>{ t.classList.remove('show');
+    _toastT2=setTimeout(()=>{ t.style.display='none'; },220); },life);
+}
+function toastHide(){
+  const t=document.getElementById('toast'); if(!t) return;
+  clearTimeout(_toastT1); clearTimeout(_toastT2);
+  t.className=''; t.textContent=''; t.style.display='none';
+}
 
 // ── 自動レイアウト ──
 function autoLayout(){
