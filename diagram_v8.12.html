@@ -9786,6 +9786,14 @@ function buildExportSvg(skipTitle){
       'font-size':String(fs),'font-weight':'700',fill:'#1e293b','font-family':"'Segoe UI','Helvetica Neue',sans-serif"});
     t.textContent=name; svg.appendChild(t);
   }
+  // v8.12: 主軸を切り詰めると、レーン外枠の閉じ線（縦=下端 y=SVG_H／横=右端 x=SVG_W）は切り出し枠(viewBox)の
+  //   外に出て印刷に表れない。トリム位置に外枠と同じ線（#94a3b8/1.5px）を1本描き足して枠を4辺そろえる。
+  //   PNG・SVG・PDF はすべて buildExportSvg を通るのでここ1か所で3出力に反映。_ext==null（非レーン図・内容なし）は無描画。
+  if(_ext!=null){
+    const _lw=1.5;
+    if(isV()) svg.appendChild(e('line',{x1:0,y1:baseH-_lw,x2:W,y2:baseH-_lw,stroke:'#94a3b8','stroke-width':_lw}));   // 縦=下端の閉じ線
+    else      svg.appendChild(e('line',{x1:W-_lw,y1:0,x2:W-_lw,y2:baseH,stroke:'#94a3b8','stroke-width':_lw}));       // 横=右端の閉じ線
+  }
   svg.setAttribute('width',W); svg.setAttribute('height',H);
   svg.setAttribute('viewBox','0 '+top+' '+W+' '+H);
   return {svg,W,H,titleH};
