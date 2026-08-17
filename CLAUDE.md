@@ -104,5 +104,9 @@
   `APP_VERSION`。マニュアル本体（.docx）は `.gitignore` 対象で git に履歴が残らず、更新漏れに気づけない。
   再生成は `node serve.js` → `node capture-puppeteer.js` → `node create-manual.js` の順。
   （v8.00 版のあと11版ぶん放置され、撮影スクリプトも404のままだった反省。2026-08-06）
-- リモート: GitHub private `ashikagagassoumu-cmd/BusinessDiagramMaker`。
+- リモート: GitHub **public** `ashikagagassoumu-cmd/BusinessDiagramMaker`。
+  ※ 以前は「private」と記載していたが、実際の可視性は public だった（`gh repo view` で確認・2026-08-17）。
+  公開のまま運用する方針をユーザーが確認済み。push＝インターネット公開なので、社内固有の情報
+  （実案件の図・スクリーンショット・PDF）はコミットしない。参考資料の PDF と `screenshots/` は
+  `.gitignore` で除外済み。
 - 設計方針: 単一HTMLファイル完結／コアエンジン共通化／既存図種の後方互換を維持。
