@@ -1274,6 +1274,9 @@ let segDragState=null;        // エッジ区間スライドのドラッグ状�
 let busDragState=null;        // バス型接続線の横バス高さ調整ドラッグ状態（v7.00・樹状図/組織図）
 let edgeReconnectState=null;  // エッジ端点の再接続ドラッグ状態（D-5 v4.27）
 let _selEdgeEnds=null;        // 選択中エッジの描画端点 {edgeId,from:[x,y],to:[x,y]}（再接続ハンドル用）
+// v8.13追補: レーン境界のドラッグ帯より接続線を優先させるため、描いた線の実経路とハンドル位置を控える。
+//   幾何を二重に持たず「描いたときの座標をそのまま記録する」だけなので、ハンドルが増えても記録を1行足せばよい。
+let _edgeHitGeom={paths:[],handles:[]};
 let _edgeRouteCache={};       // v6.18追補: 自動経路(A*)のキャッシュ {edgeId:{sx,sy,ex,ey,wps,pd}}。ノードドラッグ中、
                               //   無関係な線の再探索を省く（大きな組織図等でドラッグが数fpsまで落ちる問題の対策）
 let _laneChoiceRemoveClose=null;
@@ -1782,31 +1785,62 @@ function autoFitTarget(n){
   if(n.flowId)return false;                 // ステップ図は列を自動配置するため触らない
   return !AUTO_FIT_SKIP.has(n.type);
 }
+// v8.13追補: 文字量でシェイプの大きさが変わっても「中心」を動かさないための共通処理。
+//   SVG の矩形は左上(x,y)基準なので、w/h だけ書き換えると箱は右と下へ伸びる＝2行目に入った瞬間に
+//   中心が半行ぶん下がる。中心を保つように x/y を戻し、はみ出す場合だけ枠内へ寄せる。
+//   ※大きさが変わらないときは何もしない＝文字を変えない限り再描画で座標が流れない（最重要）。
+function clampNodeIntoBounds(n){
+  const hdr=headerSize();
+  if(usesLanes()&&n.lid&&n.lid!==VIRTUAL_LANE.id){
+    const l=S.lanes.find(x=>x.id===n.lid);
+    if(l){   // 交差軸＝所属レーンの中に収める（隣のレーンへ食い込ませない）
+      const lo=laneX(l.id);
+      if(isV()) n.x=Math.max(lo+2,Math.min(lo+l.w-n.w-2,n.x));
+      else      n.y=Math.max(lo+2,Math.min(lo+l.w-n.h-2,n.y));
+    }
+  }
+  if(isV()||!usesLanes()) n.x=Math.max(0,n.x);
+  if(usesLanes()){   // 主軸＝見出し帯より下（横モードは右）
+    if(isV()) n.y=Math.max(hdr+2,n.y);
+    else      n.x=Math.max(hdr+2,n.x);
+  } else { n.x=Math.max(0,n.x); n.y=Math.max(0,n.y); }
+}
+function setSizeKeepCenter(n,w,h){
+  w=Math.round(w); h=Math.round(h);
+  if(w===n.w&&h===n.h) return;                 // 変化なし＝座標に触れない
+  const cx=n.x+n.w/2, cy=n.y+n.h/2;            // 中心は丸めない＝行数が増減しても中心が少しずつ流れない
+  n.w=w; n.h=h;
+  n.x=cx-w/2; n.y=cy-h/2;
+  clampNodeIntoBounds(n);
+}
 // 文字量に合わせて n.w / n.h を更新する。手動リサイズ済み（manualW）の箱は幅を変えず、
 // 折り返しと高さだけ追従させる（手で決めた幅を尊重する）。
+// v8.13追補: 大きさは setSizeKeepCenter 経由で入れて中心を固定する。
 function autoFitNodeSize(n){
   if(!autoFitTarget(n))return;
   const def=SD[n.type], pad=autoFitPad(n), padH=autoFitPadH(n);
+  let nw=n.w, nh=n.h;
   if(tV()){   // 横書き（縦モード＋樹状図は横向きでも横書き）
     const cap=Math.max(24,(n.manualW?n.w:AUTO_W_MAX)-pad);
     const lines=wrapText(n.text,cap,AUTO_FONT);
     if(!n.manualW){
       const need=Math.ceil(Math.max(0,...lines.map(l=>textW(l,AUTO_FONT))))+pad;
-      n.w=Math.max(def.w,Math.min(AUTO_W_MAX,need));
+      nw=Math.max(def.w,Math.min(AUTO_W_MAX,need));
     }
     const needH=lines.length*AUTO_LINE_H+padH;
-    n.h=Math.max(def.h,n.manualH||0,needH);
+    nh=Math.max(def.h,n.manualH||0,needH);
   } else {    // 縦書き（横モード）＝軸を入れ替えて同じ計算。文字は下へ流れ、列は右から左へ積む。
     //          既定サイズも addNode と同じく w/h が入れ替わる。
     const cap=Math.max(VTEXT_CH,(n.manualW?n.h:AUTO_W_MAX)-pad);
     const cols=wrapTextByCount(n.text,Math.floor(cap/VTEXT_CH));
     if(!n.manualW){
       const need=Math.max(0,...cols.map(c=>[...c].length))*VTEXT_CH+pad;
-      n.h=Math.max(def.w,Math.min(AUTO_W_MAX,Math.ceil(need)));
+      nh=Math.max(def.w,Math.min(AUTO_W_MAX,Math.ceil(need)));
     }
     const needW=cols.length*VTEXT_COL+padH;
-    n.w=Math.max(def.h,n.manualH||0,needW);
+    nw=Math.max(def.h,n.manualH||0,needW);
   }
+  setSizeKeepCenter(n,nw,nh);
 }
 function uid(){return 'e'+(++S.uid)}
 
@@ -2260,6 +2294,24 @@ function removeLane(id){
 function connNid(){return S.conn?(typeof S.conn==='object'?S.conn.nid:S.conn):null;}
 function connFromLid(){return S.conn&&typeof S.conn==='object'?S.conn.fromLid:null;}
 function renameLane(id,v){const l=S.lanes.find(l=>l.id===id);if(l){l.name=v;render()}}
+// v8.13追補: キャンバスのレーン見出しをダブルクリックして改名する（サイドバーと併存）。
+//   編集欄は #gstick-lane>svg 直下に置く＝見出し帯（重ね箱）の裏に隠れず、固定表示中もズレない。
+//   g-lane-hdr の中に置くと renderLanes の innerHTML='' で編集中に消えるため svg 直下にする。
+//   確定時は snap()（S.lanes を直列化するので Undo が効く）と lanePanel()（サイドバー同期）を呼ぶ。
+//   サイドバー側の renameLane は oninput で毎打鍵呼ばれるため、そちらには snap を入れない（従来どおり）。
+function editLaneName(lid){
+  const l=S.lanes.find(x=>x.id===lid); if(!l) return;
+  const host=document.querySelector('#gstick-lane>svg'); if(!host) return;
+  const hdr=headerSize(), p=laneX(lid), H=26;   // H<=30 で単一行 input（openSvgEditor の isMulti 判定）
+  let x,y,w;
+  if(isV()){ x=p+4; y=(hdr-H)/2; w=Math.max(60,l.w-8); }              // 縦: 帯は幅 l.w・高さ44
+  else     { x=4;   y=p+l.w/2-H/2; w=Math.max(160,hdr*3); }           // 横: 帯は幅44・縦書きなので横向きの欄を右へはみ出させる
+  openSvgEditor(x,y,w,H,l.name,v=>{
+    const nv=(v||'').trim();
+    if(!nv||nv===l.name){ render(); return; }
+    l.name=nv; snap(); lanePanel(); render();
+  },'レーン名',{host,align:'center'});
+}
 
 // ── レーンの並べ替え（サイドバー/キャンバス共通） ──
 // insertIdx: 元の配列における挿入位置(0..n)。指定レーンをそこへ移動。
@@ -2312,6 +2364,16 @@ function laneX(id){
   for(const l of S.lanes){if(l.id===id)return x;x+=l.w}
   return 0;
 }
+// v8.13追補: レーンの区切り線（交差軸座標）。両端の外枠 0 / 総幅 も含む。
+//   自動経路がこの線の真上に乗ると、境界線と線が見分けられなくなるうえ、
+//   レーン幅を変えるドラッグ帯（幅8px）と重なって線を掴めなくなる。
+function laneBoundaries(){
+  if(!usesLanes()) return [];
+  const out=[0]; let a=0;
+  for(const l of S.lanes){ a+=l.w; out.push(a); }
+  return out;
+}
+const LANE_EDGE_CLR=10;   // 境界からこれだけ離す（境界線の線幅1.5＋当たり判定帯4px＋余裕）
 // 交差軸座標からレーンを特定
 function laneAt(crossPos){
   if(!usesLanes())return VIRTUAL_LANE;
@@ -3140,6 +3202,48 @@ function assignDiamondPorts(asgn){
     autos.forEach((e,i)=>{ const side=res[i]; if(!side) return; if(e.end==='exit') e.a.exitSide=side; else e.a.entrySide=side; });
   });
 }
+// v8.13追補: L字（1回曲げ）を許す最小の交差軸の空き。出入りのスタブ(16px)＋余裕。
+const L_MIN_GAP=24;
+// v8.13追補: 同じシェイプの同じ辺に集まる接続点の最小間隔(px)。線幅1.5に対して2本と分かる距離。
+//   接続点は等間隔に置くのが基本で、等間隔にしてもこの間隔を割るときは箱のほうを広げる（growForPorts）。
+const PORT_MIN_GAP=10;
+// v8.13追補: 「出口辺 → 角 → 入口辺」のL字2本が、他の箱を貫通しないか確かめる。
+//   判定は既存の routeObs / vHit / hHit をそのまま使う（新しい幾何判定を書かない）。
+//   frac はこの時点で未確定なので、各辺の中央どうしで代表させる。
+function lShapeClear(aRef,bRef,exitSide,entrySide,fromId,toId){
+  const sp=exitPt(aRef,exitSide,0.5,false), ep=exitPt(bRef,entrySide,0.5,false);
+  if(!sp||!ep) return false;
+  const obs=routeObs(fromId,toId);
+  const exV=(exitSide==='top'||exitSide==='bottom');
+  const cx=exV?sp[0]:ep[0], cy=exV?ep[1]:sp[1];        // 角
+  if(exV) return !vHit(sp[0],sp[1],cy,obs) && !hHit(cy,cx,ep[0],obs);
+  return         !hHit(sp[1],sp[0],cx,obs) && !vHit(cx,cy,ep[1],obs);
+}
+// v8.13追補: 同じ辺に n 本が集まると、等間隔（(i+1)/(n+1)）の間隔は「辺の長さ ÷ (n+1)」になる。
+//   これが PORT_MIN_GAP を割る辺があれば、接続点を押しのけて不揃いにするのではなく箱のほうを広げる。
+//   render() の autoFitNodeSize の直後に1回だけ走らせる＝renderEdges が allocatePorts を呼ぶ時点では
+//   すでに必要な大きさになっている。中心は setSizeKeepCenter が保つ。
+//   毎回 autoFit が文字ぶんへ戻してからここで広げ直すので、値は毎フレーム同じに収束する。
+function growForPorts(){
+  if(S.diagramType==='gantt'||S.diagramType==='sequence'||S.diagramType==='mindmap') return;
+  const asgn=allocatePorts(), cnt={};
+  S.edges.forEach(ed=>{ const a=asgn[ed.id]; if(!a) return;
+    if(!ed.fromPin){ const k=a.fromId+'|'+a.exitSide;  cnt[k]=(cnt[k]||0)+1; }
+    if(!ed.toPin)  { const k=a.toId  +'|'+a.entrySide; cnt[k]=(cnt[k]||0)+1; } });
+  const needW={}, needH={};
+  Object.keys(cnt).forEach(k=>{
+    const i=k.lastIndexOf('|'), id=k.slice(0,i), side=k.slice(i+1);
+    const req=PORT_MIN_GAP*(cnt[k]+1);
+    if(side==='left'||side==='right') needH[id]=Math.max(needH[id]||0,req);
+    else                              needW[id]=Math.max(needW[id]||0,req);
+  });
+  S.nodes.forEach(nd=>{
+    if(nd.type==='crosslane'||nd.type==='group_box'||nd.type==='org_group') return;   // 枠・帯は本数で広げない
+    if(isDiamondShape(nd.type)||!isResizable(nd)) return;                             // ひし形は頂点固定（v7.11）
+    const w=Math.max(nd.w,needW[nd.id]||0), h=Math.max(nd.h,needH[nd.id]||0);
+    if(w!==nd.w||h!==nd.h) setSizeKeepCenter(nd,w,h);
+  });
+}
 function allocatePorts(){
   // v6.11 修正: 接続線は必ず「対面の辺」に出入りさせる。
   //   旧実装は同一辺が重複すると非対面の辺へ追い出していたため、経路がノード内部を貫通し
@@ -3159,13 +3263,35 @@ function allocatePorts(){
     const fn=S.nodes.find(n=>n.id===ed.from), tn=S.nodes.find(n=>n.id===ed.to);
     if(!fn||!tn) return;
     const aRef=nodeRef(fn,ed,'from'), bRef=nodeRef(tn,ed,'to');
-    const exitSide=ed.fromPin?ed.fromPin.side:facingSide(aRef,bRef);
+    let exitSide=ed.fromPin?ed.fromPin.side:facingSide(aRef,bRef);
     let entrySide=ed.toPin?ed.toPin.side:facingSide(bRef,aRef);
     // v8.02追補: スイムレーン/フローチャート/BPMN で、相手が主軸方向に完全に離れている(縦モード=下/上、
     //   横モード=右/左)非ピンの線は、入口を主軸の辺(上/下辺、横モードは左/右辺)に揃える。始点(exit)は従来のまま。
     //   遠い相手が横辺から入って途中の箱を貫通する事態を防ぐ。真横・重なる相手・ひし形は対象外。
     //   ※上向きの流れ(下→上)も対象。isReturnEdge(上向き=戻り線)で弾くと下→上が整形されないため除外しない。
-    if(!ed.toPin && ['swimlane','flowchart','bpmn'].includes(S.diagramType)
+    // v8.13追補: 上の規則だと、別レーンの相手（＝交差軸にずれている）へは「出口も入口も主軸の辺」になり、
+    //   直交経路は必ず2回曲がる（Z字）。参考PDF（購買申請業務 As-Is）の形は「主軸の辺から出て、
+    //   相手の横辺へ入る」＝1回曲げ。そこで、交差軸で箱どうしが離れていて、かつL字の2本が
+    //   他の箱を貫通しないときだけ「出口＝主軸の辺／入口＝源のある側の横辺」にする。
+    //   貫通する場合と、交差軸で重なっている（ほぼ真下・真上）場合は従来どおり主軸の辺から入れる。
+    if(!ed.toPin && !ed.fromPin && ['swimlane','flowchart','bpmn'].includes(S.diagramType)
+       && !isDiamondShape(aRef.type) && !isDiamondShape(bRef.type)){
+      const V=isV();
+      const mLo=a=>V?a.y:a.x, mHi=a=>V?a.y+a.h:a.x+a.w;      // 主軸の範囲
+      const cLo=a=>V?a.x:a.y, cHi=a=>V?a.x+a.w:a.y+a.h;      // 交差軸の範囲
+      const below=mLo(bRef)>=mHi(aRef), above=mHi(bRef)<=mLo(aRef);
+      if(below||above){
+        const gap=Math.max(cLo(bRef)-cHi(aRef), cLo(aRef)-cHi(bRef));   // 交差軸の空き（重なりなら負）
+        let done=false;
+        if(gap>=L_MIN_GAP){
+          const ex2=V?(below?'bottom':'top'):(below?'right':'left');
+          const aMid=(cLo(aRef)+cHi(aRef))/2, bMid=(cLo(bRef)+cHi(bRef))/2;
+          const en2=V?(aMid<bMid?'left':'right'):(aMid<bMid?'top':'bottom');
+          if(lShapeClear(aRef,bRef,ex2,en2,fn.id,tn.id)){ exitSide=ex2; entrySide=en2; done=true; }
+        }
+        if(!done) entrySide=V?(below?'top':'bottom'):(below?'left':'right');
+      }
+    } else if(!ed.toPin && ['swimlane','flowchart','bpmn'].includes(S.diagramType)
        && !isDiamondShape(aRef.type) && !isDiamondShape(bRef.type)){
       if(isV()){ if(bRef.y>=aRef.y+aRef.h) entrySide='top'; else if(bRef.y+bRef.h<=aRef.y) entrySide='bottom'; }
       else     { if(bRef.x>=aRef.x+aRef.w) entrySide='left'; else if(bRef.x+bRef.w<=aRef.x) entrySide='right'; }
@@ -3275,6 +3401,60 @@ function allocatePorts(){
       else { role='exit'; key='X|'+sk; }
       (groups[key]=groups[key]||{role,eds:[]}).eds.push(ed); });
     Object.keys(groups).forEach(k=> processFan(groups[k].eds, groups[k].role));
+    // ── v8.13追補: 同じ辺に集まる端を「均等・10px以上」にそろえる（3rd pass）──
+    //   processFan は直交群で入口を「辺の中央(0.5)」に上書きし（:3311）、平行群の「一直線優先」も
+    //   中央付近に端を置く。この2つが同じ辺に同居すると端がほぼ同じ位置に並び、そこから伸びる
+    //   横（縦）の区間が長く重なって1本に見える＝参考PDF②の「見積受領」の右辺。
+    //   すでに PORT_MIN_GAP 以上離れている辺は processFan の配置をそのまま尊重し（一直線優先・
+    //   段違いトラックを壊さない）、詰まっている辺だけを 1st pass と同じ「相手の位置順に等間隔」へ
+    //   戻す。等間隔にしても間隔が足りない辺は、render() 手前の growForPorts が箱を広げてある。
+    //   端を動かした線は、相手側が1本だけならもう一度「一直線」に整え直す（v8.02 の狙いを保つ）。
+    const sideAxis=sd=>(sd==='left'||sd==='right');
+    const posOf=(ref,sd,f)=>{ const p=exitPt(ref,sd,f,false); return sideAxis(sd)?p[1]:p[0]; };
+    const restraighten=(a,movedDir)=>{
+      // movedDir='exit' なら相手は入口側。相手が同じ軸の辺で、その辺に1本しか来ておらず、
+      // ピン留めでもなければ、線がまっすぐになる位置へ相手の frac を合わせ直す。
+      const oDir=movedDir==='exit'?'entry':'exit';
+      const oSide=oDir==='exit'?a.exitSide:a.entrySide, mSide=movedDir==='exit'?a.exitSide:a.entrySide;
+      if(sideAxis(oSide)!==sideAxis(mSide)) return;                 // 軸が直交＝一直線にはならない
+      const ed=S.edges.find(x=>asgn[x.id]===a); if(!ed) return;
+      if(oDir==='exit'?ed.fromPin:ed.toPin) return;
+      const oKey=pKey(oDir==='exit'?a.fromId:a.toId, ed, oDir==='exit'?'from':'to')+'|'+oSide;
+      if((oDir==='exit'?exitN[oKey]:entryN[oKey])>1) return;         // 相手の辺に複数来ている＝扇のまま
+      const oRef=oDir==='exit'?a.aRef:a.bRef;
+      const m=posOf(movedDir==='exit'?a.aRef:a.bRef, mSide, movedDir==='exit'?a.exitFrac:a.entryFrac);
+      const base=sideAxis(oSide)?oRef.y:oRef.x, span=sideAxis(oSide)?oRef.h:oRef.w;
+      const f=(m-base)/span, nf=(f>=0.12&&f<=0.88)?f:0.5;
+      if(oDir==='exit') a.exitFrac=nf; else a.entryFrac=nf;
+    };
+    const gp={};
+    S.edges.forEach(ed=>{ const a=asgn[ed.id]; if(!a) return;
+      if(isDiamondShape(a.aRef.type)||isDiamondShape(a.bRef.type)) return;   // ひし形は頂点固定
+      const ek=pKey(a.fromId,ed,'from')+'|'+a.exitSide, tk=pKey(a.toId,ed,'to')+'|'+a.entrySide;
+      (gp[ek]=gp[ek]||[]).push({a,dir:'exit', side:a.exitSide, ref:a.aRef,pinned:!!ed.fromPin,other:a.bRef});
+      (gp[tk]=gp[tk]||[]).push({a,dir:'entry',side:a.entrySide,ref:a.bRef,pinned:!!ed.toPin, other:a.aRef});
+    });
+    Object.keys(gp).forEach(k=>{
+      const list=gp[k]; if(list.length<2) return;
+      const side=list[0].side, ref=list[0].ref, vert=sideAxis(side);
+      const base=vert?ref.y:ref.x, span=vert?ref.h:ref.w;
+      const getF=it=> it.dir==='exit'?(it.a.exitFrac==null?0.5:it.a.exitFrac):(it.a.entryFrac==null?0.5:it.a.entryFrac);
+      list.forEach(it=>{ it.pos=base+span*getF(it); });
+      const sorted=list.slice().sort((p,q)=>p.pos-q.pos);
+      let crowded=false;
+      for(let i=1;i<sorted.length;i++) if(sorted[i].pos-sorted[i-1].pos<PORT_MIN_GAP) crowded=true;
+      if(!crowded) return;                       // 既に十分離れている＝processFan の配置を尊重
+      if(list.some(it=>it.pinned)) return;       // ピン留めはユーザー指定の位置なので触らない
+      // 1st pass と同じ並び（上下辺は相手のX順／左右辺は相手のY順）で等間隔に振り直す
+      const n=list.length;
+      list.sort((p,q)=> vert ? ((p.other.y+p.other.h/2)-(q.other.y+q.other.h/2))
+                             : ((p.other.x+p.other.w/2)-(q.other.x+q.other.w/2)));
+      list.forEach((it,i)=>{
+        const f=(i+1)/(n+1);
+        if(it.dir==='exit') it.a.exitFrac=f; else it.a.entryFrac=f;
+      });
+      list.forEach(it=>restraighten(it.a,it.dir));
+    });
   }
   return asgn;
 }
@@ -3627,9 +3807,41 @@ function orthoRoute(sx,sy,ex,ey,exitSide,entrySide,fromId,toId,midPos){
       out.push(p); }
     return out; };
   const fallback=()=>{ const p=(exitSide==='top'||exitSide==='bottom')?[[sx,sy],[Sx,Sy],[Sx,Ty],[Tx,Ty],[ex,ey]]:[[sx,sy],[Sx,Sy],[Tx,Sy],[Tx,Ty],[ex,ey]]; return dedupe(p); };
-  if(W*Hh>MAXGRID) return fallback();
-  const xi={},yi={}; X.forEach((v,i)=>xi[v]=i); Y.forEach((v,i)=>yi[v]=i);
+  // v8.13追補: clr の定義を MAXGRID の打ち切りより前へ移した（fallback にもレーン境界回避を掛けるため）。
+  //   obs にしか依存しないので位置を変えても判定は同一。
   const clr=(x1,y1,x2,y2)=>{ if(x1===x2){ const t=Math.min(y1,y2),b=Math.max(y1,y2); return !obs.some(o=>x1>o.l&&x1<o.r&&b>o.t&&t<o.b); } const l=Math.min(x1,x2),r=Math.max(x1,x2); return !obs.some(o=>y1>o.t&&y1<o.b&&r>o.l&&l<o.r); };
+  // v8.13追補: レーンの区切り線の真上に乗った「内部の」直交区間を、境界の脇へ退避させる。
+  //   A* の格子座標は「ノードの辺 ±PAD」しか見ていないため、レーン幅しだいで境界の真上に track が立ち、
+  //   線と境界線が見分けられず、境界のドラッグ帯（幅8px）と重なって線を掴めなくなる。
+  //   端点（ノードの縁）に接する最初/最後の区間は動かさない＝出入りの向きは保つ。
+  //   逃げ場が無い（ノードを貫通する）ときは元のまま＝境界に乗るのは見栄えの問題、貫通は重大。
+  const avoidLaneLines=(P)=>{
+    const bs=laneBoundaries(); if(bs.length<2||P.length<4) return P;
+    const vert=isV(), k=vert?0:1, span=totalLaneSpan();
+    const out=P.map(p=>[p[0],p[1]]);
+    for(let i=1;i<out.length-2;i++){
+      const a=out[i],b=out[i+1];
+      const isVSeg=Math.abs(a[0]-b[0])<0.5;
+      if(vert!==isVSeg) continue;                       // 境界と平行でない区間は対象外
+      if(Math.hypot(b[0]-a[0],b[1]-a[1])<8) continue;
+      const v=a[k];
+      let near=null,dmin=LANE_EDGE_CLR;
+      bs.forEach(bv=>{ const dd=Math.abs(v-bv); if(dd<dmin){ dmin=dd; near=bv; } });
+      if(near===null) continue;                          // 境界から十分離れている
+      const cands=[near-LANE_EDGE_CLR,near+LANE_EDGE_CLR,near-14,near+14]
+        .filter(c=>c>=0&&c<=span).sort((p,q)=>Math.abs(p-v)-Math.abs(q-v));
+      for(const c of cands){
+        const na=[a[0],a[1]],nb=[b[0],b[1]]; na[k]=c; nb[k]=c;
+        if(!clr(na[0],na[1],nb[0],nb[1])) continue;
+        if(!clr(out[i-1][0],out[i-1][1],na[0],na[1])) continue;
+        if(!clr(nb[0],nb[1],out[i+2][0],out[i+2][1])) continue;
+        out[i][k]=c; out[i+1][k]=c; break;
+      }
+    }
+    return dedupe(out);
+  };
+  if(W*Hh>MAXGRID) return avoidLaneLines(fallback());
+  const xi={},yi={}; X.forEach((v,i)=>xi[v]=i); Y.forEach((v,i)=>yi[v]=i);
   const si=xi[Sx]*Hh+yi[Sy], ti=xi[Tx]*Hh+yi[Ty], NN=W*Hh;
   const search=(src,goal)=>{   // goal>=0: A*(目的地へ早期終了) ／ goal<0: 全点ダイクストラ
     const g=new Array(NN).fill(Infinity), prev=new Array(NN).fill(-1), pdir=new Array(NN).fill(0);
@@ -3654,7 +3866,7 @@ function orthoRoute(sx,sy,ex,ey,exitSide,entrySide,fromId,toId,midPos){
   let full;
   if(R.prev[ti]===-1&&ti!==si){ full=fallback(); }
   else { full=dedupe([[sx,sy]].concat(rebuild(R.prev,ti),[[ex,ey]])); }
-  if(midPos==null) return full;
+  if(midPos==null) return avoidLaneLines(full);
   // ── クランク指定：基準形の「主交差セグメント」だけを midPos へ平行移動 ──
   //   経路の形は保ったまま“曲がる位置”だけを動かす（再探索しない＝大きく変わらない／ループ・逆走しない）。
   //   端点(箱の縁)とその助走スタブは動かさず、内部の最長直交セグメントを選ぶ。
@@ -3662,10 +3874,10 @@ function orthoRoute(sx,sy,ex,ey,exitSide,entrySide,fromId,toId,midPos){
   for(let i=1;i<full.length-2;i++){ const a=full[i],b=full[i+1];
     const perp=horiz?(Math.abs(a[0]-b[0])<1):(Math.abs(a[1]-b[1])<1); if(!perp)continue;
     const ln=horiz?Math.abs(a[1]-b[1]):Math.abs(a[0]-b[0]); if(ln>bl){bl=ln;bi=i;} }
-  if(bi<0) return full;   // 動かせる交差セグメント無し（直線/L字）→自動のまま（緑の種ハンドルで曲げる）
+  if(bi<0) return avoidLaneLines(full);   // 動かせる交差セグメント無し（直線/L字）→自動のまま（緑の種ハンドルで曲げる）
   const out=full.map(p=>[p[0],p[1]]);
   if(horiz){ out[bi][0]=midPos; out[bi+1][0]=midPos; } else { out[bi][1]=midPos; out[bi+1][1]=midPos; }
-  return dedupe(out);
+  return avoidLaneLines(dedupe(out));
 }
 function routePath(sx,sy,ex,ey,exitSide,entrySide,fromId,toId,midPos){
   return wpPath(orthoRoute(sx,sy,ex,ey,exitSide,entrySide,fromId,toId,midPos),18); // v6.14: A*直交配線（midPos指定時はその位置で交差）
@@ -3735,64 +3947,165 @@ function isReturnEdge(fn,tn){
   if(isV()) return(fn.y+fn.h/2)>(tn.y+tn.h/2);
   else return(fn.x+fn.w/2)>(tn.x+tn.w/2);
 }
-function findCrossings(pts,otherWps){
-  const hits=[];
-  const M=2; // margin: 端部近くは除外
+// ── v8.13追補: 交差ブリッジの作り直し ──
+//   旧実装の弱点: ①端部マージンが2pxしかなく、曲がり角のすぐ手前の交差でも半円が角を突き抜けて
+//   経路が壊れた ②同じ座標に重なった線があると同一点へ半円が二重挿入され経路が後戻りした
+//   ③24px未満に近接した交差で挿入点が逆順になった ④判定は折れ線・実描画は角丸(r=18)なので
+//   角の近くで位置がずれた（しかも wpPathBridge の既定は r=20 で不一致）。
+//   対策＝「収集 → 正規化（重複除去・近接統合・角丸ぶんの余白）」の2段にし、山は必ず直線部にだけ立てる。
+const BRIDGE_R=12;          // 半円の基本半径
+const BRIDGE_MIN_SEG=8;     // これ未満の極小区間は判定対象外（退化区間の二重計上を防ぐ）
+const BRIDGE_MERGE=2*BRIDGE_R;   // これ未満で連なる交差はひと山にまとめる
+// wpPath と同じ式で「その角で実際に使われる角丸半径」を返す＝判定と実描画のズレを無くす
+function bridgeCornerR(pts,k,r){
+  if(k<=0||k>=pts.length-1) return 0;
+  const l1=Math.max(Math.abs(pts[k][0]-pts[k-1][0]),Math.abs(pts[k][1]-pts[k-1][1]));
+  const l2=Math.max(Math.abs(pts[k+1][0]-pts[k][0]),Math.abs(pts[k+1][1]-pts[k][1]));
+  const cr=Math.min(r,l1/2-1,l2/2-1);
+  return cr<2?0:cr;
+}
+function bridgeCollect(pts,otherWps){
+  const hits=[], M=2;
+  const cls=(a,b)=>{   // 区間の向き判定＝差の大きい方で決める（|dx|<2 かつ |dy|<2 の退化区間を弾く）
+    const dx=Math.abs(b[0]-a[0]), dy=Math.abs(b[1]-a[1]);
+    if(Math.max(dx,dy)<BRIDGE_MIN_SEG) return null;
+    const v=dy>dx; return (v?dx:dy)>2 ? null : v;   // 斜めは対象外
+  };
   for(let i=0;i<pts.length-1;i++){
+    const segV=cls(pts[i],pts[i+1]); if(segV===null) continue;
     const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
-    const segH=Math.abs(y2-y1)<2, segV=Math.abs(x2-x1)<2;
-    if(!segH&&!segV)continue;
     for(const owp of otherWps){
-      if(!owp)continue;
+      if(!owp) continue;
       for(let j=0;j<owp.length-1;j++){
+        const oV=cls(owp[j],owp[j+1]); if(oV===null||oV===segV) continue;   // 平行は交差ではない
         const[ox1,oy1]=owp[j],[ox2,oy2]=owp[j+1];
-        const oH=Math.abs(oy2-oy1)<2, oV=Math.abs(ox2-ox1)<2;
-        if(segH&&oV){
-          const y=y1,x=ox1;
-          if(x>Math.min(x1,x2)+M&&x<Math.max(x1,x2)-M&&
-             y>Math.min(oy1,oy2)+M&&y<Math.max(oy1,oy2)-M)
-            hits.push({seg:i,x,y});
-        } else if(segV&&oH){
-          const x=x1,y=oy1;
-          if(y>Math.min(y1,y2)+M&&y<Math.max(y1,y2)-M&&
-             x>Math.min(ox1,ox2)+M&&x<Math.max(ox1,ox2)-M)
-            hits.push({seg:i,x,y});
-        }
+        const x=segV?x1:ox1, y=segV?oy1:y1;
+        const inSeg=segV?(y>Math.min(y1,y2)+M&&y<Math.max(y1,y2)-M)
+                        :(x>Math.min(x1,x2)+M&&x<Math.max(x1,x2)-M);
+        const inOth=segV?(x>Math.min(ox1,ox2)+M&&x<Math.max(ox1,ox2)-M)
+                        :(y>Math.min(oy1,oy2)+M&&y<Math.max(oy1,oy2)-M);
+        if(inSeg&&inOth) hits.push({seg:i,x,y,segV});
       }
     }
   }
   return hits;
 }
+function bridgeNormalize(pts,hits,r){
+  const out=[], bySeg={};
+  hits.forEach(h=>{ (bySeg[h.seg]=bySeg[h.seg]||[]).push(h); });
+  Object.keys(bySeg).map(Number).sort((a,b)=>a-b).forEach(i=>{
+    const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
+    const segV=bySeg[i][0].segV;
+    const a=segV?y1:x1, b=segV?y2:x2, dir=b>a?1:-1;
+    const val=h=>segV?h.y:h.x;
+    const arr=bySeg[i].slice().sort((p,q)=>(val(p)-val(q))*dir);
+    const uniq=[];                                   // ①同一点(1px未満)の除去
+    arr.forEach(h=>{ if(!uniq.length||Math.abs(val(h)-val(uniq[uniq.length-1]))>=1) uniq.push(h); });
+    const clus=[]; let cur=[uniq[0]];                // ②近接交差をひと山へ統合
+    for(let t=1;t<uniq.length;t++){
+      if(Math.abs(val(uniq[t])-val(cur[cur.length-1]))<BRIDGE_MERGE) cur.push(uniq[t]);
+      else { clus.push(cur); cur=[uniq[t]]; }
+    }
+    clus.push(cur);
+    // ③端部マージン＝その角で実際に使われる角丸半径。収まらない山は立てない（角への食い込み防止）
+    const mA=(i===0?4:bridgeCornerR(pts,i,r))+2;
+    const mB=(i===pts.length-2?4:bridgeCornerR(pts,i+1,r))+2;
+    const loLim=a+dir*mA, hiLim=b-dir*mB;
+    clus.forEach(cl=>{
+      const first=val(cl[0]), last=val(cl[cl.length-1]);
+      const center=(first+last)/2, half=Math.abs(last-first)/2+BRIDGE_R;
+      const s=center-dir*half, e2=center+dir*half;
+      if(dir>0 ? (s<loLim||e2>hiLim) : (s>loLim||e2<hiLim)) return;
+      out.push({seg:i,segV,half,dir,x:segV?x1:center,y:segV?center:y1});
+    });
+  });
+  return out;
+}
+function findCrossings(pts,otherWps,r){
+  return bridgeNormalize(pts,bridgeCollect(pts,otherWps),r||18);
+}
+// 山（半円）の弧だけを返す。最前面で「白 → 本体色」の順に描き直すために使う＝
+// 跨がれる側の線は半円と交わる位置だけが途切れ、交差していない場所は切れない。
+function bridgeArcPaths(crossings){
+  return (crossings||[]).map(c=>{
+    const h=c.half, d=c.dir;
+    if(c.segV) return `M${c.x},${c.y-h*d} A${h},${h} 0 0 ${d>0?1:0} ${c.x},${c.y+h*d}`;
+    return `M${c.x-h*d},${c.y} A${h},${h} 0 0 ${d>0?1:0} ${c.x+h*d},${c.y}`;
+  });
+}
+// ── v8.13追補: 線どうしの「同じ線上での重なり」を避ける ──
+//   A* はノードの矩形しか見ておらず、他の線は一切見ていない。共線の重なりは findCrossings でも
+//   交差にならないためブリッジも出ず、2本が1本に見えたままになる。
+//   経路を作り終えた時点で、同じ向き・同じ座標に乗って一定以上重なっている内部区間を、
+//   空いている隣の位置へ平行移動する。順番は S.edges の並び（先に来た線が位置を確保）＝決定的。
+//   端の区間（ノードの縁に直結）と手動経路・バス経路は動かさない（相手としては登録する）。
+const TRACK_EPS=2, TRACK_STEP=10, TRACK_TRIES=4, TRACK_MIN_OVERLAP=12;
+function separateOverlaps(edgeData){
+  const items=edgeData.filter(d=>d.wps&&d.wps.length>=2).sort((a,b)=>a.idx-b.idx);
+  if(items.length<2) return;
+  const placed=[], bs=laneBoundaries(), V=isV();
+  const segOf=(P,i)=>{
+    const a=P[i],b=P[i+1];
+    const dx=Math.abs(b[0]-a[0]), dy=Math.abs(b[1]-a[1]);
+    if(Math.max(dx,dy)<8) return null;
+    const vert=dy>dx; if((vert?dx:dy)>0.5) return null;
+    const p=vert?[a[1],b[1]]:[a[0],b[0]];
+    return {vert,at:vert?a[0]:a[1],lo:Math.min(p[0],p[1]),hi:Math.max(p[0],p[1])};
+  };
+  const clash=(s,v)=>placed.some(p=>p.vert===s.vert&&Math.abs(p.at-v)<TRACK_EPS
+    &&Math.min(p.hi,s.hi)-Math.max(p.lo,s.lo)>TRACK_MIN_OVERLAP);
+  const onLane=(s,v)=>(s.vert===V)&&bs.some(b=>Math.abs(v-b)<LANE_EDGE_CLR);
+  items.forEach(d=>{
+    const P=d.wps;
+    const frozen=d.manual||d.bus||!!d.ed.orthoWps||!!d.ed.waypoints;
+    let changed=false;
+    for(let i=0;i<P.length-1;i++){
+      const s=segOf(P,i); if(!s){ continue; }
+      const inner=(i>0&&i<P.length-2);
+      if(frozen||!inner||!clash(s,s.at)){ placed.push(s); continue; }
+      const obs=routeObs(d.ed.from,d.ed.to), A=P[i-1], B=P[i+2];
+      let found=null;
+      for(let k=1;k<=TRACK_TRIES&&found===null;k++){
+        for(const v of [s.at+TRACK_STEP*k,s.at-TRACK_STEP*k]){
+          if(clash(s,v)||onLane(s,v)) continue;
+          const bad = s.vert
+            ? (vHit(v,P[i][1],P[i+1][1],obs) || (A&&hHit(A[1],A[0],v,obs)) || (B&&hHit(B[1],v,B[0],obs)))
+            : (hHit(v,P[i][0],P[i+1][0],obs) || (A&&vHit(A[0],A[1],v,obs)) || (B&&vHit(B[0],v,B[1],obs)));
+          if(bad) continue;
+          found=v; break;
+        }
+      }
+      if(found!==null){
+        if(s.vert){ P[i][0]=found; P[i+1][0]=found; } else { P[i][1]=found; P[i+1][1]=found; }
+        s.at=found; changed=true;
+      }
+      placed.push(s);
+    }
+    if(changed){
+      d.pd=wpPath(P,18);
+      const m=polylineMid(P); d.mx=m[0]; d.my=m[1];
+    }
+  });
+}
 function wpPathBridge(pts,crossings,r){
-  r=r||20;
-  const BR=12;
+  r=r||18;   // v8.13追補: 通常描画 wpPath(wps,18) と半径をそろえる（旧既定20は不一致だった）
   if(pts.length<2)return'';
   if(!crossings||crossings.length===0)return wpPath(pts,r);
-  // セグメントごとに交差点をグループ化しソート
   const bySeg={};
   crossings.forEach(c=>{if(!bySeg[c.seg])bySeg[c.seg]=[];bySeg[c.seg].push(c);});
-  for(const k in bySeg){
-    const[x1,y1]=pts[k],[x2,y2]=pts[+k+1];
-    const segV=Math.abs(x2-x1)<2;
-    if(segV) bySeg[k].sort((a,b)=>y1<y2?a.y-b.y:b.y-a.y);
-    else bySeg[k].sort((a,b)=>x1<x2?a.x-b.x:b.x-a.x);
-  }
   // ウェイポイントを展開（交差点でブリッジ用のポイントを挿入）
   const expanded=[];
   for(let i=0;i<pts.length;i++){
     expanded.push({pt:pts[i],bridge:false});
     if(bySeg[i]){
       for(const c of bySeg[i]){
-        const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
-        const segV=Math.abs(x2-x1)<2;
-        if(segV){
-          const dir=y2>y1?1:-1;
-          expanded.push({pt:[c.x,c.y-BR*dir],bridge:false});
-          expanded.push({pt:[c.x,c.y+BR*dir],bridge:true,cx:c.x,cy:c.y,segV:true,dir});
+        const h=c.half, dir=c.dir;
+        if(c.segV){
+          expanded.push({pt:[c.x,c.y-h*dir],bridge:false});
+          expanded.push({pt:[c.x,c.y+h*dir],bridge:true,half:h,segV:true,dir});
         } else {
-          const dir=x2>x1?1:-1;
-          expanded.push({pt:[c.x-BR*dir,c.y],bridge:false});
-          expanded.push({pt:[c.x+BR*dir,c.y],bridge:true,cx:c.x,cy:c.y,segV:false,dir});
+          expanded.push({pt:[c.x-h*dir,c.y],bridge:false});
+          expanded.push({pt:[c.x+h*dir,c.y],bridge:true,half:h,segV:false,dir});
         }
       }
     }
@@ -3803,9 +4116,8 @@ function wpPathBridge(pts,crossings,r){
     const ep=expanded[i];
     if(ep.bridge){
       // 半円弧で跨ぐ
-      const sweep=ep.segV?(ep.dir>0?1:0):(ep.dir>0?0:1);
-      if(ep.segV) d+=` A${BR},${BR} 0 0 ${sweep} ${ep.pt[0]},${ep.pt[1]}`;
-      else d+=` A${BR},${BR} 0 0 ${sweep} ${ep.pt[0]},${ep.pt[1]}`;
+      const sweep=ep.dir>0?1:0;   // v8.13追補: 横の線も上へ膨らませる（縦は右）＝定番の飛び越え記法
+      d+=` A${ep.half},${ep.half} 0 0 ${sweep} ${ep.pt[0]},${ep.pt[1]}`;
     } else {
       // 通常のL（角丸なし簡易版）
       const prev=expanded[i-1];
@@ -5598,9 +5910,10 @@ function calcMindNodeSize(n){
   const extra=sz.pad+(n.type==='mind_action'?12:0);
   const lines=mindTextLines(n);
   const need=Math.ceil(Math.max(0,...lines.map(l=>textW(l,fs))))+extra;
-  n.w=Math.round(Math.max(n.type==='mind_root'?110:70,Math.min(MIND_W_MAX,need)));
+  const nw=Math.round(Math.max(n.type==='mind_root'?110:70,Math.min(MIND_W_MAX,need)));
   const baseH=n.type==='mind_root'?46:Math.round((n.type==='mind_note'?28:32)*sz.hm);
-  n.h=baseH+(lines.length-1)*Math.round(fs*1.3);
+  const nh=baseH+(lines.length-1)*Math.round(fs*1.3);
+  setSizeKeepCenter(n,nw,nh);   // v8.13追補: 文字が増えても中心を動かさない
 }
 // パレットからの追加: 選択ノード（なければ中心）の子として配置
 function mindPlace(type,px,py){
@@ -6553,23 +6866,25 @@ function render(){
       if(isV()){
         const nls=wrapText(n.note,n.w-16,10);
         const needed=NOTE_TITLE_H+nls.length*12+16;
-        n.h=Math.max(SD[n.type].h,needed);
+        setSizeKeepCenter(n,n.w,Math.max(SD[n.type].h,needed));   // v8.13追補: 中心を固定
       } else {
         const chars=[...(n.note||'').replace(/\n/g,'')];
         const charH=15;
         const maxPerCol=Math.max(1,Math.floor((n.h-16)/charH));
         const cols=Math.ceil(chars.length/maxPerCol);
         const neededW=NOTE_TITLE_H+cols*14+16;
-        n.w=Math.max(SD[n.type].h,neededW);
+        setSizeKeepCenter(n,Math.max(SD[n.type].h,neededW),n.h);   // v8.13追補: 中心を固定
       }
     }
   });
   S.nodes.forEach(autoFitNodeSize);   // v8.10: 文字量に合わせてシェイプを自動リサイズ（折り返し込み）
+  growForPorts();                     // v8.13追補: 接続点を等間隔にしても10px空かない箱を先に広げる
   S.nodes.forEach(n=>{
     if(!n.sections||!n.sections.length)return;
     const sh=calcSectionsH(n.sections,n.type==='org_node');
-    if(tV()) n.h=Math.max(SD[n.type]?.h||40,sh);   // v7.00: 組織図は横向きでも高さ側（tV）
-    else n.w=Math.max(SD[n.type]?.h||40,sh);
+    // v8.13追補: 区画（ER/UML/樹状図）も中心を固定して伸縮させる
+    if(tV()) setSizeKeepCenter(n,n.w,Math.max(SD[n.type]?.h||40,sh));   // v7.00: 組織図は横向きでも高さ側（tV）
+    else     setSizeKeepCenter(n,Math.max(SD[n.type]?.h||40,sh),n.h);
   });
   orgFitGroups();   // v7.02: orgWrap 付き部門枠を配下の外接枠へ自動フィット（整列・移動後も追従）
   renderLanes(); renderGrid(); renderLifelines();
@@ -6598,6 +6913,7 @@ function renderLanes(){
       g.appendChild(e('rect',{x,y:hdr,width:l.w,height:SVG_H-hdr,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
       const hr=e('rect',{x,y:0,width:l.w,height:hdr,fill:l.hd,stroke:'#94a3b8','stroke-width':1,cursor:'grab'});
       hr.addEventListener('mousedown',ev=>startLaneDrag(ev,l.id));
+      hr.addEventListener('dblclick',ev=>{ev.stopPropagation(); if(S.mode!=='connect') editLaneName(l.id);});   // v8.13追補
       gh.appendChild(hr);
       const t=e('text',{x:x+l.w/2,y:hdr/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':'13','font-weight':'600',fill:'#1e293b','pointer-events':'none'});
       t.textContent=l.name; gh.appendChild(t);
@@ -6611,6 +6927,7 @@ function renderLanes(){
       g.appendChild(e('rect',{x:hdr,y,width:SVG_W-hdr,height:l.w,fill:l.bg,stroke:'#cbd5e1','stroke-width':1}));
       const hr=e('rect',{x:0,y,width:hdr,height:l.w,fill:l.hd,stroke:'#94a3b8','stroke-width':1,cursor:'grab'});
       hr.addEventListener('mousedown',ev=>startLaneDrag(ev,l.id));
+      hr.addEventListener('dblclick',ev=>{ev.stopPropagation(); if(S.mode!=='connect') editLaneName(l.id);});   // v8.13追補
       gh.appendChild(hr);
       // 横モードのヘッダー: 1文字ずつ縦に並べる縦読み形式
       const chars=[...l.name];
@@ -6747,6 +7064,7 @@ function polylineMid(P){
 }
 function renderEdges(){
   const g=document.getElementById('g-edges'); g.innerHTML='';
+  _edgeHitGeom={paths:[],handles:[]};   // v8.13追補: レーン境界の帯に穴をあけるための実座標
   _selEdgeEnds=null;   // 再接続ハンドル用に選択中エッジの端点を後で格納
   const portAssign=allocatePorts();
   const busRoutes=orgBusRoutes();   // v7.00: 樹状図/組織図はバス型経路を先に算出（他図種は null）
@@ -6761,9 +7079,9 @@ function renderEdges(){
     _reuseOk=ed=>!near.has(ed.from)&&!near.has(ed.to);
   }
   // 2パス描画: 順方向エッジのウェイポイントを収集 → 戻り方向エッジでブリッジ描画
+  // v8.13追補: ブリッジは「戻り線 × 順方向線」だけでなく全ペアで判定する（下のパス2）。
   const edgeData=[];
-  const forwardWps=[]; // 順方向エッジのウェイポイント配列
-  S.edges.forEach(ed=>{
+  S.edges.forEach((ed,_edIdx)=>{
     const fn=S.nodes.find(n=>n.id===ed.from),tn=S.nodes.find(n=>n.id===ed.to);
     if(!fn||!tn)return;
     let[sx,sy,ex,ey,exitSide,entrySide]=connPts(fn,tn,ed,portAssign);
@@ -6806,23 +7124,41 @@ function renderEdges(){
       }
     }
     if(wps&&!bus&&!manual){ const _lm=polylineMid(wps); mx=_lm[0]; my=_lm[1]; }   // v8.02: ラベル/○を実際の折れ線の中央（線上）へ
-    edgeData.push({ed,fn,tn,sx,sy,ex,ey,exitSide,entrySide,pd,wps,isReturn,manual,mx,my,drawPts,bus});
-    if(!isReturn&&wps) forwardWps.push(wps);
+    edgeData.push({ed,fn,tn,sx,sy,ex,ey,exitSide,entrySide,pd,wps,isReturn,manual,mx,my,drawPts,bus,idx:_edIdx});
   });
+  // v8.13追補: 線どうしが同じ座標に乗って1本に見えるのを避ける（ポート段階で直せない残りを拾う）
+  if(!S.drag) separateOverlaps(edgeData);
   // v6.18追補: 経路キャッシュ更新（ブリッジ加工前の素の経路を保存。通常renderでは作り直し＝古い経路は残らない）
   //   v7.00: バス型経路は毎回安価に再計算するためキャッシュ対象外。
   if(!S.drag) _edgeRouteCache={};
   edgeData.forEach(d=>{ if(d.wps&&!d.manual&&!d.bus) _edgeRouteCache[d.ed.id]={sx:d.sx,sy:d.sy,ex:d.ex,ey:d.ey,wps:d.wps,pd:d.pd}; });
-  // パス2: 戻り方向エッジはブリッジ付きパスを生成、交差情報を保持
-  edgeData.forEach(dat=>{
-    if(dat.isReturn&&dat.wps){
-      dat.crossings=findCrossings(dat.wps,forwardWps);
-      if(dat.crossings.length>0) dat.pd=wpPathBridge(dat.wps,dat.crossings);
+  // パス2: 交差ブリッジ。
+  //   v8.13追補: 従来は「戻り線だけが順方向線を跨ぐ」ため、順方向どうし・戻り方向どうしの交差には
+  //   山が一切出ず、交差が何か所あってもブリッジは1か所だけ、という症状になっていた。
+  //   全ペアを総当たりし、ペアごとに「戻り線が跨ぐ／同種なら S.edges で後にある線が跨ぐ」で
+  //   必ず一方だけを跨ぐ側に決める（決定的）。
+  //   対象は wps を持つ線（自動経路＋手動直交）だけ。手動支点の曲線とバス経路は対象外
+  //   （曲線は smoothPath の三次ベジエで折れ線とずれる／バスは意図的に重なる別の体系）。
+  //   端点のシェイプを共有するペアは除外＝ポート付近で接するのを交差と誤認しない。
+  if(!S.drag && edgeData.length<=200){
+    const cand=edgeData.filter(d=>d.wps&&!d.manual&&!d.bus);
+    cand.forEach(d=>{ d._xOther=[]; });
+    for(let i=0;i<cand.length;i++) for(let j=i+1;j<cand.length;j++){
+      const A=cand[i], B=cand[j];
+      if(A.ed.from===B.ed.from||A.ed.from===B.ed.to||A.ed.to===B.ed.from||A.ed.to===B.ed.to) continue;
+      const jump=(A.isReturn!==B.isReturn) ? (A.isReturn?A:B) : (A.idx>B.idx?A:B);
+      jump._xOther.push((jump===A?B:A).wps);
     }
-  });
+    cand.forEach(dat=>{
+      if(!dat._xOther.length) return;
+      dat.crossings=findCrossings(dat.wps,dat._xOther,18);
+      if(dat.crossings.length>0) dat.pd=wpPathBridge(dat.wps,dat.crossings,18);
+    });
+  }
   // エッジ描画ヘルパー
   function renderOneEdge(dat){
     const{ed,sx,sy,ex,ey,pd,exitSide,entrySide}=dat;
+    if(dat.wps) _edgeHitGeom.paths.push(dat.wps); else if(dat.drawPts) _edgeHitGeom.paths.push(dat.drawPts);
     const isSel=S.sel.includes(ed.id),col=isSel?'#2563eb':'#475569',mk=isSel?'url(#arrB)':'url(#arr)';
     if(isSel){   // 再接続ハンドル用に描画端点を格納（手動経路はポリライン端、自動は連結点）
       const _fp=(dat.manual&&dat.drawPts)?dat.drawPts[0]:[sx,sy];
@@ -6843,10 +7179,10 @@ function renderEdges(){
     });
     hit.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[ed.id];delSel();});
     g.appendChild(hit);
-    // 戻り方向エッジで交差あり → 白背景パスで下の線を消してからブリッジ付き線を描画
-    if(dat.isReturn&&dat.crossings&&dat.crossings.length>0){
-      g.appendChild(e('path',{d:pd,stroke:'white','stroke-width':5,fill:'none','pointer-events':'none'}));
-    }
+    // v8.13追補: 経路全体に白い縁取りを敷く処理は廃止。従来はブリッジのある戻り線のパス全体を
+    //   白(stroke-width:5)で先に描いていたため、交差していない場所でもレーンの色・境界線・
+    //   並走しているだけの線が白く削れ、検出できなかった交差は「ただ途切れた線」に見えていた。
+    //   白抜きは山の周囲だけに限定し、下の renderEdges 末尾の第3パスで行う。
     const edgeAttrs={d:pd,stroke:col,'stroke-width':isSel?2:1.5,fill:'none'};
     if(S.diagramType==='uml'){
       const um=umlEdgeStyle(ed.umlType,isSel);
@@ -6936,6 +7272,7 @@ function renderEdges(){
   // ── 手動ウェイポイントのハンドル（選択中エッジ。D-5 v4.26）──
   function wpAddHandle(ed,ax,ay,insertIdx){
     const h=e('circle',{cx:ax,cy:ay,r:4,fill:'#fff',stroke:'#16a34a','stroke-width':1.5,cursor:'crosshair','pointer-events':'all'});
+    _edgeHitGeom.handles.push([ax,ay]);
     h.addEventListener('mousedown',ev=>{
       ev.stopPropagation();
       const p=svgPt(ev);
@@ -6973,6 +7310,7 @@ function renderEdges(){
       }
       (ed.waypoints||[]).forEach((wp,i)=>{   // 各中継点に移動ハンドル（ダブルクリックで削除）
         const h=e('circle',{cx:wp.x,cy:wp.y,r:5,fill:'#2563eb',stroke:'#fff','stroke-width':1.5,cursor:'move','pointer-events':'all'});
+        _edgeHitGeom.handles.push([wp.x,wp.y]);
         h.addEventListener('mousedown',ev=>{ev.stopPropagation(); waypointDragState={edgeId:ed.id,index:i,moved:false};});
         h.addEventListener('dblclick',ev=>{ev.stopPropagation(); ed.waypoints.splice(i,1); if(!ed.waypoints.length)delete ed.waypoints; snap(); render();});
         g.appendChild(h);
@@ -7000,6 +7338,7 @@ function renderEdges(){
       hit.addEventListener('dblclick',ev=>{ev.stopPropagation(); edgeLabel(ed.id);});   // 下層のラベル編集操作を維持
       hit.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[ed.id];delSel();});
       g.appendChild(hit);
+      _edgeHitGeom.handles.push([(a[0]+b[0])/2,(a[1]+b[1])/2]);
       const sq=e('rect',{x:(a[0]+b[0])/2-5,y:(a[1]+b[1])/2-5,width:10,height:10,rx:2,fill:'white',stroke:'#2563eb','stroke-width':1.5,cursor:cur,'pointer-events':'all'});
       sq.addEventListener('mousedown',ev=>{ev.stopPropagation(); startSegDrag(ed,dat,i,ev);});
       sq.addEventListener('dblclick',ev=>{ev.stopPropagation(); delete ed.orthoWps; delete ed.midPos; snap(); render();});
@@ -7047,6 +7386,7 @@ function renderEdges(){
     hit.addEventListener('dblclick',ev=>{ev.stopPropagation(); edgeLabel(dat.ed.id);});
     g.appendChild(hit);
     const hx=(seg[0][0]+seg[1][0])/2, hy=(seg[0][1]+seg[1][1])/2;
+    _edgeHitGeom.handles.push([hx,hy]);
     const sq=e('rect',{x:hx-5,y:hy-5,width:10,height:10,rx:2,fill:'white',stroke:'#2563eb','stroke-width':1.5,cursor:cur,'pointer-events':'all'});
     sq.addEventListener('mousedown',ev=>{ev.stopPropagation(); startBusDrag(dat);});
     sq.addEventListener('dblclick',ev=>{ev.stopPropagation();
@@ -7060,6 +7400,20 @@ function renderEdges(){
   // 描画順: 順方向エッジ → 戻り方向エッジ（ブリッジが上に来る）
   edgeData.filter(d=>!d.isReturn).forEach(renderOneEdge);
   edgeData.filter(d=>d.isReturn).forEach(renderOneEdge);
+  // v8.13追補: 第3パス＝山（半円）だけを最前面に描き直す。
+  //   跨ぐ／跨がれるが線ごとに入れ替わるため、どんな描画順でも「後から描いた線が他人の山の頂点を
+  //   切る」状況が必ず起きる。山ごとに「白(5px) → 本体色」の2本を最後に重ねれば、
+  //   跨がれる側の線は半円と交わる位置だけが途切れ、交差していない場所は切れない。
+  edgeData.forEach(dat=>{
+    if(!dat.crossings||!dat.crossings.length) return;
+    const isSel=S.sel.includes(dat.ed.id);
+    bridgeArcPaths(dat.crossings).forEach(d=>{
+      g.appendChild(e('path',{d,stroke:'#ffffff','stroke-width':5,fill:'none','pointer-events':'none'}));
+      const a={d,stroke:isSel?'#2563eb':'#475569','stroke-width':isSel?2:1.5,fill:'none','pointer-events':'none'};
+      if(S.diagramType==='uml'){ const um=umlEdgeStyle(dat.ed.umlType,isSel); if(um.dash) a['stroke-dasharray']=um.dash; }
+      g.appendChild(e('path',a));
+    });
+  });
 }
 // ── エッジ再接続ハンドル（D-5 v4.27）──
 // 端点はノード境界上にあり g-nodes より上に出す必要があるため、render 末尾で
@@ -8835,7 +9189,13 @@ document.addEventListener('mouseup',()=>{
   if(laneDragState){
     const ls=laneDragState; laneDragState=null; clearGuides();
     if(ls.moved&&ls.insertIdx!=null) reorderLaneInsert(ls.lid,ls.insertIdx);
-    else render();
+    else {
+      // v8.13追補: ここで即 render すると renderLanes が見出しDOMを作り替え、
+      //   2クリック目が別要素に当たって dblclick（レーン名編集）が成立しない。
+      //   既存のノードと同じく遅延 render にする（openSvgEditor が冒頭でこのタイマーを解除する）。
+      if(nodeClickTimer!==null){clearTimeout(nodeClickTimer);nodeClickTimer=null;}
+      nodeClickTimer=setTimeout(()=>{nodeClickTimer=null;render();},220);
+    }
     return;
   }
   // ガントチャート操作完了
@@ -8970,33 +9330,66 @@ document.addEventListener('mouseup',()=>{
 let laneResizeState=null;
 let crosslaneResizeState=null;
 
+// v8.13追補: レーン境界のドラッグ帯（幅8px×キャンバス全長の透明 rect）は最前面レイヤ g-dividers に
+//   あるため、境界から±4pxに入った接続線とその編集つまみは絶対に掴めなかった（帯の mousedown が
+//   先頭で stopPropagation する）。線・つまみが乗っている範囲だけ帯に「穴」をあけて通す。
+//   レイヤ順は変えない＝線の当たり判定を g-nodes より前面に出すと、線がノードの上を通る場面で
+//   ノードのクリック・ドラッグを奪ってしまうため（回帰が大きい）。
+//   renderDividers は render() で renderEdges の後に呼ばれるので、控えた座標は当該フレームのもの。
+function laneBandGaps(at,vert){
+  // at=境界の交差軸座標／vert=帯が縦向き（縦モード）。戻り値＝主軸方向の除外区間 [[lo,hi],…]
+  const NEAR=6, PAD_LINE=8, PAD_HANDLE=12, out=[];
+  _edgeHitGeom.handles.forEach(h=>{
+    const cross=vert?h[0]:h[1], main=vert?h[1]:h[0];
+    if(Math.abs(cross-at)<=NEAR+PAD_HANDLE) out.push([main-PAD_HANDLE,main+PAD_HANDLE]);
+  });
+  _edgeHitGeom.paths.forEach(P=>{
+    for(let i=0;i<P.length-1;i++){
+      const a=P[i],b=P[i+1];
+      const dx=Math.abs(b[0]-a[0]), dy=Math.abs(b[1]-a[1]);
+      const segVert=dy>dx;
+      if(segVert!==vert) continue;                      // 境界と平行な区間だけが問題になる
+      const cross=vert?a[0]:a[1];
+      if(Math.abs(cross-at)>NEAR) continue;
+      const m1=vert?a[1]:a[0], m2=vert?b[1]:b[0];
+      out.push([Math.min(m1,m2)-PAD_LINE,Math.max(m1,m2)+PAD_LINE]);
+    }
+  });
+  if(!out.length) return out;
+  out.sort((p,q)=>p[0]-q[0]);
+  const merged=[out[0].slice()];
+  for(let i=1;i<out.length;i++){
+    const last=merged[merged.length-1];
+    if(out[i][0]<=last[1]) last[1]=Math.max(last[1],out[i][1]);
+    else merged.push(out[i].slice());
+  }
+  return merged;
+}
 function renderDividers(){
   const g=document.getElementById('g-dividers'); g.innerHTML='';
   if(!usesLanes())return;
-  if(isV()){
-    let x=0;
-    S.lanes.forEach((l,i)=>{
-      x+=l.w;
-      // 中間境界は内側中央(x-4)、最右端は内側に収めて(x-7)配置
-      const isLast=i===S.lanes.length-1;
-      const hit=e('rect',{x:isLast?x-7:x-4,y:0,width:isLast?7:8,height:SVG_H,fill:'transparent',cursor:'col-resize'});
-      hit.addEventListener('mousedown',ev=>startLaneResize(ev,l.id));
-      hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor='col-resize';});
+  const V=isV(), mainMax=V?SVG_H:SVG_W, cur=V?'col-resize':'row-resize';
+  const addBand=(at,thick,inset,laneId)=>{
+    const gaps=laneBandGaps(at,V);
+    const runs=[]; let p=0;
+    gaps.forEach(gp=>{ if(gp[0]>p) runs.push([p,Math.min(gp[0],mainMax)]); p=Math.max(p,gp[1]); });
+    if(p<mainMax) runs.push([p,mainMax]);
+    runs.forEach(([lo,hi])=>{
+      if(hi-lo<2) return;
+      const hit=V? e('rect',{x:at-inset,y:lo,width:thick,height:hi-lo,fill:'transparent',cursor:cur})
+                 : e('rect',{x:lo,y:at-inset,width:hi-lo,height:thick,fill:'transparent',cursor:cur});
+      hit.addEventListener('mousedown',ev=>startLaneResize(ev,laneId));
+      hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor=cur;});
       hit.addEventListener('mouseleave',()=>{if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';});
       g.appendChild(hit);
     });
-  } else {
-    let y=0;
-    S.lanes.forEach((l,i)=>{
-      y+=l.w;
-      const isLast=i===S.lanes.length-1;
-      const hit=e('rect',{x:0,y:isLast?y-7:y-4,width:SVG_W,height:isLast?7:8,fill:'transparent',cursor:'row-resize'});
-      hit.addEventListener('mousedown',ev=>startLaneResize(ev,l.id));
-      hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor='row-resize';});
-      hit.addEventListener('mouseleave',()=>{if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';});
-      g.appendChild(hit);
-    });
-  }
+  };
+  let at=0;
+  S.lanes.forEach((l,i)=>{
+    at+=l.w;
+    const isLast=i===S.lanes.length-1;   // 中間境界は内側中央(-4)、最端は内側に収めて(-7)配置
+    addBand(at,isLast?7:8,isLast?7:4,l.id);
+  });
 }
 
 function startLaneResize(ev,laneId){
@@ -9140,7 +9533,12 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
   fo.appendChild(inp);
   // 追補(v7.05): g-nodes 直下だと render() の innerHTML='' で編集中に消えるため、SVG直下（最前面）に置く。
   // ズームはSVG要素へのCSS transformなので座標系は同一。
-  document.getElementById('diagram-svg').appendChild(fo);
+  // v8.13追補: opts.host＝描画先の差し替え。レーン見出しは position:sticky の重ね箱(#gstick-lane)の
+  //   中の別SVGに描かれており、#diagram-svg は positioned でないため必ずその裏に隠れる。
+  //   重ね箱の中に置けば見出しの図座標と表示位置が一致するので、固定表示中のズレ補正も要らない。
+  const _host=(opts&&opts.host)||document.getElementById('diagram-svg');
+  _host.appendChild(fo);
+  if(opts&&opts.host) fo.style.pointerEvents='auto';   // .gstick>svg は pointer-events:none のため
   // 追補(v7.05): エディタ内のクリックがSVGの mousedown（範囲選択開始等）へ伝播して
   // 編集が中断される事故を防ぐ
   ['mousedown','mouseup','click','dblclick'].forEach(t=>fo.addEventListener(t,ev=>ev.stopPropagation()));
@@ -9772,6 +10170,12 @@ function buildExportSvg(skipTitle){
   svg.querySelectorAll('.flow-ctrl').forEach(el=>el.remove());   // v8.01: ステップ増減の＋/－ボタンは書き出しに含めない
   svg.querySelectorAll('.ui-only').forEach(el=>el.remove());     // v8.11追補: 画面操作のための表現（折り畳みトグル・列追加/削除ボタン等）は載せない
   svg.querySelectorAll('.mind-dim').forEach(el=>el.classList.remove('mind-dim'));   // v8.03: 強調表示の減光は書き出しに含めない
+  // v8.13追補: 配置ガイド（黄色い点線）・吸着ガイド・範囲選択枠・置き換えハイライト・接続プレビューは
+  //   画面操作のための表現なので書き出しに載せない。render() は g-guides を消さない作り（clearGuides を
+  //   呼んだときだけ消える）ため、残っていたガイドがそのまま印刷・PNG・SVG に写り込んでいた。
+  //   画面側の状態には触らず、clone だけを掃除する＝書き出し後にガイドが消えたり点滅したりしない。
+  ['g-guides','g-replace-hl'].forEach(id=>{ const el=svg.querySelector('#'+id); if(el) el.innerHTML=''; });
+  svg.querySelector('#prev-edge')?.remove();
   const _ganttHdr=(S.diagramType==='gantt'&&S.gantt.header&&S.gantt.header.show);   // v8.00: 見出し欄に工事名があるので図面名帯は省く
   const name=(skipTitle||_ganttHdr)?'':exportDiagramName();   // v5.00: PDFはHTMLのタイトル行を毎ページ出すため、SVG内の帯は省く
   // v8.13: レーン図は主軸（縦=高さ／横=幅）だけを内容まで切り詰める。交差軸は全レーン残す。非レーン図・内容なしは全キャンバス。
@@ -9781,7 +10185,11 @@ function buildExportSvg(skipTitle){
   const fs=name?Math.round(Math.max(24,Math.min(48,W*0.02))):0;   // 図幅に応じた見出しサイズ
   const titleH=name?Math.round(fs*1.8):0;
   const H=baseH+titleH, top=-titleH;
-  const bg=e('rect',{x:0,y:top,width:W,height:H,fill:'white'});
+  // v8.13追補: viewBox を x=0／y=baseH にぴったり合わせると、そこに乗る枠線（線幅1.5）は外側の半分が
+  //   切り出し枠の外に出て 0.75px になる＝左端・下端だけ細く見える。四辺 1px ずつ広げて全幅を出す。
+  //   背景の白も同じだけ広げないと、周囲に 1px の透明な縁が残る。
+  const EB=1;
+  const bg=e('rect',{x:-EB,y:top-EB,width:W+EB*2,height:H+EB*2,fill:'white'});
   svg.insertBefore(bg,svg.firstChild);
   if(name){
     const t=e('text',{x:10,y:top/2,'text-anchor':'start','dominant-baseline':'middle',
@@ -9796,8 +10204,8 @@ function buildExportSvg(skipTitle){
     if(isV()) svg.appendChild(e('line',{x1:0,y1:baseH-_lw,x2:W,y2:baseH-_lw,stroke:'#94a3b8','stroke-width':_lw}));   // 縦=下端の閉じ線
     else      svg.appendChild(e('line',{x1:W-_lw,y1:0,x2:W-_lw,y2:baseH,stroke:'#94a3b8','stroke-width':_lw}));       // 横=右端の閉じ線
   }
-  svg.setAttribute('width',W); svg.setAttribute('height',H);
-  svg.setAttribute('viewBox','0 '+top+' '+W+' '+H);
+  svg.setAttribute('width',W+EB*2); svg.setAttribute('height',H+EB*2);
+  svg.setAttribute('viewBox',(-EB)+' '+(top-EB)+' '+(W+EB*2)+' '+(H+EB*2));
   return {svg,W,H,titleH};
 }
 // v4.30: ガントのフェーズ境界で改ページするためのページブロック群を算出。
@@ -9874,7 +10282,11 @@ async function expPDF(){
     const _ext=laneExportMainExtent();
     if(_ext!=null){ if(isV()) vbH=_ext; else vbW=_ext; }
   }
-  svg.appendChild(e('rect',{x:vbX,y:vbY-bandH,width:vbW,height:bandH,fill:'white'}));
+  // v8.13追補: 図面名・日付の白い帯は「最背面」へ入れる。従来は appendChild ＝最前面で、帯の下端がちょうど
+  //   y=vbY(=0) にあるため、そこに乗るレーン外枠・見出し帯の線（線幅1.5／1）の上半分を白く塗りつぶし、
+  //   上の枠線だけ半分の太さ（見出しの色によっては消えて見える）になっていた。左右は帯の外なので無傷＝
+  //   「上下の枠線が左右と違う」の原因。帯の上に載る文字は従来どおり appendChild（負のyなので図と重ならない）。
+  svg.insertBefore(e('rect',{x:vbX-1,y:vbY-bandH,width:vbW+2,height:bandH,fill:'white'}),svg.firstChild);
   if(name){ const tn=e('text',{x:vbX+10,y:vbY-bandH/2,'dominant-baseline':'middle','text-anchor':'start','font-size':String(nameFs),'font-weight':'700',fill:'#1e293b','font-family':'sans-serif'}); tn.textContent=name; svg.appendChild(tn); }
   const tdt=e('text',{x:vbX+vbW-10,y:vbY-bandH/2,'dominant-baseline':'middle','text-anchor':'end','font-size':String(dateFs),fill:'#475569','font-family':'sans-serif'}); tdt.textContent=pdfTodayStr(); svg.appendChild(tdt);
   let bodyInner;
@@ -9965,7 +10377,9 @@ async function expPDF(){
     }
     bodyInner=onceStr+'<table class="pgt">'+(_wrapOn?'':'<thead><tr><th>'+headHtml+'</th></tr></thead>')+'<tbody>'+rows+'</tbody></table>';
   } else {
-    svg.setAttribute('viewBox',vbX+' '+(vbY-bandH)+' '+vbW+' '+(vbH+bandH));
+    // v8.13追補: 左端・下端にぴったり合わせると、そこに乗る枠線（線幅1.5）の外側半分が切れて細く見える。
+    //   左右・下を 1px ずつ広げて全幅を出す（上は図面名の帯があるので広げない）。
+    svg.setAttribute('viewBox',(vbX-1)+' '+(vbY-bandH)+' '+(vbW+2)+' '+(vbH+bandH+1));
     bodyInner='<div class="pg-center"><div class="pg-svg">'+new XMLSerializer().serializeToString(svg)+'</div></div>';
   }
   // v4.30(方式B): @page に size を指定せず、印刷ダイアログで用紙サイズ（A4/A3等）と向きを自由に選べる。倍率: svg{width:scale%}。
@@ -10370,8 +10784,15 @@ function applyZoom(){
   const wrap=document.getElementById('canvas-wrap');
   let spacer=document.getElementById('zoom-spacer');
   if(!spacer){spacer=document.createElement('div');spacer.id='zoom-spacer';spacer.style.position='absolute';spacer.style.top='0';spacer.style.left='0';spacer.style.pointerEvents='none';wrap.appendChild(spacer);}
-  spacer.style.width=Math.round(SVG_W*zoomLevel)+'px';
-  spacer.style.height=Math.round(SVG_H*zoomLevel)+'px';
+  // v8.13追補: 端のシェイプを画面の中央まで送れるように、スクロールできる範囲だけを画面半分ぶん広げる。
+  //   SVG_W/SVG_H は増やさない＝レーンの背景・外枠・書き出し・印刷にはまったく影響しない
+  //   （SVG_H を増やすと印刷物に空のレーンが伸びてしまう）。余白は #zoom-spacer の中なので
+  //   pointer-events:none＝クリックしても何も起きない。ガントは固定レイヤとスクロール量の
+  //   読み替え（ganttStickyPt）が絡むので対象外。
+  const _padX=(S.diagramType==='gantt')?0:Math.max(0,Math.round(wrap.clientWidth*0.5));
+  const _padY=(S.diagramType==='gantt')?0:Math.max(0,Math.round(wrap.clientHeight*0.5));
+  spacer.style.width=(Math.round(SVG_W*zoomLevel)+_padX)+'px';
+  spacer.style.height=(Math.round(SVG_H*zoomLevel)+_padY)+'px';
   document.getElementById('zoom-label').textContent=Math.round(zoomLevel*100)+'%';
   syncLaneSticky();     // v8.10→v8.11追補: レーン見出しの重ね箱の拡大率を合わせる
   syncGanttSticky();    // v8.11: ガントの固定レイヤの拡大率も合わせる
@@ -10532,6 +10953,7 @@ function layoutGanttHeadButtons(){
   btn.style.top=(collapsed? (headH-bhH)/2 : headH-bhH-5)+'px';
 }
 window.addEventListener('resize',layoutGanttHeadButtons);   // v8.11: 画面幅が変わったら置き直す
+window.addEventListener('resize',applyZoom);                // v8.13追補: スクロール余白は画面の大きさで決まるので追随させる
 // v8.11追補: 未保存のままタブを閉じる／ブラウザを終了するときの警告。
 //   ここで出るダイアログの文言もボタンもブラウザが決める固定文（離れる／キャンセルの2択）で、
 //   こちらから「上書き保存」を差し込む手段は無い（閉じられないページを作れてしまうため塞がれている）。
