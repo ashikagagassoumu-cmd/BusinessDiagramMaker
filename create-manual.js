@@ -16,7 +16,7 @@ const {
 } = requireDocx();
 
 const screenshotDir = path.join(__dirname, 'screenshots');
-const APP_VERSION = 'v8.12';
+const APP_VERSION = 'v8.13';
 
 function pngDimensions(filepath) {
   const buf = fs.readFileSync(filepath);
