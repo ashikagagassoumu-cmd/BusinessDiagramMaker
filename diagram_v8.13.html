@@ -3205,7 +3205,8 @@ function assignDiamondPorts(asgn){
 // v8.13追補: L字（1回曲げ）を許す最小の交差軸の空き。出入りのスタブ(16px)＋余裕。
 const L_MIN_GAP=24;
 // v8.13追補: 同じシェイプの同じ辺に集まる接続点の最小間隔(px)。線幅1.5に対して2本と分かる距離。
-const PORT_MIN_GAP=14;
+//   接続点は等間隔に置くのが基本で、等間隔にしてもこの間隔を割るときは箱のほうを広げる（growForPorts）。
+const PORT_MIN_GAP=10;
 // v8.13追補: 「出口辺 → 角 → 入口辺」のL字2本が、他の箱を貫通しないか確かめる。
 //   判定は既存の routeObs / vHit / hHit をそのまま使う（新しい幾何判定を書かない）。
 //   frac はこの時点で未確定なので、各辺の中央どうしで代表させる。
@@ -3217,6 +3218,31 @@ function lShapeClear(aRef,bRef,exitSide,entrySide,fromId,toId){
   const cx=exV?sp[0]:ep[0], cy=exV?ep[1]:sp[1];        // 角
   if(exV) return !vHit(sp[0],sp[1],cy,obs) && !hHit(cy,cx,ep[0],obs);
   return         !hHit(sp[1],sp[0],cx,obs) && !vHit(cx,cy,ep[1],obs);
+}
+// v8.13追補: 同じ辺に n 本が集まると、等間隔（(i+1)/(n+1)）の間隔は「辺の長さ ÷ (n+1)」になる。
+//   これが PORT_MIN_GAP を割る辺があれば、接続点を押しのけて不揃いにするのではなく箱のほうを広げる。
+//   render() の autoFitNodeSize の直後に1回だけ走らせる＝renderEdges が allocatePorts を呼ぶ時点では
+//   すでに必要な大きさになっている。中心は setSizeKeepCenter が保つ。
+//   毎回 autoFit が文字ぶんへ戻してからここで広げ直すので、値は毎フレーム同じに収束する。
+function growForPorts(){
+  if(S.diagramType==='gantt'||S.diagramType==='sequence'||S.diagramType==='mindmap') return;
+  const asgn=allocatePorts(), cnt={};
+  S.edges.forEach(ed=>{ const a=asgn[ed.id]; if(!a) return;
+    if(!ed.fromPin){ const k=a.fromId+'|'+a.exitSide;  cnt[k]=(cnt[k]||0)+1; }
+    if(!ed.toPin)  { const k=a.toId  +'|'+a.entrySide; cnt[k]=(cnt[k]||0)+1; } });
+  const needW={}, needH={};
+  Object.keys(cnt).forEach(k=>{
+    const i=k.lastIndexOf('|'), id=k.slice(0,i), side=k.slice(i+1);
+    const req=PORT_MIN_GAP*(cnt[k]+1);
+    if(side==='left'||side==='right') needH[id]=Math.max(needH[id]||0,req);
+    else                              needW[id]=Math.max(needW[id]||0,req);
+  });
+  S.nodes.forEach(nd=>{
+    if(nd.type==='crosslane'||nd.type==='group_box'||nd.type==='org_group') return;   // 枠・帯は本数で広げない
+    if(isDiamondShape(nd.type)||!isResizable(nd)) return;                             // ひし形は頂点固定（v7.11）
+    const w=Math.max(nd.w,needW[nd.id]||0), h=Math.max(nd.h,needH[nd.id]||0);
+    if(w!==nd.w||h!==nd.h) setSizeKeepCenter(nd,w,h);
+  });
 }
 function allocatePorts(){
   // v6.11 修正: 接続線は必ず「対面の辺」に出入りさせる。
@@ -3375,58 +3401,59 @@ function allocatePorts(){
       else { role='exit'; key='X|'+sk; }
       (groups[key]=groups[key]||{role,eds:[]}).eds.push(ed); });
     Object.keys(groups).forEach(k=> processFan(groups[k].eds, groups[k].role));
-    // ── v8.13追補: 同じ辺に集まる端どうしに最小間隔を保証する（3rd pass）──
-    //   上の processFan は直交群で入口を「辺の中央(0.5)」に上書きする（:3311）。一方、平行群の
-    //   「一直線優先」も中央付近に端を置く。この2つが同じ辺に同居すると端がほぼ同じ位置に並び、
-    //   そこから伸びる横（縦）の区間が長く重なって1本に見える＝参考PDF②の「見積受領」の右辺。
-    //   まっすぐな線とピン留めの端は動かさず、曲がる線の端だけを最小間隔まで押しのける。
-    //   押す向きは「相手シェイプのある側」＝相手が上なら上へ（下へ押すと縦の区間が横線を跨いで
-    //   不要な交差が増えるため）。
-    const isStraightEdge=a=>{
-      const ex=exitPt(a.aRef,a.exitSide,a.exitFrac,false), en=exitPt(a.bRef,a.entrySide,a.entryFrac,false);
-      if(!ex||!en) return false;
-      const exH=(a.exitSide==='left'||a.exitSide==='right'), enH=(a.entrySide==='left'||a.entrySide==='right');
-      if(exH&&enH)   return Math.abs(ex[1]-en[1])<1;
-      if(!exH&&!enH) return Math.abs(ex[0]-en[0])<1;
-      return false;
+    // ── v8.13追補: 同じ辺に集まる端を「均等・10px以上」にそろえる（3rd pass）──
+    //   processFan は直交群で入口を「辺の中央(0.5)」に上書きし（:3311）、平行群の「一直線優先」も
+    //   中央付近に端を置く。この2つが同じ辺に同居すると端がほぼ同じ位置に並び、そこから伸びる
+    //   横（縦）の区間が長く重なって1本に見える＝参考PDF②の「見積受領」の右辺。
+    //   すでに PORT_MIN_GAP 以上離れている辺は processFan の配置をそのまま尊重し（一直線優先・
+    //   段違いトラックを壊さない）、詰まっている辺だけを 1st pass と同じ「相手の位置順に等間隔」へ
+    //   戻す。等間隔にしても間隔が足りない辺は、render() 手前の growForPorts が箱を広げてある。
+    //   端を動かした線は、相手側が1本だけならもう一度「一直線」に整え直す（v8.02 の狙いを保つ）。
+    const sideAxis=sd=>(sd==='left'||sd==='right');
+    const posOf=(ref,sd,f)=>{ const p=exitPt(ref,sd,f,false); return sideAxis(sd)?p[1]:p[0]; };
+    const restraighten=(a,movedDir)=>{
+      // movedDir='exit' なら相手は入口側。相手が同じ軸の辺で、その辺に1本しか来ておらず、
+      // ピン留めでもなければ、線がまっすぐになる位置へ相手の frac を合わせ直す。
+      const oDir=movedDir==='exit'?'entry':'exit';
+      const oSide=oDir==='exit'?a.exitSide:a.entrySide, mSide=movedDir==='exit'?a.exitSide:a.entrySide;
+      if(sideAxis(oSide)!==sideAxis(mSide)) return;                 // 軸が直交＝一直線にはならない
+      const ed=S.edges.find(x=>asgn[x.id]===a); if(!ed) return;
+      if(oDir==='exit'?ed.fromPin:ed.toPin) return;
+      const oKey=pKey(oDir==='exit'?a.fromId:a.toId, ed, oDir==='exit'?'from':'to')+'|'+oSide;
+      if((oDir==='exit'?exitN[oKey]:entryN[oKey])>1) return;         // 相手の辺に複数来ている＝扇のまま
+      const oRef=oDir==='exit'?a.aRef:a.bRef;
+      const m=posOf(movedDir==='exit'?a.aRef:a.bRef, mSide, movedDir==='exit'?a.exitFrac:a.entryFrac);
+      const base=sideAxis(oSide)?oRef.y:oRef.x, span=sideAxis(oSide)?oRef.h:oRef.w;
+      const f=(m-base)/span, nf=(f>=0.12&&f<=0.88)?f:0.5;
+      if(oDir==='exit') a.exitFrac=nf; else a.entryFrac=nf;
     };
     const gp={};
     S.edges.forEach(ed=>{ const a=asgn[ed.id]; if(!a) return;
       if(isDiamondShape(a.aRef.type)||isDiamondShape(a.bRef.type)) return;   // ひし形は頂点固定
-      (gp[pKey(a.fromId,ed,'from')+'|'+a.exitSide] =gp[pKey(a.fromId,ed,'from')+'|'+a.exitSide] ||[]).push({a,dir:'exit', side:a.exitSide, ref:a.aRef,pinned:!!ed.fromPin});
-      (gp[pKey(a.toId,  ed,'to')  +'|'+a.entrySide]=gp[pKey(a.toId,  ed,'to')  +'|'+a.entrySide]||[]).push({a,dir:'entry',side:a.entrySide,ref:a.bRef,pinned:!!ed.toPin});
+      const ek=pKey(a.fromId,ed,'from')+'|'+a.exitSide, tk=pKey(a.toId,ed,'to')+'|'+a.entrySide;
+      (gp[ek]=gp[ek]||[]).push({a,dir:'exit', side:a.exitSide, ref:a.aRef,pinned:!!ed.fromPin,other:a.bRef});
+      (gp[tk]=gp[tk]||[]).push({a,dir:'entry',side:a.entrySide,ref:a.bRef,pinned:!!ed.toPin, other:a.aRef});
     });
     Object.keys(gp).forEach(k=>{
       const list=gp[k]; if(list.length<2) return;
-      const side=list[0].side, ref=list[0].ref;
-      const vert=(side==='left'||side==='right');          // 辺が縦＝端の位置はY
-      const span=vert?ref.h:ref.w, base=vert?ref.y:ref.x;
-      if(span<PORT_MIN_GAP*1.5) return;                    // 狭い辺は従来の等間隔のまま（詰めても離れない）
-      const LO=0.12, HI=0.88, min=base+span*LO, max=base+span*HI;
+      const side=list[0].side, ref=list[0].ref, vert=sideAxis(side);
+      const base=vert?ref.y:ref.x, span=vert?ref.h:ref.w;
       const getF=it=> it.dir==='exit'?(it.a.exitFrac==null?0.5:it.a.exitFrac):(it.a.entryFrac==null?0.5:it.a.entryFrac);
-      list.forEach(it=>{
-        it.pos=base+span*getF(it);
-        it.fixed=it.pinned||isStraightEdge(it.a);
-        const oc=nc(it.dir==='exit'?it.a.bRef:it.a.aRef);   // 相手シェイプの中心
-        it.away=Math.sign((vert?oc[1]:oc[0])-it.pos)||1;    // 押す向き＝相手のある側
-      });
-      const taken=list.filter(it=>it.fixed).map(it=>it.pos);
-      const hit=v=>taken.some(t=>Math.abs(t-v)<PORT_MIN_GAP);
-      list.filter(it=>!it.fixed).sort((p,q)=>p.pos-q.pos).forEach(it=>{
-        let p=it.pos;
-        if(hit(p)){
-          let found=null;
-          for(let s=1;s<=8&&found==null;s++){
-            for(const c of [it.pos+it.away*PORT_MIN_GAP*s, it.pos-it.away*PORT_MIN_GAP*s]){
-              if(c>=min&&c<=max&&!hit(c)){ found=c; break; }
-            }
-          }
-          if(found!=null) p=found;
-        }
-        taken.push(p);
-        const f=Math.max(LO,Math.min(HI,(p-base)/span));
+      list.forEach(it=>{ it.pos=base+span*getF(it); });
+      const sorted=list.slice().sort((p,q)=>p.pos-q.pos);
+      let crowded=false;
+      for(let i=1;i<sorted.length;i++) if(sorted[i].pos-sorted[i-1].pos<PORT_MIN_GAP) crowded=true;
+      if(!crowded) return;                       // 既に十分離れている＝processFan の配置を尊重
+      if(list.some(it=>it.pinned)) return;       // ピン留めはユーザー指定の位置なので触らない
+      // 1st pass と同じ並び（上下辺は相手のX順／左右辺は相手のY順）で等間隔に振り直す
+      const n=list.length;
+      list.sort((p,q)=> vert ? ((p.other.y+p.other.h/2)-(q.other.y+q.other.h/2))
+                             : ((p.other.x+p.other.w/2)-(q.other.x+q.other.w/2)));
+      list.forEach((it,i)=>{
+        const f=(i+1)/(n+1);
         if(it.dir==='exit') it.a.exitFrac=f; else it.a.entryFrac=f;
       });
+      list.forEach(it=>restraighten(it.a,it.dir));
     });
   }
   return asgn;
@@ -6851,6 +6878,7 @@ function render(){
     }
   });
   S.nodes.forEach(autoFitNodeSize);   // v8.10: 文字量に合わせてシェイプを自動リサイズ（折り返し込み）
+  growForPorts();                     // v8.13追補: 接続点を等間隔にしても10px空かない箱を先に広げる
   S.nodes.forEach(n=>{
     if(!n.sections||!n.sections.length)return;
     const sh=calcSectionsH(n.sections,n.type==='org_node');
