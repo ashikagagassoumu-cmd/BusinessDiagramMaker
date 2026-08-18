@@ -241,6 +241,11 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 .dtype-card .dt-name{font-size:14px;font-weight:700;color:#1e293b;margin-bottom:4px}
 .dtype-card .dt-desc{font-size:11px;color:#64748b;line-height:1.4}
 
+/* v8.14: サイドバーのボタン（デザイン・ステップ）。パレットの項目と同じ見た目にそろえる */
+#design-settings{border-top:1px solid #e2e8f0}
+#design-settings .gset-body{padding:9px 12px;display:flex;flex-direction:column;gap:6px}
+.sbtn{width:100%;text-align:left;padding:6px 10px;border:1px solid #e2e8f0;border-radius:5px;background:#f9fafb;color:#374151;font-size:12px;cursor:pointer;transition:all .12s}
+.sbtn:hover{background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
 /* ガント: サイドバー プロジェクト設定 */
 #gantt-settings{border-top:1px solid #e2e8f0}
 #gantt-settings .gset-body{padding:9px 12px;display:flex;flex-direction:column;gap:9px}
@@ -439,8 +444,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="tbtn fsstep" onclick="stepFontSize(1)" title="文字を大きくする">A<span>˄</span></button>
     <button class="tbtn fsstep fsdown" onclick="stepFontSize(-1)" title="文字を小さくする">A<span>˅</span></button>
   </span>
-  <button class="tbtn" onclick="showDesignMenu(event)" title="図全体のデザイン（角丸・線・影）を切替。色は変わりません">✨ デザイン</button>
-  <button class="tbtn" onclick="showStepMenu(event)" title="おしゃれなステップ図の挿入・番号採番・カラフル配色">① ステップ</button>
+  <!-- v8.14: 「デザイン」「ステップ」は左サイドバーへ移した。
+       ガント・マインドマップは描画の仕組みが別で、この2つがまったく効かない図種のため、
+       効く図種のときだけサイドバーに出す。 -->
   <!-- v8.10: 文字揃えは Word/Excel と同じ「横線の束の端が揃う」絵柄へ（旧 ⯇ ≡ ⯈ は何のボタンか分からなかった）。
        線の色は currentColor＝ボタンの文字色に追従するので、ホバー・選択中の色変化は他のボタンと同じ。 -->
   <button class="tbtn" onmousedown="event.preventDefault()" onclick="setTextAlign('left')" title="テキストを左揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.33" x2="9.5" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="2" y1="13" x2="9.5" y2="13"/></g></svg></button>
@@ -525,6 +531,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <div id="sidebar-scroll">
     <div class="ph">シェイプ</div>
     <div id="palette"></div>
+    <!-- v8.14: メニューバーから移設。効かない図種（ガント・マインドマップ）では丸ごと隠す。 -->
+    <div class="ph" id="design-sec-h">デザイン・ステップ</div>
+    <div id="design-settings">
+      <div class="gset-body">
+        <button class="sbtn" onclick="showDesignMenu(event)" title="図全体のデザイン（角丸・線・影）を切替。色は変わりません">✨ デザイン切替…</button>
+        <button class="sbtn" onclick="showStepMenu(event)" title="おしゃれなステップ図の挿入・番号採番・カラフル配色">① ステップ図…</button>
+      </div>
+    </div>
     <div id="gantt-settings" style="display:none">
       <div class="ph">プロジェクト設定</div>
       <div class="gset-body">
@@ -2142,6 +2156,9 @@ function applyDiagramType(){
     eb.title=isGantt?'ガント/工程表をExcel(.xlsx)で出力':'Excel出力はガント/工程表のみ対応'; }
   // マインドマップ専用ツールバー（配置モード切替）・サイドバー設定
   const isMind=S.diagramType==='mindmap';
+  // v8.14: デザイン・ステップはガントとマインドマップでは描画の仕組みが別でまったく効かないため隠す
+  { const _dsOn=!isGantt&&!isMind;
+    ['design-sec-h','design-settings'].forEach(id=>{const el=document.getElementById(id); if(el)el.style.display=_dsOn?'':'none';}); }
   if(!isMind){ mindFocusId=null; mindEmphasisOpen=false; mindAttrFilter={attr:'',val:''}; }   // v8.03: 表示状態をリセット
   document.getElementById('mind-tools').style.display=isMind?'inline-flex':'none';
   document.getElementById('mind-sep').style.display=isMind?'':'none';
@@ -8777,6 +8794,9 @@ function showShapeColorMenu(ev){
   reset.addEventListener('click',ev2=>{ev2.stopPropagation();apply(null,null);});
   dlg.appendChild(reset);
   document.body.appendChild(dlg);
+  { // v8.14: サイドバーから開くと下へ長く伸びるため、画面からはみ出す分を上へ寄せる
+    const _r=dlg.getBoundingClientRect();
+    if(_r.bottom>window.innerHeight-6) dlg.style.top=Math.max(4,window.innerHeight-_r.height-6)+'px'; }
   setTimeout(()=>{
     const close=ev2=>{if(!dlg.isConnected)return;if(!dlg.contains(ev2.target)){closeDlg();}};
     document.addEventListener('mousedown',close);
@@ -8815,6 +8835,9 @@ function showLaneColorMenu(ev,laneId){
   row.appendChild(custom);
   dlg.appendChild(row);
   document.body.appendChild(dlg);
+  { // v8.14: サイドバーから開くと下へ長く伸びるため、画面からはみ出す分を上へ寄せる
+    const _r=dlg.getBoundingClientRect();
+    if(_r.bottom>window.innerHeight-6) dlg.style.top=Math.max(4,window.innerHeight-_r.height-6)+'px'; }
   setTimeout(()=>{
     const close=ev2=>{if(!dlg.isConnected)return;if(!dlg.contains(ev2.target)){closeDlg();}};
     document.addEventListener('mousedown',close);
@@ -8842,12 +8865,21 @@ function showDesignMenu(ev){
     const flt=s.shadow?`<defs><filter id="${shId}" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.5" flood-color="#000" flood-opacity="0.3"/></filter></defs>`:'';
     const fa=s.shadow?`filter="url(#${shId})"`:'';
     const acc=s.accent?`<rect x="6" y="8" width="4" height="12" fill="#3b82f6"/>`:'';
-    row.innerHTML=`<svg width="48" height="28" style="flex:0 0 auto;background:#fff;border-radius:4px">${flt}<rect x="6" y="6" width="36" height="16" rx="${rx}" fill="#dbeafe" stroke="#3b82f6" stroke-width="${s.sw}" ${fa}/>${acc}</svg>`+
+    // v8.14: 見本にも形の差し替え（シェブロン・ピル）を反映する。従来は角丸・線幅・影・帯だけで、
+    //   形が変わる2つは見本では違いが分からなかった。
+    let _pv;
+    if(s.shape==='chevron') _pv=`<polygon points="6,6 36,6 42,14 36,22 6,22 12,14" fill="#dbeafe" stroke="#3b82f6" stroke-width="${s.sw}" ${fa}/>`;
+    else if(s.shape==='pill') _pv=`<rect x="6" y="6" width="36" height="16" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="${s.sw}" ${fa}/>`;
+    else _pv=`<rect x="6" y="6" width="36" height="16" rx="${rx}" fill="#dbeafe" stroke="#3b82f6" stroke-width="${s.sw}" ${fa}/>`;
+    row.innerHTML=`<svg width="48" height="28" style="flex:0 0 auto;background:#fff;border-radius:4px">${flt}${_pv}${acc}</svg>`+
       `<span style="font-size:12px;color:#1e293b;font-weight:${on?'700':'400'}">${s.name}${on?' ✓':''}</span>`;
     row.onclick=()=>{ S.style=key; closeDlg(); render(); hint('デザインを「'+s.name+'」に変更しました（色はそのまま）'); };
     dlg.appendChild(row);
   });
   document.body.appendChild(dlg);
+  { // v8.14: サイドバーから開くと下へ長く伸びるため、画面からはみ出す分を上へ寄せる
+    const _r=dlg.getBoundingClientRect();
+    if(_r.bottom>window.innerHeight-6) dlg.style.top=Math.max(4,window.innerHeight-_r.height-6)+'px'; }
   setTimeout(()=>{
     const close=ev2=>{if(!dlg.isConnected)return;if(!dlg.contains(ev2.target)){closeDlg();}};
     document.addEventListener('mousedown',close);
@@ -8879,6 +8911,9 @@ function showStepMenu(ev){
     dlg.appendChild(mkRow(`<span style="display:flex;gap:3px">${sw}</span><span>${th.name}</span>`,()=>{closeDlg();applyColorTheme(k);}));
   });
   document.body.appendChild(dlg);
+  { // v8.14: サイドバーから開くと下へ長く伸びるため、画面からはみ出す分を上へ寄せる
+    const _r=dlg.getBoundingClientRect();
+    if(_r.bottom>window.innerHeight-6) dlg.style.top=Math.max(4,window.innerHeight-_r.height-6)+'px'; }
   setTimeout(()=>{
     const close=ev2=>{if(!dlg.isConnected)return;if(!dlg.contains(ev2.target)){closeDlg();}};
     document.addEventListener('mousedown',close);
