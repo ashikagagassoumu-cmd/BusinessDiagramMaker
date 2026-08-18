@@ -1812,6 +1812,8 @@ const AUTO_FONT=12;     // 本文の文字サイズ（既定値。シェイプ�
 //   AUTO_LINE_H=15 / VTEXT_CH=18 / VTEXT_COL=17 と同じ値になり、既存の図の見た目は変わらない）。
 //   折り返しの計算と実際の描画が必ず同じ値を見るよう、両方ともこの関数を通す。
 const FONT_MIN=6, FONT_MAX=48;
+// v8.14: 接続線のラベルを折り返す幅。これを超えたら次の行（縦書きは次の列）へ送る。
+const EDGE_LABEL_MAX_W=140;
 function nodeFontSize(n){ const v=n&&n.fontSize; return (typeof v==='number'&&v>0)?v:AUTO_FONT; }
 function lineH(fs){ return Math.round(fs*1.25); }
 function vch(fs){ return Math.round(fs*1.5); }
@@ -7460,20 +7462,31 @@ function renderEdges(){
       // 移動可能なラベルグループ（背景は不透明）
       const lg=e('g',{cursor:'move'});
       if(tV()){   // v7.00: 組織図は横向きでも線ラベルを横書き（線上の人数など）
-        const _cw=_sc?8:7, _fs=_sc?'13':'11', _lh=_sc?24:20;
-        const lw=Math.max(36,ed.label.length*_cw+14);
-        lg.appendChild(e('rect',{x:mx-lw/2,y:my-_lh/2,width:lw,height:_lh,rx:3,fill:'#ffffff','fill-opacity':1,stroke:isSel?'#2563eb':'#cbd5e1','stroke-width':1}));
-        const t=e('text',{x:mx,y:my,'text-anchor':'middle','dominant-baseline':'middle','font-size':_fs,fill:'#475569','pointer-events':'none'});
-        t.textContent=ed.label; lg.appendChild(t);
+        // v8.14: 長い文字は折り返し、欄の大きさを行数に合わせて広げる。
+        //   従来は1行に伸び続け、幅も文字数×固定幅の当て推量だったため長い文がはみ出していた。
+        const _fsn=_sc?13:11, _llh=lineH(_fsn);
+        const lines=wrapText(ed.label,EDGE_LABEL_MAX_W,_fsn);
+        const lw=Math.max(36,Math.ceil(Math.max(0,...lines.map(l=>textW(l,_fsn))))+14);
+        const lhBox=Math.max(_sc?24:20,lines.length*_llh+8);
+        lg.appendChild(e('rect',{x:mx-lw/2,y:my-lhBox/2,width:lw,height:lhBox,rx:3,fill:'#ffffff','fill-opacity':1,stroke:isSel?'#2563eb':'#cbd5e1','stroke-width':1}));
+        const _ly0=my-(lines.length-1)*_llh/2;
+        lines.forEach((ln,li)=>{
+          const t=e('text',{x:mx,y:_ly0+li*_llh,'text-anchor':'middle','dominant-baseline':'middle','font-size':String(_fsn),fill:'#475569','pointer-events':'none'});
+          t.textContent=ln; lg.appendChild(t);
+        });
       } else {
-        const chars=[...ed.label];
-        const charH=16, totalH=chars.length*charH;
-        const lw=20, lh=Math.max(28,totalH+10);
+        // 縦書き（横モード）＝列で折り返し、列が増えたぶん欄を横へ広げる。
+        const _fsn=11, charH=16, colW=vcol(_fsn);
+        const cols=wrapTextByCount(ed.label,Math.max(1,Math.floor(EDGE_LABEL_MAX_W/charH)));
+        const totalH=Math.max(1,...cols.map(c=>[...c].length))*charH;
+        const lw=Math.max(20,cols.length*colW+6), lh=Math.max(28,totalH+10);
         lg.appendChild(e('rect',{x:mx-lw/2,y:my-lh/2,width:lw,height:lh,rx:3,fill:'#ffffff','fill-opacity':1,stroke:isSel?'#2563eb':'#cbd5e1','stroke-width':1}));
-        const startY=my-totalH/2+charH/2;
-        chars.forEach((ch,ci)=>{
-          const t=e('text',{x:mx,y:startY+ci*charH,'text-anchor':'middle','dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
-          t.textContent=ch; lg.appendChild(t);
+        const _sx=mx+(cols.length-1)*colW/2, _sy=my-totalH/2+charH/2;
+        cols.forEach((col,ci)=>{
+          [...col].forEach((ch,i)=>{
+            const t=e('text',{x:_sx-ci*colW,y:_sy+i*charH,'text-anchor':'middle','dominant-baseline':'middle','font-size':String(_fsn),fill:'#475569','pointer-events':'none'});
+            t.textContent=ch; lg.appendChild(t);
+          });
         });
       }
       lg.addEventListener('mousedown',ev=>{ev.stopPropagation();
@@ -10045,9 +10058,18 @@ function edgeLabel(eid){
   S.sel=[eid]; render();
   const[sx,sy,ex,ey]=connPts(fn,tn);
   const mx=(sx+ex)/2+(ed.labelDX||0), my=(sy+ey)/2+(ed.labelDY||0);
-  const ew=140,eh=26;
+  // v8.14: 編集欄も確定後の見た目にそろえる（同じ幅で折り返し、行数ぶん高くする）。
+  //   従来は高さ26pxの1行固定で、長い文を打つと編集中と確定後で見た目がまるで違った。
+  const _fsn=S.diagramType==='statechart'?13:11, _llh=lineH(_fsn);
+  const _lines=wrapText(ed.label||'',EDGE_LABEL_MAX_W,_fsn);
+  const ew=EDGE_LABEL_MAX_W+14, eh=Math.max(26,_lines.length*_llh+10);
   const ph=S.diagramType==='statechart'?'[条件] / アクション':null;
-  openSvgEditor(mx-ew/2,my-eh/2,ew,eh,ed.label||'',v=>{ed.label=v;snap();render();},ph);
+  openSvgEditor(mx-ew/2,my-eh/2,ew,eh,ed.label||'',v=>{ed.label=v;render();snap();},ph,
+    {multiline:true,fontPx:_fsn,lineH:_llh,padX:5,
+     onInput:(v,fo)=>{   // 打つたびに行数ぶん背を伸ばす
+       const ls=wrapText(v,EDGE_LABEL_MAX_W,_fsn), h=Math.max(26,ls.length*_llh+10);
+       fo.setAttribute('y',my-h/2); fo.setAttribute('height',h);
+     }});
 }
 
 // ── Keyboard ──
