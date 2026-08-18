@@ -1290,6 +1290,7 @@ let labelDragState=null;   // 接続線ラベルの移動状態
 let S_didDrag=false;
 let crankDragState=null;
 let waypointDragState=null;   // エッジ手動ウェイポイントのドラッグ状態（D-5 v4.26）
+let _lastMouseCtrl=false;   // v8.14: 直近のマウス操作で Ctrl/⌘ が押されていたか（mouseup の保険）
 let segDragState=null;        // エッジ区間スライドのドラッグ状態（v6.16）
 let busDragState=null;        // バス型接続線の横バス高さ調整ドラッグ状態（v7.00・樹状図/組織図）
 let edgeReconnectState=null;  // エッジ端点の再接続ドラッグ状態（D-5 v4.27）
@@ -8594,11 +8595,37 @@ function convertDragToCopy(){
     baseIds=[d.nid];
     const on=S.nodes.find(n=>n.id===d.nid); if(on){on.x=d.ox;on.y=d.oy;}
   }
+  // v8.14: Ctrl を離したら「移動」へ戻せるように、差し替える前の状態と複製したものを控えておく。
+  const _edgeCount=S.edges.length;
   const idMap=duplicateNodes(baseIds);   // 複製は開始位置に生成される
+  d.baseIds=baseIds.slice();
+  d.copyIds=baseIds.map(id=>idMap[id]).filter(Boolean);
+  d.copyEdgeIds=S.edges.slice(_edgeCount).map(e=>e.id);
+  d.baseNid=d.nid;
+  d.baseGroup=d.group?d.group.map(g=>({id:g.id,ox:g.ox,oy:g.oy})):null;
+  d.baseSel=S.sel.slice();
   if(d.group) d.group=d.group.map(g=>({id:idMap[g.id],ox:g.ox,oy:g.oy}));
   d.nid=idMap[d.nid]||d.nid;
   d.isCopy=true;
-  S.sel=baseIds.map(id=>idMap[id]).filter(Boolean);
+  S.sel=d.copyIds.slice();
+}
+// v8.14: Ctrl を離したらコピーをやめて「移動」に戻す（押している間だけコピー、という一般的な挙動）。
+//   従来は一度コピーに切り替わると戻す手段が無く、キーを離してもコピーのままだった。
+//   複製は実データとして作られているので、複製したノードと線を消して、掴んでいる対象を原本へ戻す。
+function revertDragToCopy(){
+  const d=S.drag; if(!d||!d.isCopy)return;
+  // いま画面で動かしている位置をそのまま原本へ引き継ぐ＝カーソルの下の箱が飛ばない
+  (d.copyIds||[]).forEach((cid,i)=>{
+    const c=S.nodes.find(n=>n.id===cid), b=S.nodes.find(n=>n.id===(d.baseIds||[])[i]);
+    if(c&&b){ b.x=c.x; b.y=c.y; if(c.lid!==undefined) b.lid=c.lid; }
+  });
+  const delN=new Set(d.copyIds||[]), delE=new Set(d.copyEdgeIds||[]);
+  S.nodes=S.nodes.filter(n=>!delN.has(n.id));
+  S.edges=S.edges.filter(e=>!delE.has(e.id));
+  d.nid=d.baseNid; d.group=d.baseGroup; S.sel=(d.baseSel||[]).slice();
+  d.isCopy=false;
+  ['baseIds','copyIds','copyEdgeIds','baseNid','baseGroup','baseSel'].forEach(k=>{ delete d[k]; });
+  render();
 }
 // ── コピー / 貼り付け（ツールバー＋Ctrl+C/V） ──
 let clipboard=null;
@@ -9171,8 +9198,11 @@ document.addEventListener('mousemove',ev=>{
     //   （Ctrl+クリックの選択トグルが、指の揺れで誤ってコピーになるのを防ぐ）。
     if(Math.hypot(pt.x-S.drag.sx,pt.y-S.drag.sy)>4) S_didDrag=true;
     if(!S_didDrag)return;
-    // ドラッグ確定後: Ctrl/⌘押下中ならコピーへ切替（一度だけ・crosslane以外）
-    if((ev.ctrlKey||ev.metaKey)&&!S.drag.isCopy&&!S.drag.crosslane) convertDragToCopy();
+    // ドラッグ確定後: Ctrl/⌘を押している間だけコピー。離したら移動へ戻す（v8.14）。
+    //   キーの上げ下げは keydown/keyup でも見ているが、押したままドラッグを始めた場合はここで拾う。
+    _lastMouseCtrl=!!(ev.ctrlKey||ev.metaKey);
+    if(_lastMouseCtrl&&!S.drag.isCopy&&!S.drag.crosslane) convertDragToCopy();
+    else if(!_lastMouseCtrl&&S.drag.isCopy) revertDragToCopy();
     const n=S.nodes.find(n=>n.id===S.drag.nid);
     if(!n)return;
     // v8.01: Shift押下中は水平/垂直に固定（開始点からの変位が大きい軸だけ動かす）。
@@ -9507,6 +9537,8 @@ document.addEventListener('mouseup',()=>{
     return;
   }
   if(S.drag){
+    // v8.14: keyup を取りこぼしていた場合の保険。ボタンを離した時点で Ctrl が押されていなければ移動に戻す。
+    if(S.drag.isCopy&&!_lastMouseCtrl) revertDragToCopy();
     if(S_didDrag){
       // v7.01: 樹状図/組織図＝重ねてドロップで親子付け替え（配下ごと・orgReparent 内で snap+render）
       if(S.drag.orgDrop){
@@ -9917,6 +9949,20 @@ function edgeLabel(eid){
 }
 
 // ── Keyboard ──
+// v8.14: Ctrl(⌘)を押している間だけコピー、離したら移動に戻す。
+//   Ctrl だけを押しても mousemove は起きないので、キーの上げ下げをここで見る必要がある。
+document.addEventListener('keydown',ev=>{
+  if(ev.key!=='Control'&&ev.key!=='Meta') return;
+  _lastMouseCtrl=true;
+  if(S.drag&&!S.drag.isCopy&&!S.drag.crosslane&&S_didDrag) convertDragToCopy();
+},true);
+document.addEventListener('keyup',ev=>{
+  if(ev.key!=='Control'&&ev.key!=='Meta') return;
+  _lastMouseCtrl=false;
+  if(S.drag&&S.drag.isCopy) revertDragToCopy();
+},true);
+// 画面から離れている間にキーを離されると keyup が拾えないので、そのときは移動へ戻す
+window.addEventListener('blur',()=>{ if(S.drag&&S.drag.isCopy) revertDragToCopy(); });
 document.addEventListener('keydown',ev=>{
   // 微修正(v8.00据置): 見出し編集ダイアログが開いている間は Esc=閉じる（変更を破棄）
   if(document.getElementById('gantt-head-modal')&&document.getElementById('gantt-head-modal').style.display==='flex'){
