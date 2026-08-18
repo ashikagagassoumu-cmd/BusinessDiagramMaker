@@ -3385,14 +3385,41 @@ function facingSide(from,to){
   }
 }
 // ── ポート予約方式: 同一辺への接続重複を排除 ──
+// crosslane の接続矩形＝「帯の実体 ∩ 相手レーン」。
+// v8.15追補: 従来は ①lid が無いと帯全体を返し、扇状分散が帯の全幅に均されて相手のレーンと
+//   無関係な位置に接続点が出ていた（繋ぎ替えは lid を破棄する・Mermaid 取り込みは常に lid 無し）
+//   ②lid があっても「レーン全幅」を返し、帯の実体（既定＝スパンの75%を中央寄せ）と交差させて
+//   いなかったため、両端レーンでは帯の無い場所に接続点が出て横入りの矢印が帯に接しなかった。
+//   ①は相手端点のシェイプ位置からレーンを推定するフォールバックを新設、②はレーン矩形と帯の
+//   実体の共通部分に絞る。共通部分が無い（帯がそのレーンを覆っていない）ときは帯の実体のうち
+//   そのレーンに近い側の端24pxを使う＝接続点は必ず描かれている帯の上に乗る。
 function nodeRef(n, ed, dir){
   if(n.type!=='crosslane') return n;
-  const lid=dir==='from'?ed?.fromLid:ed?.toLid;
+  let lid=dir==='from'?ed?.fromLid:ed?.toLid;
+  if(!lid&&ed&&usesLanes()){   // lid 無し: 相手端点のシェイプの位置からレーンを推定
+    const otherId=dir==='from'?ed.to:ed.from;
+    const other=S.nodes.find(x=>x.id===otherId&&x.id!==n.id);
+    if(other&&other.x!=null){ const oi=nodeLaneIdx(other); if(oi>=0) lid=S.lanes[oi].id; }
+  }
   if(!lid) return n;
   const ln=S.lanes.find(l=>l.id===lid);
   if(!ln) return n;
-  if(isV()) return{...n,x:laneX(lid),w:ln.w,type:'rect'};
-  else return{...n,y:laneX(lid),h:ln.w,type:'rect'};
+  const MINW=24, lx=laneX(lid);
+  if(isV()){
+    let lo=Math.max(lx,n.x), hi=Math.min(lx+ln.w,n.x+n.w);
+    if(hi-lo<MINW){   // 帯がこのレーンをほぼ／全く覆っていない → 帯の近い側の端24px
+      if(lx+ln.w/2<n.x+n.w/2){ lo=n.x; hi=Math.min(n.x+n.w,n.x+MINW); }
+      else { hi=n.x+n.w; lo=Math.max(n.x,hi-MINW); }
+    }
+    return{...n,x:lo,w:hi-lo,type:'rect'};
+  } else {
+    let lo=Math.max(lx,n.y), hi=Math.min(lx+ln.w,n.y+n.h);
+    if(hi-lo<MINW){
+      if(lx+ln.w/2<n.y+n.h/2){ lo=n.y; hi=Math.min(n.y+n.h,n.y+MINW); }
+      else { hi=n.y+n.h; lo=Math.max(n.y,hi-MINW); }
+    }
+    return{...n,y:lo,h:hi-lo,type:'rect'};
+  }
 }
 function rankedSides(from,to){
   const dx=(to.x+to.w/2)-(from.x+from.w/2), dy=(to.y+to.h/2)-(from.y+from.h/2);
@@ -7548,7 +7575,7 @@ function renderEdges(){
     let[sx,sy,ex,ey,exitSide,entrySide]=connPts(fn,tn,ed,portAssign);
     const _pa=portAssign[ed.id];   // v8.02: 段違いトラック（自動）。手動 midPos があればそちらを優先。
     const _amid=(ed.midPos!=null)?ed.midPos:((_pa&&_pa.autoMid!=null)?_pa.autoMid:null);
-    let isReturn=isReturnEdge(fn,tn);
+    let isReturn=isReturnEdge((_pa&&_pa.aRef)||fn,(_pa&&_pa.bRef)||tn);   // v8.15追補: crosslane は実接続矩形（レーン部分）で戻り線判定＝ブリッジの跨ぐ側が実接続位置と一致
     let manual=false, mx=(sx+ex)/2, my=(sy+ey)/2, wps=null, pd, drawPts=null, bus=null;
     if(busRoutes&&busRoutes[ed.id]){
       // v7.00: バス型経路（樹状図/組織図の標準）。手動支点付きは orgBusRoutes 側で対象外。
@@ -8408,7 +8435,11 @@ function renderNodes(){
   const g=document.getElementById('g-nodes'); g.innerHTML='';
   renderGroupOutlines(g);   // v4.09: グループの破線枠を背面に
   // org_group を先に描画（背面に配置）
-  const sorted=[...S.nodes].sort((a,b)=>((a.type==='org_group'||a.type==='group_box')?0:1)-((b.type==='org_group'||b.type==='group_box')?0:1));
+  // v8.15追補: 重ね置きシェイプ（書類・データ）は作成順に関係なく常に最前面へ（重ね置き＝注釈の
+  //   設計意図どおり）。従来は作成順のため、後から作った説明有シェイプ等の下に隠れていた。
+  //   sort は安定＝同じ層の中では従来どおり作成順を保つ。
+  const _zTier=n=>((n.type==='org_group'||n.type==='group_box')?0:(isOverlayShape(n.type)?2:1));
+  const sorted=[...S.nodes].sort((a,b)=>_zTier(a)-_zTier(b));
   const _badge=stepBadgeMap();   // v8.01: 番号バッジ（表示ONのとき）
   const _flowDirs={};            // v8.01: フロー毎の並び方向（番号サークルのラベル位置＝縦並びは右／横並びは下）
   { const fl={}; S.nodes.forEach(n=>{ if(n.flowId){(fl[n.flowId]=fl[n.flowId]||[]).push(n);} }); Object.keys(fl).forEach(f=>_flowDirs[f]=_flowDir(stepOrder(fl[f]))); }
@@ -9793,7 +9824,7 @@ document.addEventListener('mousemove',ev=>{
     }
   }
 });
-document.addEventListener('mouseup',()=>{
+document.addEventListener('mouseup',ev=>{   // v8.15追補: 繋ぎ替え確定でドロップ位置のレーンを読むため ev を受ける
   // v8.10: ハンドツールのパン終了（履歴には積まない＝表示だけの操作）
   if(panState){
     panState=null;
@@ -9888,8 +9919,13 @@ document.addEventListener('mouseup',()=>{
       snap();
     } else if(rs.moved&&rs.candId&&rs.candId!==rs.fixedNodeId){
       if(ed){
-        if(rs.end==='from'){ ed.from=rs.candId; ed.fromLid=null; delete ed.fromPin; }
-        else { ed.to=rs.candId; ed.toLid=null; delete ed.toPin; }
+        // v8.15追補: 繋ぎ替え先が crosslane ならドロップ位置のレーンを lid に保存する。
+        //   従来は無条件 null＝帯のどのレーンに繋いだかが失われ、接続点が帯全体へ均されて壊れていた
+        //   （nodeRef のフォールバックでも推定はするが、ユーザーが落とした場所の意図を優先する）。
+        const _cand=S.nodes.find(x=>x.id===rs.candId);
+        const _clid=(_cand&&_cand.type==='crosslane'&&usesLanes())?(laneAt(isV()?svgPt(ev).x:svgPt(ev).y)||{}).id||null:null;
+        if(rs.end==='from'){ ed.from=rs.candId; ed.fromLid=_clid; delete ed.fromPin; }
+        else { ed.to=rs.candId; ed.toLid=_clid; delete ed.toPin; }
         delete ed.midPos; delete ed.orthoWps;   // 経路は再計算（曲線の支点は保持。v6.16: 区間スライドの手動形も破棄。v6.17: 繋ぎ替えた端のピンも破棄）
         snap();
       }
