@@ -1821,7 +1821,7 @@ function wrapTextByCount(text,maxChars){
 }
 // 自動リサイズの対象外シェイプ（ラベルが枠外／内部レイアウトを別管理／ラベルを持たない）
 const AUTO_FIT_SKIP=new Set(['note','state_detail','group_box','org_group','event',
-  'gateway_xor','gateway_par','initial','final','step_num','er_relation']);
+  'gateway_xor','gateway_par','initial','final','step_num','er_relation','crosslane']);
 function autoFitTarget(n){
   if(!n||!SD[n.type])return false;
   if(!isResizable(n))return false;          // gantt/sequence/mindmap 図種と特殊管理シェイプを除外
@@ -4409,9 +4409,11 @@ function updateCrosslaneLids(n){
   }
 }
 function normalizeCrosslaneGeometry(){
-  const thickness=SD.crosslane.h;
   S.nodes.forEach(n=>{
     if(n.type!=='crosslane')return;
+    if(n.fromLid==null)return;   // v8.14: レーンの無い図種に置かれたものは普通のシェイプとして扱う
+    // v8.14: 帯の厚みはノードごとに持てるようにした（未指定は従来どおり既定値）
+    const thickness=(typeof n.thick==='number'&&n.thick>0)?n.thick:SD.crosslane.h;
     if(n.mainPos==null) n.mainPos=n.y; // 旧データ互換
     const fromPos=laneX(n.fromLid);
     const crossSpan=(n.crossW!=null)?n.crossW:(()=>{
@@ -8319,32 +8321,38 @@ function renderNodes(){
       }
     }
     // v8.10: 幅調整ハンドルは選択モードのみ（ハンドツール中は「移動まで」に留める）
-    if(n.type==='crosslane'&&S.mode==='select'){
+    // v8.14: 帯を出すのは「レーンに連動している複数レーンプロセス」だけにする。
+    //   レーンの無い図種（フローチャート等）にも同じシェイプを置けるが、そちらは fromLid を持たない
+    //   ただの矩形で、掴むと laneX(undefined)=0 の計算でシェイプが左端へ飛ぶ事故があった。
+    //   そちらは下の汎用リサイズハンドル（8方向）で大きさを変えられる。
+    if(n.type==='crosslane'&&S.mode==='select'&&n.fromLid!=null){
       const hw=8;
+      const band=(x,y,w,h,cur,side,thick)=>{
+        const r=e('rect',{x,y,width:w,height:h,fill:'transparent','pointer-events':'all'});
+        r.style.cursor=cur;
+        r.addEventListener('mousedown',ev=>{ev.stopPropagation();
+          if(thick) startCrosslaneThickResize(ev,n.id,side); else startCrosslaneResize(ev,n.id,side);});
+        ng.appendChild(r);
+      };
       if(isV()){
-        const lHandle=e('rect',{x:n.x,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
-        lHandle.style.cursor='ew-resize';
-        lHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'left');});
-        ng.appendChild(lHandle);
-        const rHandle=e('rect',{x:n.x+n.w-hw,y:n.y,width:hw,height:n.h,fill:'transparent','pointer-events':'all'});
-        rHandle.style.cursor='ew-resize';
-        rHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'right');});
-        ng.appendChild(rHandle);
+        // 左右＝レーンを跨ぐ長さ（交差軸）／上下＝帯の厚み（主軸）
+        band(n.x,n.y,hw,n.h,'ew-resize','left',false);
+        band(n.x+n.w-hw,n.y,hw,n.h,'ew-resize','right',false);
+        band(n.x,n.y,n.w,hw,'ns-resize','top',true);
+        band(n.x,n.y+n.h-hw,n.w,hw,'ns-resize','bottom',true);
       } else {
-        const tHandle=e('rect',{x:n.x,y:n.y,width:n.w,height:hw,fill:'transparent','pointer-events':'all'});
-        tHandle.style.cursor='ns-resize';
-        tHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'left');});
-        ng.appendChild(tHandle);
-        const bHandle=e('rect',{x:n.x,y:n.y+n.h-hw,width:n.w,height:hw,fill:'transparent','pointer-events':'all'});
-        bHandle.style.cursor='ns-resize';
-        bHandle.addEventListener('mousedown',ev=>{ev.stopPropagation();startCrosslaneResize(ev,n.id,'right');});
-        ng.appendChild(bHandle);
+        band(n.x,n.y,n.w,hw,'ns-resize','left',false);
+        band(n.x,n.y+n.h-hw,n.w,hw,'ns-resize','right',false);
+        band(n.x,n.y,hw,n.h,'ew-resize','top',true);
+        band(n.x+n.w-hw,n.y,hw,n.h,'ew-resize','bottom',true);
       }
     }
     // 汎用シェイプのリサイズハンドル（選択中・選択モード）
     // v8.10: ハンドツール中は掴めない／文字編集中はハンドルを出さない（編集欄の縁と重なって紛らわしいため）
     if(sel&&S.mode==='select'&&isResizable(n)&&!svgEditorActive()) addResizeHandles(ng,n);
-    ng.style.cursor=S.mode==='connect'?'crosshair':(n.type==='crosslane'?(isV()?'ns-resize':'ew-resize'):'move');
+    // v8.14: 本体のカーソルは他のシェイプと同じ「移動」にそろえる。掴んで動かす操作なので
+    //   リサイズ用の矢印が出るのは誤解のもと（大きさを変える帯は辺の上に別に置いてある）。
+    ng.style.cursor=S.mode==='connect'?'crosshair':'move';
     ng.addEventListener('mousedown',ev=>nodeMD(ev,n.id));
     ng.addEventListener('click',ev=>{
       if(activePal==='group_box')return;
@@ -9116,6 +9124,17 @@ document.addEventListener('mousemove',ev=>{
     }
     renderEdges(); renderNodes(); return;
   }
+  if(crosslaneThickState){   // v8.14: 帯の厚みを変える（掴んだ辺の反対側は固定）
+    const pt=svgPt(ev), ts=crosslaneThickState;
+    const n=S.nodes.find(n=>n.id===ts.nid); if(!n)return;
+    const delta=(isV()?pt.y:pt.x)-ts.start;
+    let th, mp;
+    if(ts.side==='top'){ th=ts.origThick-delta; } else { th=ts.origThick+delta; }
+    th=Math.round(Math.max(CROSSLANE_THICK_MIN,Math.min(CROSSLANE_THICK_MAX,th)));
+    mp=(ts.side==='top')?(ts.origMain+(ts.origThick-th)):ts.origMain;   // 上/左を掴んだら反対の辺を固定
+    n.thick=th; n.mainPos=Math.max(headerSize()+2,mp);
+    normalizeCrosslaneGeometry(); renderEdges(); renderNodes(); return;
+  }
   if(crosslaneResizeState){
     const pt=svgPt(ev);
     const n=S.nodes.find(n=>n.id===crosslaneResizeState.nid); if(!n)return;
@@ -9548,6 +9567,9 @@ document.addEventListener('mouseup',()=>{
   if(activationResizeState){
     activationResizeState=null; snap(); render(); return;
   }
+  if(crosslaneThickState){   // v8.14: 帯の厚みの確定
+    crosslaneThickState=null; snap(); clearGuides(); render(); return;
+  }
   if(crosslaneResizeState){
     const cn=S.nodes.find(n=>n.id===crosslaneResizeState.nid);
     if(cn){updateCrosslaneLids(cn);}
@@ -9681,7 +9703,11 @@ function startLaneResize(ev,laneId){
 let nodeResizeState=null;
 // リサイズ可能なシェイプか（特殊管理シェイプ・専用描画図種は除外）
 function isResizable(n){
-  if(n.type==='crosslane'||n.type==='activation'||n.type==='lifeline')return false;
+  // v8.14: レーンに連動している複数レーンプロセスは専用の帯で大きさを変える（x/y/w/h は毎回
+  //   レーンから計算し直されるので汎用ハンドルでは書き換えられない）。レーンの無い図種に
+  //   置かれた同じシェイプはただの矩形なので、他と同じ8方向ハンドルで変えられるようにする。
+  if(n.type==='crosslane') return n.fromLid==null;
+  if(n.type==='activation'||n.type==='lifeline')return false;
   if(isGanttShape&&isGanttShape(n.type))return false;
   if(S.diagramType==='gantt'||S.diagramType==='sequence'||S.diagramType==='mindmap')return false;
   return true;
@@ -9723,6 +9749,18 @@ function startCrosslaneResize(ev,nid,side){
   const origCrossX=n.crossX||0;
   const startX=isV()?pt.x:pt.y;
   crosslaneResizeState={nid,side,startX,origCrossX,origCrossW};
+}
+// v8.14: 帯の厚み（主軸方向）を変える。掴んだ辺の反対側は動かさない＝掴んだ側だけが伸び縮みする。
+//   従来は厚みが全体で共通の固定値で、太さを変える手段がまったく無かった。
+const CROSSLANE_THICK_MIN=20, CROSSLANE_THICK_MAX=160;
+let crosslaneThickState=null;
+function startCrosslaneThickResize(ev,nid,side){
+  ev.stopPropagation(); ev.preventDefault();
+  const pt=svgPt(ev);
+  const n=S.nodes.find(n=>n.id===nid); if(!n||n.fromLid==null)return;
+  crosslaneThickState={nid,side,start:isV()?pt.y:pt.x,
+    origThick:(typeof n.thick==='number'&&n.thick>0)?n.thick:SD.crosslane.h,
+    origMain:n.mainPos!=null?n.mainPos:(isV()?n.y:n.x)};
 }
 
 // ── Crosslane resize snap ──
