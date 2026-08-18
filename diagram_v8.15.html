@@ -11721,6 +11721,7 @@ function _mmNodeToken(tok){
   else if(mm=rest.match(/^\(\[([\s\S]*)\]\)$/)) {type='terminal';text=mm[1];}   // ([...]) スタジアム→開始/終了
   else if(mm=rest.match(/^\[\/([\s\S]*)\/\]$/)) {type='parallelogram';text=mm[1];} // [/.../] 平行四辺形
   else if(mm=rest.match(/^\[\\([\s\S]*)\\\]$/)) {type='parallelogram';text=mm[1];}
+  else if(mm=rest.match(/^\[\[([\s\S]*)\]\]$/)) {type='sys_input';text=mm[1];}  // [[...]] サブルーチン（定義済み処理）→システム入力（v8.15）
   else if(mm=rest.match(/^\[([\s\S]*)\]$/)) {type='rect';text=mm[1];}           // [...] 矩形
   else if(mm=rest.match(/^\{([\s\S]*)\}$/)) {type='diamond';text=mm[1];}        // {...} 判断
   else if(mm=rest.match(/^\(([\s\S]*)\)$/)) {type='rect';text=mm[1];}           // (...) 角丸→矩形
