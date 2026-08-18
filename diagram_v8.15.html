@@ -9285,8 +9285,13 @@ function initHandTool(){
   // v8.11: ハンドツール中はホイールを拡大縮小に割り当てる。掴んで動かすモードでは画面の移動は
   //   ドラッグで行うので、ホイールはスクロールより拡大縮小のほうが噛み合う。
   //   ズームの中身は図種ごとの既存処理へ委ねる（ガントは列幅・他は zoomLevel）。
+  // v8.15: Ctrl(⌘)+ホイールは全モードでアプリのズームに割り当てる。従来はブラウザ全体の
+  //   拡大縮小になってしまい、図だけを拡大したい意図と合わなかった（ユーザー要望 2026-08-18）。
+  //   このリスナーは #canvas-wrap 配下でしか発火しない＝カーソルが図の範囲内にある時だけ効き、
+  //   メニュー・サイドバー上では従来どおりブラウザの拡大縮小のまま。preventDefault で既定動作を抑止
+  //   （トラックパッドのピンチも wheel+ctrlKey で届くため、図の上でのピンチも同じズームになる）。
   wrap.addEventListener('wheel',ev=>{
-    if(S.mode!=='hand')return;
+    if(S.mode!=='hand'&&!(ev.ctrlKey||ev.metaKey))return;
     ev.preventDefault(); ev.stopPropagation();
     if(ev.deltaY!==0) zoomAtPointer(ev,ev.deltaY<0?1:-1);   // v8.11追補: カーソル位置を中心に拡大縮小
   },{capture:true,passive:false});
