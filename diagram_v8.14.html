@@ -4258,6 +4258,31 @@ function isReturnEdge(fn,tn){
 const BRIDGE_R=12;          // 半円の基本半径
 const BRIDGE_MIN_SEG=8;     // これ未満の極小区間は判定対象外（退化区間の二重計上を防ぐ）
 const BRIDGE_MERGE=2*BRIDGE_R;   // これ未満で連なる交差はひと山にまとめる
+// ── v8.14追補: ブリッジ全面是正（交差しているのに山が出ないケースの解消）──
+const BRIDGE_R_MIN=6;        // 狭い区間では半径をここまで縮めて必ず山を立てる（これ未満はノイズ）
+const BRIDGE_COVER=2;        // 弧が交差点群の外側に必ず確保する余白(px)
+const BRIDGE_SHARED_PAD=20;  // 端点を共有する線どうし: 共有シェイプの接続矩形をこの幅だけ広げた
+                             //   内側の交差は「ポート付近の接触」とみなし山を出さない（外側は本物の交差）
+const BRIDGE_CURVE_DIV=8;    // 曲線(手動支点)をベジエ1区間あたり何分割の折れ線に近似するか
+// smoothPath と同一の制御点式（Catmull-Rom 風・張力1/6）で曲線を折れ線化する。
+// Math.round は掛けない＝判定用の生座標（描画は smoothPath のままなので丸め差は最大1px、
+// BRIDGE_COVER=2 が吸収する）。
+function sampleSmoothPts(pts){
+  if(!pts||pts.length<2) return pts||[];
+  if(pts.length===2) return [pts[0],pts[1]];
+  const out=[pts[0]];
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
+    const c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+    for(let s=1;s<=BRIDGE_CURVE_DIV;s++){
+      const t=s/BRIDGE_CURVE_DIV, u=1-t;
+      out.push([u*u*u*p1[0]+3*u*u*t*c1x+3*u*t*t*c2x+t*t*t*p2[0],
+                u*u*u*p1[1]+3*u*u*t*c1y+3*u*t*t*c2y+t*t*t*p2[1]]);
+    }
+  }
+  return out;
+}
 // wpPath と同じ式で「その角で実際に使われる角丸半径」を返す＝判定と実描画のズレを無くす
 function bridgeCornerR(pts,k,r){
   if(k<=0||k>=pts.length-1) return 0;
@@ -4292,6 +4317,66 @@ function bridgeCollect(pts,otherWps){
   }
   return hits;
 }
+// v8.14追補: 直交線(pts=跨ぐ側) × 任意折れ線(poly=曲線のサンプル)の交差収集。
+//   直交側の区間は既存 cls()（軸平行・8px下限）で選別するが、曲線側の弦は短く斜めなのが常態
+//   なので cls を通さず任意方向の線分として扱う。t は片側半開 [0,1) ＝隣接弦の共有端点での
+//   二重計上を防ぐ。hit の seg 番号は直交側の区間番号（山は直交側にだけ立つ）。
+function bridgeCollectVsPoly(pts,poly){
+  const hits=[], M=2;
+  const cls=(a,b)=>{
+    const dx=Math.abs(b[0]-a[0]), dy=Math.abs(b[1]-a[1]);
+    if(Math.max(dx,dy)<BRIDGE_MIN_SEG) return null;
+    const v=dy>dx; return (v?dx:dy)>2 ? null : v;
+  };
+  for(let i=0;i<pts.length-1;i++){
+    const segV=cls(pts[i],pts[i+1]); if(segV===null) continue;
+    const[x1,y1]=pts[i],[x2,y2]=pts[i+1];
+    for(let k=0;k<poly.length-1;k++){
+      const a=poly[k], b=poly[k+1];
+      const cdx=b[0]-a[0], cdy=b[1]-a[1];
+      if(Math.max(Math.abs(cdx),Math.abs(cdy))<0.5) continue;   // 退化弦（ゼロ除算防止）
+      if(segV){
+        const X=x1;                                             // 縦区間: x=X の直線と弦の交点
+        if(Math.abs(cdx)<1e-9) continue;
+        const t=(X-a[0])/cdx; if(t<0||t>=1) continue;
+        const y=a[1]+t*cdy;
+        if(y>Math.min(y1,y2)+M&&y<Math.max(y1,y2)-M) hits.push({seg:i,x:X,y,segV});
+      } else {
+        const Y=y1;                                             // 横区間: y=Y の直線と弦の交点
+        if(Math.abs(cdy)<1e-9) continue;
+        const t=(Y-a[1])/cdy; if(t<0||t>=1) continue;
+        const x=a[0]+t*cdx;
+        if(x>Math.min(x1,x2)+M&&x<Math.max(x1,x2)-M) hits.push({seg:i,x,y:Y,segV});
+      }
+    }
+  }
+  return hits;
+}
+// v8.14追補: 自分自身との交差（手動直交経路などで起こり得る）。非隣接区間 i<j (j>=i+2) の
+//   直交交差を検出し、後の区間 j 側に山を立てる（i<j 走査なので二重計上しない）。
+function bridgeCollectSelf(pts){
+  const hits=[], M=2;
+  const cls=(a,b)=>{
+    const dx=Math.abs(b[0]-a[0]), dy=Math.abs(b[1]-a[1]);
+    if(Math.max(dx,dy)<BRIDGE_MIN_SEG) return null;
+    const v=dy>dx; return (v?dx:dy)>2 ? null : v;
+  };
+  for(let i=0;i<pts.length-1;i++){
+    const vi=cls(pts[i],pts[i+1]); if(vi===null) continue;
+    for(let j=i+2;j<pts.length-1;j++){
+      const vj=cls(pts[j],pts[j+1]); if(vj===null||vj===vi) continue;   // 斜め・平行は対象外
+      const seg=segAt(pts,j), oth=segAt(pts,i);
+      // 縦区間×横区間の交点（既存 bridgeCollect と同じ内側判定）
+      const V=vj?seg:oth, H=vj?oth:seg;              // V=縦区間, H=横区間
+      const x=V.a[0], y=H.a[1];
+      const inV=y>Math.min(V.a[1],V.b[1])+M&&y<Math.max(V.a[1],V.b[1])-M;
+      const inH=x>Math.min(H.a[0],H.b[0])+M&&x<Math.max(H.a[0],H.b[0])-M;
+      if(inV&&inH) hits.push({seg:j,x,y,segV:vj});
+    }
+  }
+  function segAt(p,k){ return {a:p[k],b:p[k+1]}; }
+  return hits;
+}
 function bridgeNormalize(pts,hits,r){
   const out=[], bySeg={};
   hits.forEach(h=>{ (bySeg[h.seg]=bySeg[h.seg]||[]).push(h); });
@@ -4309,22 +4394,46 @@ function bridgeNormalize(pts,hits,r){
       else { clus.push(cur); cur=[uniq[t]]; }
     }
     clus.push(cur);
-    // ③端部マージン＝その角で実際に使われる角丸半径。収まらない山は立てない（角への食い込み防止）
+    // ③端部マージン＝その角で実際に使われる角丸半径。
+    // v8.14追補: 「収まらない山は立てない」→「半径を縮め・中心をずらし・クラスタを分割して、
+    //   できる限り立てる」に変更。dir を掛けた u 空間（進行方向が常に正）で計算し符号分岐を排除。
+    //   角丸ゾーン（uL/uH の BRIDGE_COVER 内側）に食い込んだ交差だけは救えない＝諦める（残存限界）。
+    //   prevEnd で同一区間内の弧を進行方向に単調・非重複に保つ（wpPathBridge は配列順に展開する
+    //   ため、弧が逆順・重複すると経路が後戻りして破綻する）。
     const mA=(i===0?4:bridgeCornerR(pts,i,r))+2;
     const mB=(i===pts.length-2?4:bridgeCornerR(pts,i+1,r))+2;
-    const loLim=a+dir*mA, hiLim=b-dir*mB;
-    clus.forEach(cl=>{
-      const first=val(cl[0]), last=val(cl[cl.length-1]);
-      const center=(first+last)/2, half=Math.abs(last-first)/2+BRIDGE_R;
-      const s=center-dir*half, e2=center+dir*half;
-      if(dir>0 ? (s<loLim||e2>hiLim) : (s>loLim||e2<hiLim)) return;
+    const uL=dir*a+mA, uH=dir*b-mB;                 // u空間の使用可能範囲（uL<=uH）
+    let prevEnd=-Infinity;
+    const place=cl=>{
+      const uv=cl.map(h=>dir*val(h));               // dir正規化で昇順ソート済み
+      const uFirst=uv[0], uLast=uv[uv.length-1], span=uLast-uFirst;
+      const halfMin=Math.max(BRIDGE_R_MIN, span/2+BRIDGE_COVER);   // これ未満では交差点群を覆えない
+      const half=Math.min(span/2+BRIDGE_R, (uH-uL)/2);             // 区間に入る最大まで縮小
+      const lo=Math.max(uL+half, uLast+BRIDGE_COVER-half, prevEnd+half);   // 中心の許容下限
+      const hi=Math.min(uH-half, uFirst-BRIDGE_COVER+half);               // 中心の許容上限
+      if(half<halfMin || lo>hi){
+        if(cl.length<=1) return;                    // 単一交差でも入らない＝諦め
+        let gi=1, g=-1;                             // 最大ギャップで2分割（同値なら左優先＝決定的）
+        for(let t=1;t<uv.length;t++){ const d=uv[t]-uv[t-1]; if(d>g){g=d;gi=t;} }
+        place(cl.slice(0,gi)); place(cl.slice(gi));
+        return;
+      }
+      const uC=Math.min(hi,Math.max(lo,(uFirst+uLast)/2));   // 理想中心に最も近い可行点＝中心シフト
+      prevEnd=uC+half;
+      const center=dir*uC;
       out.push({seg:i,segV,half,dir,x:segV?x1:center,y:segV?center:y1});
-    });
+    };
+    clus.forEach(place);
   });
   return out;
 }
 function findCrossings(pts,otherWps,r){
   return bridgeNormalize(pts,bridgeCollect(pts,otherWps),r||18);
+}
+// v8.14追補: 収集済みの生ヒット（ペア別フィルタ・曲線・自己交差の混合）を一括正規化する版。
+//   normalize はエッジごとに必ず1回だけ呼ぶこと（複数回呼ぶと山が重複挿入され経路が壊れる）。
+function findCrossingsRaw(pts,rawHits,r){
+  return bridgeNormalize(pts,rawHits,r||18);
 }
 // 山（半円）の弧だけを返す。最前面で「白 → 本体色」の順に描き直すために使う＝
 // 跨がれる側の線は半円と交わる位置だけが途切れ、交差していない場所は切れない。
@@ -7445,25 +7554,79 @@ function renderEdges(){
   //   山が一切出ず、交差が何か所あってもブリッジは1か所だけ、という症状になっていた。
   //   全ペアを総当たりし、ペアごとに「戻り線が跨ぐ／同種なら S.edges で後にある線が跨ぐ」で
   //   必ず一方だけを跨ぐ側に決める（決定的）。
-  //   対象は wps を持つ線（自動経路＋手動直交）だけ。手動支点の曲線とバス経路は対象外
-  //   （曲線は smoothPath の三次ベジエで折れ線とずれる／バスは意図的に重なる別の体系）。
-  //   端点のシェイプを共有するペアは除外＝ポート付近で接するのを交差と誤認しない。
-  // v8.14: 200本を超えると黙って無効になり「なぜ山が出ないのか分からない」状態だったので一言出す。
-  if(!S.drag && edgeData.length>200 && !_bridgeLimitNoticed){ _bridgeLimitNoticed=true; hint('線が200本を超えるため、交差の飛び越え表示は省略しています'); }
-  if(!S.drag && edgeData.length<=200){
+  //   v8.14追補（ブリッジ全面是正）:
+  //   ・端点共有ペアの全面除外をやめ、「共有シェイプの接続矩形+20px の内側」の交差だけ除外
+  //     （ポート付近の接触の誤認防止は維持しつつ、離れた本物の交差には山を出す）。
+  //     除外矩形は portAssign の aRef/bRef（nodeRef解決済み）＝crosslane はレーンごとの実接続矩形。
+  //   ・手動支点の曲線は「直交線側が常に跨ぐ」形で対象化（曲線をベジエ8分割の折れ線に近似して
+  //     交点検出。曲線側には山を立てない＝曲線どうしの交差は従来どおり対象外）。
+  //   ・自分自身との交差（手動直交経路等）も後の区間側に山を立てる。
+  //   ・200本上限の母数を「ブリッジ対象の線」に変更し、下回ったら告知フラグを戻す（再超過で再告知）。
+  //   ・収集はペア別（除外矩形がペアごとに違うため）→ エッジ別に生ヒットを蓄積 → 正規化は
+  //     エッジごとに1回だけ（複数回呼ぶと山が重複挿入され経路が壊れる）。
+  //   バス経路は従来どおり対象外（意図的に重なる別の体系）。
+  if(!S.drag){
     const cand=edgeData.filter(d=>d.wps&&!d.manual&&!d.bus);
-    cand.forEach(d=>{ d._xOther=[]; });
-    for(let i=0;i<cand.length;i++) for(let j=i+1;j<cand.length;j++){
-      const A=cand[i], B=cand[j];
-      if(A.ed.from===B.ed.from||A.ed.from===B.ed.to||A.ed.to===B.ed.from||A.ed.to===B.ed.to) continue;
-      const jump=(A.isReturn!==B.isReturn) ? (A.isReturn?A:B) : (A.idx>B.idx?A:B);
-      jump._xOther.push((jump===A?B:A).wps);
+    const curves=edgeData.filter(d=>d.manual&&d.drawPts&&d.drawPts.length>=2);
+    const nTargets=cand.length+curves.length;
+    if(nTargets>200){
+      if(!_bridgeLimitNoticed){ _bridgeLimitNoticed=true; hint('対象の線が200本を超えるため、交差の飛び越え表示は省略しています'); }
+    } else {
+      _bridgeLimitNoticed=false;
+      curves.forEach(c=>{ c._curvePts=sampleSmoothPts(c.drawPts); });
+      // 共有シェイプの接続矩形（+BRIDGE_SHARED_PAD）。portAssign が無い線はノード本体で代用。
+      const endRect=(d,nid)=>{ const a=portAssign[d.ed.id];
+        return (a ? (d.ed.from===nid?a.aRef:a.bRef) : (d.ed.from===nid?d.fn:d.tn)) || d.fn; };
+      const P=BRIDGE_SHARED_PAD;
+      const inRect=(rc,x,y)=> rc && x>rc.x-P && x<rc.x+rc.w+P && y>rc.y-P && y<rc.y+rc.h+P;
+      const sharedRects=(A,B)=>{
+        const rects=[];
+        [A.ed.from,A.ed.to].forEach(n=>{ if(n===B.ed.from||n===B.ed.to) rects.push(endRect(A,n),endRect(B,n)); });
+        return rects;
+      };
+      const bboxOf=p=>{ let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+        p.forEach(q=>{ if(q[0]<x1)x1=q[0]; if(q[0]>x2)x2=q[0]; if(q[1]<y1)y1=q[1]; if(q[1]>y2)y2=q[1]; });
+        return {x1:x1-BRIDGE_R,y1:y1-BRIDGE_R,x2:x2+BRIDGE_R,y2:y2+BRIDGE_R}; };
+      const bbHit=(a,b)=> a.x1<=b.x2&&b.x1<=a.x2&&a.y1<=b.y2&&b.y1<=a.y2;
+      cand.forEach(d=>{ d._rawHits=[]; d._bb=bboxOf(d.wps); });
+      curves.forEach(c=>{ c._bb=bboxOf(c._curvePts); });
+      // (a) 直交×直交: 跨ぐ側＝戻り線優先／同種なら S.edges で後の線（従来と同一の決定式）
+      for(let i=0;i<cand.length;i++) for(let j=i+1;j<cand.length;j++){
+        const A=cand[i], B=cand[j];
+        if(!bbHit(A._bb,B._bb)) continue;
+        const jump=(A.isReturn!==B.isReturn) ? (A.isReturn?A:B) : (A.idx>B.idx?A:B);
+        let hits=bridgeCollect(jump.wps,[(jump===A?B:A).wps]);
+        if(hits.length){
+          const ex=sharedRects(A,B);
+          if(ex.length) hits=hits.filter(h=> !ex.some(rc=>inRect(rc,h.x,h.y)));
+          jump._rawHits.push(...hits);
+        }
+      }
+      // (b) 直交×曲線: 常に直交側が跨ぐ（曲線は山を作れない）
+      cand.forEach(d=>{ curves.forEach(c=>{
+        if(!bbHit(d._bb,c._bb)) return;
+        let hits=bridgeCollectVsPoly(d.wps,c._curvePts);
+        if(hits.length){
+          const ex=sharedRects(d,c);
+          if(ex.length) hits=hits.filter(h=> !ex.some(rc=>inRect(rc,h.x,h.y)));
+          d._rawHits.push(...hits);
+        }
+      });});
+      // (c) 自己交差: 自分の両端の接続矩形+20px 内は除外（ポート脇Uターンの誤検出防止）
+      cand.forEach(d=>{
+        let hits=bridgeCollectSelf(d.wps);
+        if(hits.length){
+          const ex=[endRect(d,d.ed.from),endRect(d,d.ed.to)];
+          hits=hits.filter(h=> !ex.some(rc=>inRect(rc,h.x,h.y)));
+          if(hits.length) d._rawHits.push(...hits);
+        }
+      });
+      cand.forEach(dat=>{
+        if(!dat._rawHits.length) return;
+        dat.crossings=findCrossingsRaw(dat.wps,dat._rawHits,18);
+        if(dat.crossings.length>0) dat.pd=wpPathBridge(dat.wps,dat.crossings,18);
+      });
     }
-    cand.forEach(dat=>{
-      if(!dat._xOther.length) return;
-      dat.crossings=findCrossings(dat.wps,dat._xOther,18);
-      if(dat.crossings.length>0) dat.pd=wpPathBridge(dat.wps,dat.crossings,18);
-    });
   }
   // エッジ描画ヘルパー
   function renderOneEdge(dat){
