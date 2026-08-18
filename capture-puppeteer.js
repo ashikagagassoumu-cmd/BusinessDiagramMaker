@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 // マニュアル用の撮影対象。版を上げたらここも上げる（旧版は 99_旧バージョン へ退避されるため参照できなくなる）。
-const URL = 'http://localhost:8765/diagram_v8.14.html';
+const URL = 'http://localhost:8765/diagram_v8.15.html';
 const outDir = path.join(__dirname, 'screenshots');
 if (!fs.existsSync(outDir)) fs.mkdirSync(outDir);
 
