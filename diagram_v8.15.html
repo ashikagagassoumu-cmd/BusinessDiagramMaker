@@ -3827,6 +3827,11 @@ function replaceNodeType(n,newType){
   const nw=isV()?d.w:d.h, nh=isV()?d.h:d.w;
   n.type=newType; n.w=nw; n.h=nh;
   n.x=cx-nw/2; n.y=cy-nh/2;
+  // v8.15: テキスト編集まわりの状態も新種別の既定へ戻す。手動リサイズ状態（manualW/manualH）と
+  //   文字サイズ（fontSize）が残ると、置換後も「幅固定＋文字の自動縮小」のままになり、
+  //   新規に置いた同じシェイプと編集の挙動が揃わない（ユーザー報告 2026-08-18。
+  //   サイズを新種別の既定に戻す以上、手動リサイズの記憶だけ残るのは不整合）。
+  delete n.manualW; delete n.manualH; delete n.fontSize;
   if(usesLanes()&&n.lid&&!isOverlayShape(n.type)){            // レーン内（クロス軸）にクランプ（v8.15: 重ね置きは自由位置のまま）
     const lane=S.lanes.find(l=>l.id===n.lid);
     if(lane){
