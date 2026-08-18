@@ -1400,6 +1400,10 @@ function getDT(){return DIAGRAM_TYPES[S.diagramType]||DIAGRAM_TYPES.swimlane}
 //   プロセスだけが動いて書類・データが取り残されていた。業務フローでは同じ担当の列に
 //   置くものなので、他のシェイプと同じくレーンに属させる。
 function isFreeShape(type){return type==='org_group'||type==='group_box'||type==='lifeline'||type==='activation'||type==='gantt_task'||type==='gantt_milestone'||type==='gantt_summary'||type==='mind_root'||type==='mind_topic'||type==='uml_class'||type==='uml_interface'||type==='step_num'}
+// v8.14追補: 重ね置きするシェイプ（書類）。レーンには従来どおり属する＝レーン幅の変更・
+//   並べ替えには付いてくるが、①接続線がよけない（障害物にしない）②整列ガイドに吸い付かない。
+//   注釈のように他のシェイプや線の上へ自由に重ねるための扱い（ユーザー指示 2026-08-18）。
+function isOverlayShape(type){return type==='doc'}
 // v8.14: そのシェイプが今どのレーンにいるか。lid が無い・古い（旧バージョンで
 //   フリー配置として保存された書類・データなど）ときは、実際の位置から判定する。
 //   これでレーン幅の変更・並べ替えに、読み込んだ既存の図でも追従する。
@@ -2960,7 +2964,8 @@ function clearGuides(){document.getElementById('g-guides').innerHTML='';}
 // ── スマート整列ガイド＋スナップ（A-1 v4.14。非レーン図 ER/組織図/UML・自由配置で使用）──
 const ALIGN_TOL=6;   // スナップ許容差(px)
 // v7.03: 樹状図は「役職の行を1列に揃える」操作が主のため許容差を拡大＝基準線に吸い付きやすく
-function alignTol(){return S.diagramType==='orgchart'?10:ALIGN_TOL;}
+// v8.14追補: フローチャートは吸い付きが強すぎるため 3px へ（ユーザー指示 2026-08-18）
+function alignTol(){return S.diagramType==='orgchart'?10:S.diagramType==='flowchart'?3:ALIGN_TOL;}
 // 整列対象の他ノード（自分・ガント系を除く、座標を持つもの）
 //   v7.03: 部門枠(org_group)は自動フィットで動くため整列基準から除外（誤った基準線を出さない）
 function alignTargets(selfId){
@@ -3035,11 +3040,12 @@ function addNode(type,sx,sy,opts){
   const dt=getDT();
   const label=(opts&&opts.text)||(dt.shapeTexts&&dt.shapeTexts[type])||dt.palLabels[type]||d.text;
   const _free=isFreeShape(type);
+  const _nosnap=_free||isOverlayShape(type);   // v8.14追補: 書類は置いた場所そのままに（吸着しない）
   if(usesLanes()&&!_free){
     const lane=laneAt(crossPos),lx=laneX(lane.id);
-    const snappedC=snapCrossInLane(lane,crossPos);
+    const snappedC=_nosnap?crossPos:snapCrossInLane(lane,crossPos);
     const cPos=Math.max(lx+4,Math.min(lx+lane.w-d.w-4,snappedC-d.w/2));
-    const snapM=snapMainToShapes(mainPos,null);
+    const snapM=_nosnap?null:snapMainToShapes(mainPos,null);
     const cm=snapM!==null?snapM:mainPos;
     const canvasMain=isV()?SVG_H:SVG_W;
     const mPos=Math.max(hdr+4,Math.min(canvasMain-d.h-4,cm-d.h/2));
@@ -3048,8 +3054,8 @@ function addNode(type,sx,sy,opts){
     if(opts&&opts.variant)n.variant=opts.variant;
     S.nodes.push(n); S.sel=[]; clearGuides(); snap(); render(); return n;   // v8.05: 配置直後は選択しない
   } else {
-    const cPos=_free?Math.max(4,crossPos-d.w/2):(()=>{const sc=snapCrossInLane(null,crossPos);return Math.max(4,sc-d.w/2);})();
-    const snapM=_free?null:snapMainToShapes(mainPos,null);
+    const cPos=_nosnap?Math.max(4,crossPos-d.w/2):(()=>{const sc=snapCrossInLane(null,crossPos);return Math.max(4,sc-d.w/2);})();
+    const snapM=_nosnap?null:snapMainToShapes(mainPos,null);
     const cm=snapM!==null?snapM:mainPos;
     const mPos=Math.max(_free?hdr+4:4,cm-d.h/2);
     const pos=isV()?{x:cPos,y:mPos}:{x:mPos,y:cPos};
@@ -3102,9 +3108,11 @@ function nudgeSel(dx,dy){
   if(S.diagramType==='mindmap'){ [...S.sel].forEach(id=>(mindDescendants(id)||[]).forEach(d=>ids.add(d))); }
   const lanes=usesLanes();
   let moved=0;
+  const _pre=new Map();   // v8.14追補: 手動経路の平行移動用に移動前の位置を控える（クランプ後の実移動量で動かす）
   ids.forEach(id=>{
     const n=S.nodes.find(x=>x.id===id);
     if(!n||n.x==null||n.y==null)return;
+    _pre.set(id,[n.x,n.y]);
     if(n.type==='crosslane'){
       // 複数レーンプロセスは主軸方向のみ移動（レーンまたぎ=lid変更はしない）
       if(isV()){ n.y+=dy; if(n.mainPos!=null)n.mainPos=n.y; }
@@ -3120,7 +3128,20 @@ function nudgeSel(dx,dy){
     n.x=Math.max(0,n.x); n.y=Math.max(0,n.y);
     moved++;
   });
-  if(moved){ snap(); render(); }
+  if(moved){
+    // v8.14追補: 動かしたシェイプに接する手動経路（orthoWps/waypoints）も同じ量だけ平行移動
+    S.edges.forEach(ed=>{
+      const id=_pre.has(ed.from)?ed.from:(_pre.has(ed.to)?ed.to:null);
+      if(id==null) return;
+      const n=S.nodes.find(x=>x.id===id), p0=_pre.get(id);
+      if(!n) return;
+      const sx=n.x-p0[0], sy=n.y-p0[1];
+      if(!sx&&!sy) return;
+      if(ed.waypoints) ed.waypoints=ed.waypoints.map(p=>({x:p.x+sx,y:p.y+sy}));
+      if(ed.orthoWps) ed.orthoWps=ed.orthoWps.map(p=>({x:p.x+sx,y:p.y+sy}));
+    });
+    snap(); render();
+  }
 }
 
 // ── グループ化／グループ解除（v4.09 D-2）──
@@ -3449,7 +3470,7 @@ function lShapeClear(aRef,bRef,exitSide,entrySide,fromId,toId){
   //   判定側だけが先に却下し、L字が成立しないケースがあった。
   const _p=9, _fn=S.nodes.find(n=>n.id===fromId), _tn=S.nodes.find(n=>n.id===toId);
   const _cont=(b,s)=> b.x<=s.x+2&&b.y<=s.y+2&&b.x+b.w>=s.x+s.w-2&&b.y+b.h>=s.y+s.h-2;
-  const obs=S.nodes.filter(n=>n.id!==fromId&&n.id!==toId&&!isFreeShape(n.type)&&!(_fn&&_cont(n,_fn))&&!(_tn&&_cont(n,_tn)))
+  const obs=S.nodes.filter(n=>n.id!==fromId&&n.id!==toId&&!isFreeShape(n.type)&&!isOverlayShape(n.type)&&!(_fn&&_cont(n,_fn))&&!(_tn&&_cont(n,_tn)))
     .map(n=>({l:n.x-_p,t:n.y-_p,r:n.x+n.w+_p,b:n.y+n.h+_p}));
   const exV=(exitSide==='top'||exitSide==='bottom');
   const cx=exV?sp[0]:ep[0], cy=exV?ep[1]:sp[1];        // 角
@@ -3824,8 +3845,37 @@ function _edgeBorderToward(n,tx,ty){
 //   ed.orthoWps = 内部の曲がり角の並び（端点はポートから毎回導出して再接続する）。
 //   最初/最後の区間が出口/入口の辺と直角を保つよう、隣接する曲がり角の座標を端点に追従させる。
 //   ＝ノードを動かしても、調整した曲がり位置は維持したまま端だけが追従する。
-function buildOrthoManualPts(ed,sx,sy,ex,ey,exitSide,entrySide){
-  const pts=[[sx,sy],...ed.orthoWps.map(p=>[p.x,p.y]),[ex,ey]];
+// v8.14追補: ドラッグ中のシェイプ移動量（id→[dx,dy]）。手動経路（orthoWps/waypoints）は絶対座標で
+//   保存されるため、シェイプを動かすと曲がり角が置き去りになり形が崩れていた。動かしている
+//   シェイプに接する線は、曲がり角も同じ量だけ平行移動して「編集した形のまま」付いてこさせる。
+function dragMovedDeltas(){
+  const m=new Map();
+  if(!S.drag) return m;
+  if(S.drag.group){
+    S.drag.group.forEach(g=>{ const gn=S.nodes.find(nd=>nd.id===g.id); if(gn&&gn.x!=null) m.set(g.id,[gn.x-g.ox,gn.y-g.oy]); });
+  } else if(S.drag.nid!=null){
+    const n=S.nodes.find(nd=>nd.id===S.drag.nid);
+    if(n&&n.x!=null) m.set(n.id,[n.x-S.drag.ox,n.y-S.drag.oy]);
+  }
+  if(S.drag.grpContents){   // 部門枠の中身も同じ移動量で動いている
+    S.drag.grpContents.forEach(c=>{ const o=S.nodes.find(x=>x.id===c.id); if(o) m.set(c.id,[o.x-c.ox,o.y-c.oy]); });
+  }
+  return m;
+}
+// 移動量マップから、この線に適用する平行移動量を返す（接していなければ null）
+function edgeShiftOf(m,ed){ return (m&&(m.get(ed.from)||m.get(ed.to)))||null; }
+// ドラッグ確定時: 表示上だけ平行移動していた手動経路を、実データへ焼き込む
+function bakeManualRouteShift(){
+  const m=dragMovedDeltas(); if(!m.size) return;
+  S.edges.forEach(ed=>{
+    const sh=edgeShiftOf(m,ed); if(!sh||(!sh[0]&&!sh[1])) return;
+    if(ed.waypoints) ed.waypoints=ed.waypoints.map(p=>({x:p.x+sh[0],y:p.y+sh[1]}));
+    if(ed.orthoWps) ed.orthoWps=ed.orthoWps.map(p=>({x:p.x+sh[0],y:p.y+sh[1]}));
+  });
+}
+function buildOrthoManualPts(ed,sx,sy,ex,ey,exitSide,entrySide,shift){
+  const _dx=shift?shift[0]:0,_dy=shift?shift[1]:0;
+  const pts=[[sx,sy],...ed.orthoWps.map(p=>[p.x+_dx,p.y+_dy]),[ex,ey]];
   if(pts.length>=3){
     if(exitSide==='top'||exitSide==='bottom') pts[1][0]=sx; else pts[1][1]=sy;
     const k=pts.length-2;
@@ -3895,7 +3945,7 @@ const ROUTE_PAD=12;
 const MIN_CRANK_LEAD=40;
 function routeObs(fid,tid){
   const p=ROUTE_PAD;
-  return S.nodes.filter(n=>n.id!==fid&&n.id!==tid&&!isFreeShape(n.type))
+  return S.nodes.filter(n=>n.id!==fid&&n.id!==tid&&!isFreeShape(n.type)&&!isOverlayShape(n.type))
     .map(n=>({l:n.x-p,t:n.y-p,r:n.x+n.w+p,b:n.y+n.h+p}));
 }
 function vHit(x,y1,y2,obs){
@@ -4017,7 +4067,7 @@ function orthoRoute(sx,sy,ex,ey,exitSide,entrySide,fromId,toId,midPos){
   const STUB=16, LOOP_STUB=40, PAD=9, MAXGRID=4000;   // v7.11追補2: LOOP_STUB=同一辺Uターン(戻り線)の横引き出し長
   const fn=S.nodes.find(n=>n.id===fromId), tn=S.nodes.find(n=>n.id===toId);
   const cont=(b,s)=> b.x<=s.x+2&&b.y<=s.y+2&&b.x+b.w>=s.x+s.w-2&&b.y+b.h>=s.y+s.h-2;
-  const bodies=S.nodes.filter(n=> n.id!==fromId&&n.id!==toId&&!isFreeShape(n.type)&&!(fn&&cont(n,fn))&&!(tn&&cont(n,tn)))
+  const bodies=S.nodes.filter(n=> n.id!==fromId&&n.id!==toId&&!isFreeShape(n.type)&&!isOverlayShape(n.type)&&!(fn&&cont(n,fn))&&!(tn&&cont(n,tn)))
     .map(n=>({l:n.x,t:n.y,r:n.x+n.w,b:n.y+n.h}));
   const nrm=v=> v==='top'?[0,-1]:v==='bottom'?[0,1]:v==='left'?[-1,0]:[1,0];
   const e0=nrm(exitSide), n0=nrm(entrySide);
@@ -7327,6 +7377,7 @@ function renderEdges(){
   //   接する線（扇状分散の振り直しが及ぶ範囲）。それ以外は端点が変わらないため直前の経路を使い回す。
   //   mouseup の確定 render（S.drag なし）で全線を通常どおり再探索するため、最終的な見た目は従来と同一。
   let _reuseOk=null;
+  const _mdel=S.drag?dragMovedDeltas():null;   // v8.14追補: ドラッグ中は手動経路を表示上だけ平行移動（確定は mouseup で焼き込み）
   if(S.drag){
     const dragIds=new Set(S.drag.group?S.drag.group.map(x=>x.id):[S.drag.nid]);
     const near=new Set(dragIds);
@@ -7355,16 +7406,18 @@ function renderEdges(){
     } else if(ed.waypoints&&ed.waypoints.length){
       // 手動ウェイポイント: 自動経路をバイパスし、各支点を通るなめらかな曲線で描画（D-5 v4.26 / v6.13 曲線化）
       manual=true;
-      const _st=_edgeBorderToward(fn,ed.waypoints[0].x,ed.waypoints[0].y);
-      const _en=_edgeBorderToward(tn,ed.waypoints[ed.waypoints.length-1].x,ed.waypoints[ed.waypoints.length-1].y);
-      drawPts=[_st,...ed.waypoints.map(p=>[p.x,p.y]),_en];
+      const _shw=edgeShiftOf(_mdel,ed);   // v8.14追補: ドラッグ中は支点も一緒に平行移動
+      const _wpv=_shw?ed.waypoints.map(p=>({x:p.x+_shw[0],y:p.y+_shw[1]})):ed.waypoints;
+      const _st=_edgeBorderToward(fn,_wpv[0].x,_wpv[0].y);
+      const _en=_edgeBorderToward(tn,_wpv[_wpv.length-1].x,_wpv[_wpv.length-1].y);
+      drawPts=[_st,..._wpv.map(p=>[p.x,p.y]),_en];
       pd=smoothPath(drawPts);   // v6.13: 支点を通るなめらかな曲線（案A）
       const _mi=Math.floor(drawPts.length/2);
       mx=(drawPts[_mi-1][0]+drawPts[_mi][0])/2; my=(drawPts[_mi-1][1]+drawPts[_mi][1])/2;
     } else if(ed.orthoWps&&ed.orthoWps.length){
       // v6.16: 手動直交経路（区間スライドで確定した形）。再探索せず保存した曲がり角をそのまま描画。
       //   端点はポート（扇状分散）から毎回導出し、端の区間は出口/入口の辺と直角を保って追従する。
-      wps=buildOrthoManualPts(ed,sx,sy,ex,ey,exitSide,entrySide);
+      wps=buildOrthoManualPts(ed,sx,sy,ex,ey,exitSide,entrySide,edgeShiftOf(_mdel,ed));   // v8.14追補: ドラッグ中は曲がり角も一緒に平行移動
       if(!wps){ delete ed.orthoWps; delete ed.midPos; wps=routeWaypoints(sx,sy,ex,ey,exitSide,entrySide,ed.from,ed.to,_amid); }   // v7.11追補: 斜めになる無効な手動経路は破棄し自動直交経路へ
       pd=wpPath(wps,18);
     } else {
@@ -9340,7 +9393,7 @@ document.addEventListener('mousemove',ev=>{
       let nx=S.drag.ox+(pt.x-S.drag.sx), ny=S.drag.oy+(pt.y-S.drag.sy);
       if(nx+n.w>SVG_W-100){ SVG_W=Math.max(SVG_W,Math.ceil((nx+n.w+200)/GRID_STEP)*GRID_STEP); document.getElementById('diagram-svg').setAttribute('width',SVG_W); renderGrid(); }
       if(ny+n.h>SVG_H-100){ SVG_H=Math.max(SVG_H,Math.ceil((ny+n.h+200)/GRID_STEP)*GRID_STEP); document.getElementById('diagram-svg').setAttribute('height',SVG_H); renderGrid(); }
-      if(ev.altKey||S.drag.constrained){ clearGuides(); }   // v8.01: 水平垂直固定中は整列/グリッド吸着を切って軸を純粋に固定
+      if(ev.altKey||S.drag.constrained||isOverlayShape(n.type)){ clearGuides(); }   // v8.01: 水平垂直固定中は整列/グリッド吸着を切って軸を純粋に固定 ／ v8.14追補: 書類は重ね置き用なので吸着しない
       else {
         const a=computeAlignSnap(n,nx,ny); nx=a.x; ny=a.y; renderAlignGuides(a.guides);
         // v7.00: 方眼グリッド吸着＝整列スナップが成立しなかった軸のみグリッドへ丸める（整列優先・Altで一時解除）
@@ -9378,7 +9431,8 @@ document.addEventListener('mousemove',ev=>{
     if(isV()){
       n.y=S.drag.oy+(pt.y-S.drag.sy);
       const _free=isFreeShape(n.type);
-      const snapM=(_free||S.drag.constrained)?null:snapMainToShapes(n.y+n.h/2,n.id);   // v8.01: 固定中は主軸吸着を切る
+      const _nosnap=_free||isOverlayShape(n.type);   // v8.14追補: 書類は重ね置き用なので吸着しない（レーンへの所属・追従は残す）
+      const snapM=(_nosnap||S.drag.constrained)?null:snapMainToShapes(n.y+n.h/2,n.id);   // v8.01: 固定中は主軸吸着を切る
       if(snapM!==null) n.y=snapM-n.h/2;
       if(n.y+n.h>SVG_H-100){
         SVG_H=Math.max(SVG_H,Math.ceil((n.y+n.h+200)/GRID_STEP)*GRID_STEP);
@@ -9391,12 +9445,12 @@ document.addEventListener('mousemove',ev=>{
         if(usesLanes()&&!_free){
           const l=laneAt(n.x+n.w/2),lx=laneX(l.id);
           n.lid=l.id;
-          const snappedC=S.drag.constrained?(n.x+n.w/2):snapCrossInLane(l,n.x+n.w/2);   // v8.01: 固定中は交差軸吸着を切る
+          const snappedC=(S.drag.constrained||_nosnap)?(n.x+n.w/2):snapCrossInLane(l,n.x+n.w/2);   // v8.01: 固定中は交差軸吸着を切る
           n.x=Math.max(lx+2,Math.min(lx+l.w-n.w-2,snappedC-n.w/2));
-          renderGuides(l,snappedC,snapM);
+          renderGuides(l,_nosnap?null:snappedC,snapM);
         } else {
           n.x=Math.max(2,Math.min(SVG_W-n.w-2,n.x));
-          renderGuides(null,null,_free?null:snapM);
+          renderGuides(null,null,_nosnap?null:snapM);
         }
       } else {
         if(n.mainPos!=null) n.mainPos=n.y;
@@ -9405,7 +9459,8 @@ document.addEventListener('mousemove',ev=>{
     } else {
       n.x=S.drag.ox+(pt.x-S.drag.sx);
       const _free=isFreeShape(n.type);
-      const snapM=(_free||S.drag.constrained)?null:snapMainToShapes(n.x+n.w/2,n.id);   // v8.01: 固定中は主軸吸着を切る
+      const _nosnap=_free||isOverlayShape(n.type);   // v8.14追補: 書類は重ね置き用なので吸着しない（レーンへの所属・追従は残す）
+      const snapM=(_nosnap||S.drag.constrained)?null:snapMainToShapes(n.x+n.w/2,n.id);   // v8.01: 固定中は主軸吸着を切る
       if(snapM!==null) n.x=snapM-n.w/2;
       if(n.x+n.w>SVG_W-100){
         SVG_W=Math.max(SVG_W,Math.ceil((n.x+n.w+200)/GRID_STEP)*GRID_STEP);
@@ -9418,12 +9473,12 @@ document.addEventListener('mousemove',ev=>{
         if(usesLanes()&&!_free){
           const l=laneAt(n.y+n.h/2),ly=laneX(l.id);
           n.lid=l.id;
-          const snappedC=S.drag.constrained?(n.y+n.h/2):snapCrossInLane(l,n.y+n.h/2);   // v8.01: 固定中は交差軸吸着を切る
+          const snappedC=(S.drag.constrained||_nosnap)?(n.y+n.h/2):snapCrossInLane(l,n.y+n.h/2);   // v8.01: 固定中は交差軸吸着を切る
           n.y=Math.max(ly+2,Math.min(ly+l.w-n.h-2,snappedC-n.h/2));
-          renderGuides(l,snappedC,snapM);
+          renderGuides(l,_nosnap?null:snappedC,snapM);
         } else {
           n.y=Math.max(2,Math.min(SVG_H-n.h-2,n.y));
-          renderGuides(null,null,_free?null:snapM);
+          renderGuides(null,null,_nosnap?null:snapM);
         }
       } else {
         if(n.mainPos!=null) n.mainPos=n.x;
@@ -9649,9 +9704,12 @@ document.addEventListener('mouseup',()=>{
         orgReparent(cid,pid);
       } else if(S.drag.group){
         const ids=S.drag.group.map(g=>g.id);
+        bakeManualRouteShift();   // v8.14追補: 表示上だけ平行移動していた手動経路を実データへ確定
         S.drag=null;S.sel=ids;clearGuides();snap();render();
       } else {
-        const nid=S.drag.nid;S.drag=null;S.sel=[nid];clearGuides();snap();render();
+        const nid=S.drag.nid;
+        bakeManualRouteShift();   // v8.14追補: 同上
+        S.drag=null;S.sel=[nid];clearGuides();snap();render();
       }
     } else {
       const nid=S.drag.nid, wasCopy=S.drag.isCopy, modSel=S.drag.modSel; S.drag=null;
