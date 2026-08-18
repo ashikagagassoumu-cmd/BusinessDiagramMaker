@@ -10380,11 +10380,16 @@ async function saveAsWithPicker(){
   const name=curSaveName();
   let h=null;
   try{
-    h=await window.showSaveFilePicker({
+    const _opt={
       id:'bdm-save',                                  // 前回と同じフォルダを既定で開く（ブラウザが記憶）
       suggestedName:name.replace(/[\\/:*?"<>|]/g,'_')+'.html',
       types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html']}}],
-    });
+    };
+    // v8.14: 今開いているファイルがあれば、その場所から開く。ブラウザが覚える id の記憶は
+    //   消えることがあるが、保存先そのものは控えてあるので、こちらのほうが確実に前回の場所になる。
+    if(fileHandle) _opt.startIn=fileHandle;
+    try{ h=await window.showSaveFilePicker(_opt); }
+    catch(e2){ if(e2&&e2.name==='AbortError') throw e2; delete _opt.startIn; h=await window.showSaveFilePicker(_opt); }
   }catch(err){
     if(err&&err.name==='AbortError'){ hint('保存を中止しました（変更は保存されていません）'); return; }   // v8.11追補: 従来は完全に無言だった
     hint('保存ダイアログを開けないため、ダウンロードで保存します'); saveHtmlCore(name); return;
@@ -10440,8 +10445,12 @@ async function openImportFile(asked){
   if(!FSA_OK){ fallback(); return; }
   let h=null;
   try{
-    const picked=await window.showOpenFilePicker({id:'bdm-save',multiple:false,
-      types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html','.htm']}}]});
+    const _opt={id:'bdm-save',multiple:false,
+      types:[{description:'ダイアグラム (HTML)',accept:{'text/html':['.html','.htm']}}]};
+    if(fileHandle) _opt.startIn=fileHandle;   // v8.14: 今開いているファイルのある場所から開く
+    let picked;
+    try{ picked=await window.showOpenFilePicker(_opt); }
+    catch(e2){ if(e2&&e2.name==='AbortError') throw e2; delete _opt.startIn; picked=await window.showOpenFilePicker(_opt); }
     h=picked&&picked[0];
   }catch(err){ if(err&&err.name==='AbortError'){ hint('読み込みを中止しました'); return; } fallback(); return; }
   if(!h) return;
