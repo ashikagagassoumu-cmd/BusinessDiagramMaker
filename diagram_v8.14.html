@@ -39,6 +39,15 @@ body{font-family:'Segoe UI','Helvetica Neue',sans-serif;background:#e2e8f0;displ
 /* v8.10: 図形で描くツールバーアイコン（文字揃え・ハンドツール）。色はボタンの文字色に追従 */
 .tbtn>svg{display:block}
 .tbtn .algn line{stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+/* v8.14: 文字サイズ（Word/Excel と同じ〈数値欄＋▼〉＋〈拡大／縮小〉） */
+.fsbox{display:inline-flex;align-items:center;background:#0f172a;border:1px solid #475569;border-radius:5px;overflow:hidden;height:26px}
+.fsbox:focus-within{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.35)}
+.fsbox input{width:32px;background:transparent;border:none;color:#f1f5f9;font-size:12px;text-align:center;padding:0 2px;height:100%;outline:none;font-family:inherit}
+.fsarrow{background:transparent;border:none;border-left:1px solid #334155;color:#94a3b8;cursor:pointer;font-size:10px;line-height:1;padding:0 5px;height:100%}
+.fsarrow:hover{background:#334155;color:#f1f5f9}
+.tbtn.fsstep{display:inline-flex;align-items:flex-start;gap:1px;padding:4px 7px;font-size:14px;line-height:1}
+.tbtn.fsstep>span{font-size:10px;line-height:1}
+.tbtn.fsdown{font-size:11px}
 .gantt-hol-chk{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:#cbd5e1;cursor:pointer;padding:2px 5px;border-radius:4px;user-select:none;white-space:nowrap}
 .gantt-hol-chk:hover{background:#334155}
 .gantt-hol-chk:has(input:checked){background:#2563eb;color:#fff}
@@ -419,6 +428,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <button class="tbtn" onclick="copySelection()" title="選択シェイプをコピー (Ctrl+C)">⧉ コピー</button>
   <button class="tbtn" id="btn-paste" onclick="enterPasteMode()" title="貼り付けモード: クリックで配置 (Ctrl+V)">📋 貼り付け</button>
   <button class="tbtn" onclick="showShapeColorMenu(event)" title="選択シェイプの色を変更">🎨 色</button>
+  <!-- v8.14: 文字サイズ。Word/Excel と同じ〈数値欄＋▼一覧〉＋〈拡大／縮小〉の並び。
+       数値欄は直接入力もでき、▼で一覧から選ぶ。拡大・縮小は Word と同じ段（8→9→10→11→12→14→16…）を1段ずつ動く。 -->
+  <span id="fontsize-tools" style="display:inline-flex;align-items:center;gap:4px">
+    <span class="fsbox">
+      <input id="font-size-input" type="text" inputmode="numeric" autocomplete="off" aria-label="文字サイズ" title="文字サイズ（直接入力できます）"
+             onchange="applyFontSizeInput(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();applyFontSizeInput(this.value);}"/>
+      <button class="fsarrow" onclick="showFontSizeMenu(event)" title="文字サイズを一覧から選ぶ" aria-label="文字サイズの一覧">▾</button>
+    </span>
+    <button class="tbtn fsstep" onclick="stepFontSize(1)" title="文字を大きくする">A<span>˄</span></button>
+    <button class="tbtn fsstep fsdown" onclick="stepFontSize(-1)" title="文字を小さくする">A<span>˅</span></button>
+  </span>
   <button class="tbtn" onclick="showDesignMenu(event)" title="図全体のデザイン（角丸・線・影）を切替。色は変わりません">✨ デザイン</button>
   <button class="tbtn" onclick="showStepMenu(event)" title="おしゃれなステップ図の挿入・番号採番・カラフル配色">① ステップ</button>
   <!-- v8.10: 文字揃えは Word/Excel と同じ「横線の束の端が揃う」絵柄へ（旧 ⯇ ≡ ⯈ は何のボタンか分からなかった）。
@@ -1753,7 +1773,16 @@ function wrapText(text,maxW,fontSize){
 const AUTO_W_MAX=260;   // 自動で広げる幅の上限（超えたぶんは折り返して縦へ）
 const AUTO_PAD=5;       // 文字の左右（縦書きは上下）の余白（片側）
 const AUTO_LINE_H=15;   // 行の高さ（描画側 shapeEl と同じ値）
-const AUTO_FONT=12;     // 本文の文字サイズ（描画側 shapeEl と同じ値）
+const AUTO_FONT=12;     // 本文の文字サイズ（既定値。シェイプ個別の指定は n.fontSize）
+// v8.14: 文字サイズをシェイプごとに変えられるようにした。未指定は従来どおり 12px。
+//   行の高さ・縦書きの送り・列の間隔は、この文字サイズに比例させる（既定の 12px では
+//   AUTO_LINE_H=15 / VTEXT_CH=18 / VTEXT_COL=17 と同じ値になり、既存の図の見た目は変わらない）。
+//   折り返しの計算と実際の描画が必ず同じ値を見るよう、両方ともこの関数を通す。
+const FONT_MIN=6, FONT_MAX=48;
+function nodeFontSize(n){ const v=n&&n.fontSize; return (typeof v==='number'&&v>0)?v:AUTO_FONT; }
+function lineH(fs){ return Math.round(fs*1.25); }
+function vch(fs){ return Math.round(fs*1.5); }
+function vcol(fs){ return Math.round(fs+5); }
 // ひし形は斜辺に文字が当たるため、四角より余白を厚く取る
 function autoFitPad(n){return n.type==='diamond'?24:AUTO_PAD*2;}
 function autoFitPadH(n){return n.type==='diamond'?22:12;}
@@ -1795,8 +1824,16 @@ function clampNodeIntoBounds(n){
     const l=S.lanes.find(x=>x.id===n.lid);
     if(l){   // 交差軸＝所属レーンの中に収める（隣のレーンへ食い込ませない）
       const lo=laneX(l.id);
-      if(isV()) n.x=Math.max(lo+2,Math.min(lo+l.w-n.w-2,n.x));
-      else      n.y=Math.max(lo+2,Math.min(lo+l.w-n.h-2,n.y));
+      // v8.14: レーンより大きい箱は端へ張り付けずレーンの中央にそろえる。
+      //   端に寄せると中心がずれ、その壊れた中心が次の setSizeKeepCenter の基準になって
+      //   戻らなくなる（改行するたびに少しずつ中心が下がっていく原因だった）。
+      if(isV()){
+        if(n.w>=l.w-4) n.x=lo+(l.w-n.w)/2;
+        else           n.x=Math.max(lo+2,Math.min(lo+l.w-n.w-2,n.x));
+      } else {
+        if(n.h>=l.w-4) n.y=lo+(l.w-n.h)/2;
+        else           n.y=Math.max(lo+2,Math.min(lo+l.w-n.h-2,n.y));
+      }
     }
   }
   if(isV()||!usesLanes()) n.x=Math.max(0,n.x);
@@ -1813,31 +1850,74 @@ function setSizeKeepCenter(n,w,h){
   n.x=cx-w/2; n.y=cy-h/2;
   clampNodeIntoBounds(n);
 }
+// v8.14: 手で小さくした箱に文字が収まらないとき、文字のほうを小さくして幅に収める（下限8px）。
+//   縮めるのは「幅」に収めるためだけ。行が増えたぶんの高さは autoFitNodeSize が箱を伸ばして吸収する
+//   ＝改行したらシェイプが縦に伸びる、という当たり前の動きは保つ。
+//   手でリサイズしていない箱は今までどおり箱のほうが広がるので、この関数は何もしない（既存の図は不変）。
+//   状態は持たない純関数＝ノードに一時キーを足さないので保存ファイルは汚れない。
+const FONT_FIT_MIN=8;
+// v8.14: レーン図では、交差軸方向の自動拡張をレーンの幅までに抑える。
+//   AUTO_W_MAX(260) はレーンの既定幅(220)より大きいため、長い文字を入れると必ずレーンからはみ出し、
+//   clampNodeIntoBounds が働いて中心がずれていた。はみ出さなければクランプ自体が起きない。
+function autoCrossMax(n){
+  if(!usesLanes()||!n.lid||n.lid===VIRTUAL_LANE.id) return AUTO_W_MAX;
+  const l=S.lanes.find(x=>x.id===n.lid);
+  return l?Math.max(40,Math.min(AUTO_W_MAX,l.w-4)):AUTO_W_MAX;
+}
+function fitNodeFontSize(n){
+  const base=nodeFontSize(n);
+  if(!n||!n.manualW||!autoFitTarget(n)) return base;
+  // 自分で入れた改行のぶんは「そう書きたかった」ものとして必ず場所を確保する＝そのぶんは箱が伸びる。
+  // 文字を縮めるのは、それを超えて自動で折り返された行が箱からあふれるときだけ。
+  const hardLines=Math.max(1,(n.text||'').split('\n').length);
+  const wave=(n.type==='doc')?10:0;
+  if(tV()){   // 横書き
+    const availW=Math.max(8,n.w-autoFitPad(n)), padH=autoFitPadH(n)+wave;
+    for(let fs=base; fs>FONT_FIT_MIN; fs--){
+      const lh=lineH(fs), lines=wrapText(n.text,availW,fs);
+      const widthOK=Math.max(0,...lines.map(l=>textW(l,fs)))<=availW;
+      const allowH=Math.max(n.manualH||0,hardLines*lh+padH);
+      if(widthOK&&lines.length*lh+padH<=allowH) return fs;
+    }
+  } else {    // 縦書き（横モード）＝軸を入れ替えて同じ考え方
+    const availH=Math.max(8,n.h-autoFitPad(n)), padW=autoFitPadH(n);
+    for(let fs=base; fs>FONT_FIT_MIN; fs--){
+      const cw=vcol(fs), cols=wrapTextByCount(n.text,Math.max(1,Math.floor(availH/vch(fs))));
+      const allowW=Math.max(n.manualH||0,hardLines*cw+padW);
+      if(cols.length*cw+padW<=allowW) return fs;
+    }
+  }
+  return FONT_FIT_MIN;
+}
 // 文字量に合わせて n.w / n.h を更新する。手動リサイズ済み（manualW）の箱は幅を変えず、
 // 折り返しと高さだけ追従させる（手で決めた幅を尊重する）。
 // v8.13追補: 大きさは setSizeKeepCenter 経由で入れて中心を固定する。
 function autoFitNodeSize(n){
   if(!autoFitTarget(n))return;
   const def=SD[n.type], pad=autoFitPad(n), padH=autoFitPadH(n);
+  const fs=fitNodeFontSize(n), _lh=lineH(fs), _vch=vch(fs), _vcol=vcol(fs);
+  // v8.14: 書類は下辺が波型なので、そのぶん(10px)を高さの必要量に足して文字が波にかからないようにする。
+  const _wave=(n.type==='doc')?10:0;
+  const _cmax=autoCrossMax(n);   // v8.14: レーンからはみ出さない上限
   let nw=n.w, nh=n.h;
   if(tV()){   // 横書き（縦モード＋樹状図は横向きでも横書き）
-    const cap=Math.max(24,(n.manualW?n.w:AUTO_W_MAX)-pad);
-    const lines=wrapText(n.text,cap,AUTO_FONT);
+    const cap=Math.max(24,(n.manualW?n.w:_cmax)-pad);
+    const lines=wrapText(n.text,cap,fs);
     if(!n.manualW){
-      const need=Math.ceil(Math.max(0,...lines.map(l=>textW(l,AUTO_FONT))))+pad;
-      nw=Math.max(def.w,Math.min(AUTO_W_MAX,need));
+      const need=Math.ceil(Math.max(0,...lines.map(l=>textW(l,fs))))+pad;
+      nw=Math.max(def.w,Math.min(_cmax,need));
     }
-    const needH=lines.length*AUTO_LINE_H+padH;
+    const needH=lines.length*_lh+padH+_wave;
     nh=Math.max(def.h,n.manualH||0,needH);
   } else {    // 縦書き（横モード）＝軸を入れ替えて同じ計算。文字は下へ流れ、列は右から左へ積む。
     //          既定サイズも addNode と同じく w/h が入れ替わる。
-    const cap=Math.max(VTEXT_CH,(n.manualW?n.h:AUTO_W_MAX)-pad);
-    const cols=wrapTextByCount(n.text,Math.floor(cap/VTEXT_CH));
+    const cap=Math.max(_vch,(n.manualW?n.h:_cmax)-pad);
+    const cols=wrapTextByCount(n.text,Math.floor(cap/_vch));
     if(!n.manualW){
-      const need=Math.max(0,...cols.map(c=>[...c].length))*VTEXT_CH+pad;
-      nh=Math.max(def.w,Math.min(AUTO_W_MAX,Math.ceil(need)));
+      const need=Math.max(0,...cols.map(c=>[...c].length))*_vch+pad;
+      nh=Math.max(def.w,Math.min(_cmax,Math.ceil(need)));
     }
-    const needW=cols.length*VTEXT_COL+padH;
+    const needW=cols.length*_vcol+padH;
     nw=Math.max(def.h,n.manualH||0,needW);
   }
   setSizeKeepCenter(n,nw,nh);
@@ -3040,6 +3120,82 @@ function setTextAlign(align){
   snap(); render();
   hint(`${cnt}個のシェイプのテキストを${align==='left'?'左':align==='right'?'右':'中央'}揃えにしました`);
 }
+// ── v8.14: 文字サイズ ──
+//   Word/Excel と同じ操作感にそろえた。数値欄への直接入力・▼の一覧・拡大／縮小の3通り。
+//   段は Word のフォントサイズ一覧と同じ刻み。12px（既定）に戻したときは n.fontSize を消して
+//   保存ファイルに余計なキーを残さない＝旧バージョンで作った図と同じ形のまま保てる。
+const FONT_STEPS=[8,9,10,11,12,14,16,18,20,24,28,32,36,40,48];
+function fontSizeTargets(){ return selWithGroup(S.sel).map(id=>S.nodes.find(n=>n.id===id)).filter(Boolean); }
+// 選択中シェイプの文字サイズ。混在していたら null（数値欄は空にする）。
+function currentFontSize(){
+  const ns=fontSizeTargets(); if(!ns.length) return null;
+  const first=nodeFontSize(ns[0]);
+  return ns.every(n=>nodeFontSize(n)===first)?first:null;
+}
+function applyFontSize(px){
+  const ns=fontSizeTargets();
+  if(!ns.length){ hint('文字サイズを変えるシェイプを選択してください'); syncFontSizeUI(); return; }
+  const v=Math.max(FONT_MIN,Math.min(FONT_MAX,Math.round(px)));
+  ns.forEach(n=>{ if(v===AUTO_FONT) delete n.fontSize; else n.fontSize=v; });
+  snap(); render();
+  hint(`${ns.length}個のシェイプの文字サイズを ${v}px にしました`);
+}
+function applyFontSizeInput(val){
+  const v=parseFloat(String(val).replace(/[^\d.]/g,''));
+  if(!isFinite(v)||v<=0){ syncFontSizeUI(); return; }
+  applyFontSize(v);
+}
+// 拡大(+1)／縮小(-1)。Word と同じく一覧の段を1つずつ動く。
+function stepFontSize(dir){
+  const ns=fontSizeTargets();
+  if(!ns.length){ hint('文字サイズを変えるシェイプを選択してください'); return; }
+  let moved=0;
+  ns.forEach(n=>{
+    const cur=nodeFontSize(n);
+    let v;
+    if(dir>0) v=FONT_STEPS.find(s=>s>cur)??Math.min(FONT_MAX,cur+2);
+    else      v=[...FONT_STEPS].reverse().find(s=>s<cur)??Math.max(FONT_MIN,cur-1);
+    v=Math.max(FONT_MIN,Math.min(FONT_MAX,v));
+    if(v===cur) return;
+    if(v===AUTO_FONT) delete n.fontSize; else n.fontSize=v;
+    moved++;
+  });
+  if(!moved){ hint(dir>0?'これ以上大きくできません':'これ以上小さくできません'); return; }
+  snap(); render(); syncFontSizeUI();
+}
+// 数値欄の表示を選択状態に追従させる（選択なし＝空・使用不可）。
+function syncFontSizeUI(){
+  const inp=document.getElementById('font-size-input'); if(!inp) return;
+  const ns=fontSizeTargets(), v=currentFontSize();
+  inp.value=(v==null)?'':String(v);
+  inp.disabled=!ns.length;
+  inp.style.opacity=ns.length?'':'0.5';
+}
+function showFontSizeMenu(ev){
+  if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;}
+  document.getElementById('lane-choice')?.remove();
+  const cur=currentFontSize();
+  const dlg=document.createElement('div'); dlg.id='lane-choice';
+  const ttl=document.createElement('div'); ttl.className='lc-title'; ttl.textContent='文字サイズ'; dlg.appendChild(ttl);
+  const closeDlg=()=>{ dlg.remove(); if(_laneChoiceRemoveClose){_laneChoiceRemoveClose();_laneChoiceRemoveClose=null;} };
+  FONT_STEPS.forEach(sz=>{
+    const b=document.createElement('button');
+    b.textContent=(sz===cur?'✓ ':'')+sz+(sz===AUTO_FONT?'（標準）':'');
+    b.style.fontSize=Math.min(17,Math.max(12,sz))+'px';
+    if(sz===cur){ b.style.borderColor='#3b82f6'; b.style.background='#eff6ff'; b.style.color='#1d4ed8'; }
+    b.onclick=()=>{ closeDlg(); applyFontSize(sz); };
+    dlg.appendChild(b);
+  });
+  const btn=ev.currentTarget.getBoundingClientRect();
+  dlg.style.left=Math.max(4,btn.left)+'px'; dlg.style.top=(btn.bottom+6)+'px';
+  dlg.style.maxHeight='60vh'; dlg.style.overflowY='auto';
+  document.body.appendChild(dlg);
+  const r=dlg.getBoundingClientRect();
+  if(r.bottom>window.innerHeight-6) dlg.style.top=Math.max(4,window.innerHeight-r.height-6)+'px';
+  setTimeout(()=>{ const close=ev2=>{ if(!dlg.contains(ev2.target)) closeDlg(); };
+    document.addEventListener('mousedown',close);
+    _laneChoiceRemoveClose=()=>document.removeEventListener('mousedown',close); },60);
+}
 // v8.10: 文字揃えの共通ヘルパ。
 //   横書き＝枠 [x0, x0+w] の中で左端／中央／右端へ寄せる（pad は左右の余白）。
 //   縦書き＝行が上から下へ流れるので、左揃え＝上（行頭）／右揃え＝下（行末）と読み替える。
@@ -3543,7 +3699,7 @@ function replaceNodeType(n,newType){
       n.sections=[{text:name,style:'header'}];
     }
     const totalH=n.sections.reduce((h,s)=>h+sectionSize(s,true),0);
-    n.h=Math.max(SD.org_node.h,totalH);
+    setSizeKeepCenter(n,n.w,Math.max(SD.org_node.h,totalH));   // v8.14: 中心を固定
     n.text='';
     S.sel=[n.id]; clearReplaceHL(); clearGuides(); snap(); render();
     hint(`シェイプを入れ替えました（氏名「${name}」を保持）`);
@@ -6874,6 +7030,7 @@ function render(){
   //   どの図種でも描き始めに必ず空へ戻す（ガントならこの直後の renderGantt が描き直す）。
   ['g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{const el=document.getElementById(id); if(el) el.innerHTML='';});
   layoutGanttHeadButtons();   // v8.11: ガント以外なら見出しの開閉ボタンを引っ込める
+  syncFontSizeUI();           // v8.14: 文字サイズの数値欄を選択状態に追従させる
   // ガントチャート・マインドマップは専用描画パス
   if(S.diagramType==='gantt'){ renderGantt(); return; }
   if(S.diagramType==='mindmap'){ renderMindmap(); return; }
@@ -7495,7 +7652,7 @@ function appendVText(parent,text,cx,cy,fontSize,attrs,vbox){
     t.textContent=text; parent.appendChild(t);
   } else {
     const chars=[...text];
-    const charH=fontSize*1.5;
+    const charH=vch(fontSize);
     const totalH=chars.length*charH;
     const acy=(vbox&&vbox.al&&vbox.al!=='center')?alignVCy(vbox.al,vbox.y0,vbox.h,totalH,vbox.pad):cy;
     const startY=acy-totalH/2+charH/2;
@@ -7512,14 +7669,18 @@ function appendVText(parent,text,cx,cy,fontSize,attrs,vbox){
 function appendVTextWrap(parent,text,cx,cy,fontSize,maxColH,attrs,vbox){
   attrs=attrs||{};
   const baseAttrs={'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSize,fill:'#1e293b','pointer-events':'none',...attrs};
-  const charH=fontSize*1.5, colW=VTEXT_COL;
+  const charH=vch(fontSize), colW=vcol(fontSize);   // v8.14: 列の間隔も文字サイズに比例（12pxでは従来と同値）
   const cols=wrapTextByCount(text,Math.floor(Math.max(charH,maxColH)/charH));
   const startX=cx+(cols.length-1)*colW/2;   // 右端の列から始めて左へ送る
+  // v8.14: 列ごとに独立して上下中央へ寄せると、改行や折り返しでできた短い列だけが真ん中に浮いて
+  //   行頭がそろわない。いちばん長い列を基準に全列そろえて書き出す（縦書きの体裁は行頭そろえ）。
+  const _maxCh=Math.max(1,...cols.map(c=>[...c].length));
+  const _blockH=_maxCh*charH;
+  const _bcy=(vbox&&vbox.al&&vbox.al!=='center')?alignVCy(vbox.al,vbox.y0,vbox.h,_blockH,vbox.pad):cy;
+  const _top=_bcy-_blockH/2;
   cols.forEach((col,ci)=>{
     const chars=[...col];
-    const th=chars.length*charH;
-    const acy=(vbox&&vbox.al&&vbox.al!=='center')?alignVCy(vbox.al,vbox.y0,vbox.h,th,vbox.pad):cy;
-    const startY=acy-th/2+charH/2;
+    const startY=_top+charH/2;
     chars.forEach((ch,i)=>{
       const t=e('text',{x:startX-ci*colW,y:startY+i*charH,...baseAttrs});
       t.textContent=ch; parent.appendChild(t);
@@ -8061,7 +8222,7 @@ function renderNodes(){
       if(n.text){
         // v8.10: シェイプ下の外付けラベルにも揃えを反映（シェイプの左端／中央／右端に合わせる）
         const _ea=alignH(nodeAlign(n),n.x,n.w,0);
-        const lt=e('text',{x:_ea.x,y:n.y+n.h+14,'text-anchor':_ea.anchor,'dominant-baseline':'middle','font-size':'11',fill:'#475569','pointer-events':'none'});
+        const lt=e('text',{x:_ea.x,y:n.y+n.h+14,'text-anchor':_ea.anchor,'dominant-baseline':'middle','font-size':String(n.fontSize||11),fill:'#475569','pointer-events':'none'});
         lt.textContent=n.text; ng.appendChild(lt);
       }
     } else {
@@ -8071,18 +8232,19 @@ function renderNodes(){
         let tx=cx, anc='middle';
         if(al==='left'){ tx=n.x+pad; anc='start'; } else if(al==='right'){ tx=n.x+n.w-pad; anc='end'; }
         // v8.10: 幅に収まらない行は自動で折り返す（従来は明示改行のみ）。対象外シェイプは従来どおり。
-        const lines=autoFitTarget(n)?wrapText(n.text,Math.max(24,n.w-autoFitPad(n)),AUTO_FONT):n.text.split('\n');
-        const lh=AUTO_LINE_H;
+        const _fs=fitNodeFontSize(n);   // v8.14: 折り返しの計算と描画が必ず同じ文字サイズを見るようにする
+        const lines=autoFitTarget(n)?wrapText(n.text,Math.max(24,n.w-autoFitPad(n)),_fs):n.text.split('\n');
+        const lh=lineH(_fs);
         lines.forEach((ln,i)=>{
-          const t=e('text',{x:tx,y:textCy-(lines.length-1)*lh/2+i*lh,'text-anchor':anc,'dominant-baseline':'middle','font-size':'12',fill:'#1e293b','pointer-events':'none'});
+          const t=e('text',{x:tx,y:textCy-(lines.length-1)*lh/2+i*lh,'text-anchor':anc,'dominant-baseline':'middle','font-size':String(_fs),fill:'#1e293b','pointer-events':'none'});
           t.textContent=ln; ng.appendChild(t);
         });
       } else if(autoFitTarget(n)){
         // v8.10: 縦書きも列で折り返す ／ v8.10: 揃え（縦書きは上＝行頭・下＝行末）を反映
-        appendVTextWrap(ng,n.text,cx,textCy,12,Math.max(24,n.h-autoFitPad(n)),null,
+        appendVTextWrap(ng,n.text,cx,textCy,fitNodeFontSize(n),Math.max(24,n.h-autoFitPad(n)),null,
           {al:nodeAlign(n),y0:n.y,h:n.h,pad:autoFitPad(n)/2});
       } else {
-        appendVText(ng,n.text,cx,textCy,12,null,{al:nodeAlign(n),y0:n.y,h:n.h,pad:8});
+        appendVText(ng,n.text,cx,textCy,nodeFontSize(n),null,{al:nodeAlign(n),y0:n.y,h:n.h,pad:8});
       }
     }
     if(sel&&S.mode==='connect'){
@@ -9545,10 +9707,19 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
   const isMulti=h>30||!!(opts&&opts.multiline);   // 追補: opts.multiline=複数行エディタを強制（マインドマップ名称編集用）
   const inp=document.createElement(isMulti?'textarea':'input');
   if(!isMulti) inp.type='text';
+  // v8.14: 編集中の見た目を確定後の描画にそろえる。
+  //   opts.fontPx（文字サイズ）・opts.lineH（行の高さ）・opts.padX（左右の余白）を渡すと、
+  //   確定後とまったく同じ組版で表示する。枠線2px＋box-sizing のぶん、呼び出し側は
+  //   padX=(描画側の左右余白-4)/2 を渡すと折り返し幅が一致する。省略時は従来どおり。
+  //   word-break:break-all は wrapText（文字幅で切る）と折り返し位置をそろえるため。
+  const _fpx=(opts&&opts.fontPx)||(isMulti?12:11);
+  const _flh=(opts&&opts.lineH)||Math.round(_fpx*1.25);
+  const _fpadX=(opts&&opts.padX!=null)?opts.padX:6;
   inp.style.cssText=`width:100%;height:100%;border:2px solid #3b82f6;border-radius:4px;`+
-    `padding:${isMulti?'4px 6px':'2px 6px'};font:${isMulti?'12':'11'}px 'Segoe UI',sans-serif;`+
+    `padding:${isMulti?'4px':'2px'} ${_fpadX}px;font:${_fpx}px 'Segoe UI',sans-serif;line-height:${_flh}px;`+
     // v8.10: 編集欄の文字寄せもシェイプの揃えに合わせる（打っている間と確定後で位置が変わらないように）
-    `text-align:${(opts&&opts.align)||'center'};resize:none;outline:none;background:#ffffff;box-sizing:border-box;`;
+    `text-align:${(opts&&opts.align)||'center'};resize:none;outline:none;background:#ffffff;box-sizing:border-box;`+
+    `word-break:break-all;overflow-wrap:break-word;`;
   inp.value=initVal;
   if(placeholder)inp.placeholder=placeholder;
   fo.appendChild(inp);
@@ -9584,7 +9755,10 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
     else if(ev.key==='Enter'&&ev.altKey&&isMulti){ev.preventDefault();
       const ss=inp.selectionStart,se=inp.selectionEnd;
       inp.value=inp.value.slice(0,ss)+'\n'+inp.value.slice(se);
-      inp.selectionStart=inp.selectionEnd=ss+1;}
+      inp.selectionStart=inp.selectionEnd=ss+1;
+      // v8.14: value を直接書き換えると input イベントが出ないため、改行した瞬間は箱が追従せず、
+      //   次の1文字を打つか確定した時に一気に伸びていた。ここで自分で通知して即座に追従させる。
+      inp.dispatchEvent(new Event('input',{bubbles:true}));}
     // v7.03: opts.enterNewline＝Enterで改行（行追加）・確定は枠外クリック（ミニ表エディタ用）
     else if(ev.key==='Enter'&&(!isMulti||(!ev.shiftKey&&!(opts&&opts.enterNewline)))){ev.preventDefault();commit();}
   });
@@ -9606,7 +9780,10 @@ function editText(nid){
       fo.setAttribute('x',n.x); fo.setAttribute('y',n.y);
       fo.setAttribute('width',n.w); fo.setAttribute('height',n.h);
     }}:{};
-    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;snap();render();},undefined,{...grow,align:_al});
+    // v8.14: 編集欄の組版を確定後の描画にそろえる（文字サイズ・行の高さ・折り返し幅）。
+    const _fs=fitNodeFontSize(n);
+    const _typo={fontPx:_fs,lineH:lineH(_fs),padX:Math.max(0,(autoFitPad(n)-4)/2)};
+    openSvgEditor(n.x,n.y,n.w,h,n.text,v=>{n.text=v;render();snap();},undefined,{...grow,align:_al,..._typo});
   }
 }
 function editNote(nid){
@@ -9615,25 +9792,18 @@ function editNote(nid){
   const ph=n.type==='state_detail'?'entry / do / exit…':'備考…';
   if(isV()){
     const divY=n.y+NOTE_TITLE_H,noteH=n.h-NOTE_TITLE_H;
+    // v8.14: 大きさの計算は render() の備考ブロックに一本化した（setSizeKeepCenter を通り中心が動かない）。
+    //   ここで n.h を直接入れると、render 側が「同じ値なので何もしない」と素通りして中心が上端固定で伸び、
+    //   改行するたびにシェイプの中心がずれていた。
+    //   編集欄の組版も確定後の描画（10px・行送り12px・折り返し幅 n.w-16）にそろえる。
     openSvgEditor(n.x,divY,n.w,noteH,n.note||'',v=>{
-      n.note=v;
-      const nls=wrapText(v,n.w-16,10);
-      const neededNoteH=nls.length*12+16;
-      n.h=Math.max(SD[n.type].h,NOTE_TITLE_H+neededNoteH);
-      snap();render();
-    },ph);
+      n.note=v; render(); snap();
+    },ph,{fontPx:10,lineH:12,padX:6,align:'left'});
   } else {
     const divX=n.x+NOTE_TITLE_H,noteW=n.w-NOTE_TITLE_H;
     openSvgEditor(divX,n.y,noteW,n.h,n.note||'',v=>{
-      n.note=v;
-      const chars=[...(v||'').replace(/\n/g,'')];
-      const charH=15;
-      const maxPerCol=Math.max(1,Math.floor((n.h-16)/charH));
-      const cols=Math.ceil(chars.length/maxPerCol);
-      const neededW=NOTE_TITLE_H+cols*14+16;
-      n.w=Math.max(SD[n.type].h,neededW);
-      snap();render();
-    },ph);
+      n.note=v; render(); snap();
+    },ph,{fontPx:10,lineH:12,padX:6,align:'left'});
   }
 }
 function editSection(nid,secIdx){
@@ -12542,9 +12712,9 @@ function orgModalCollect(){
 }
 let _orgEditTitle=null;
 function orgAddRow(){if(_orgEditRows.length>=10)return;orgModalCollect();_orgEditRows.push(Array(_orgEditCols).fill(''));orgModalRender({r:_orgEditRows.length-1,c:0});restoreOmTitle();}
-function orgAddCol(){if(_orgEditCols>=10)return;orgModalCollect();const n=S.nodes.find(x=>x.id===_orgEditId);if(n){const cw=n.w/_orgEditCols;_orgEditCols++;n.w=cw*_orgEditCols;}else{_orgEditCols++;}_orgEditRows.forEach(r=>r.push(''));orgModalRender({r:0,c:_orgEditCols-1});restoreOmTitle();}
+function orgAddCol(){if(_orgEditCols>=10)return;orgModalCollect();const n=S.nodes.find(x=>x.id===_orgEditId);if(n){const cw=n.w/_orgEditCols;_orgEditCols++;setSizeKeepCenter(n,cw*_orgEditCols,n.h);}else{_orgEditCols++;}_orgEditRows.forEach(r=>r.push(''));orgModalRender({r:0,c:_orgEditCols-1});restoreOmTitle();}
 function orgDelRow(i){orgModalCollect();_orgEditRows.splice(i,1);if(!_orgEditRows.length)_orgEditRows=[Array(_orgEditCols).fill('')];orgModalRender();restoreOmTitle();}
-function orgDelCol(i){if(_orgEditCols<=1)return;orgModalCollect();const n=S.nodes.find(x=>x.id===_orgEditId);if(n){const cw=n.w/_orgEditCols;_orgEditCols--;n.w=cw*_orgEditCols;}else{_orgEditCols--;}_orgEditRows.forEach(r=>r.splice(i,1));orgModalRender();restoreOmTitle();}
+function orgDelCol(i){if(_orgEditCols<=1)return;orgModalCollect();const n=S.nodes.find(x=>x.id===_orgEditId);if(n){const cw=n.w/_orgEditCols;_orgEditCols--;setSizeKeepCenter(n,cw*_orgEditCols,n.h);}else{_orgEditCols--;}_orgEditRows.forEach(r=>r.splice(i,1));orgModalRender();restoreOmTitle();}
 function restoreOmTitle(){const t=document.getElementById('om-title');if(t&&_orgEditTitle!=null)t.value=_orgEditTitle;}
 function closeOrgModal(){
   document.getElementById('org-modal').style.display='none';
