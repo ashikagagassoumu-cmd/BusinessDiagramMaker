@@ -1120,6 +1120,9 @@ const LC=[
 ];
 // レーンなし時の仮想レーン
 const VIRTUAL_LANE={id:'__virtual__',name:'',bg:'#f8fafc',hd:'#e2e8f0',w:800};
+// v8.14: このアプリの版番号。保存データに入れておき、読み込んだファイルが古い版で
+//   作られたものかを判断する（古ければ接続線の経路を今の仕組みで引き直す）。
+const APP_VER='8.14';
 
 // v8.01: デザインテンプレート。色（各シェイプの fill/stroke・レーンの bg/hd）は変えず、形の装飾だけを差し替える。
 //   rx=角丸の倍率（基準4/16に掛ける）, sw=通常時の線幅, shadow=影フィルタid（''=なし）, fw=ラベル太さ, accent=左アクセント帯
@@ -1291,6 +1294,7 @@ let S_didDrag=false;
 let crankDragState=null;
 let waypointDragState=null;   // エッジ手動ウェイポイントのドラッグ状態（D-5 v4.26）
 let _lastMouseCtrl=false;   // v8.14: 直近のマウス操作で Ctrl/⌘ が押されていたか（mouseup の保険）
+let _bridgeLimitNoticed=false;   // v8.14: 交差ブリッジ省略の案内を1回だけ出すための印
 let segDragState=null;        // エッジ区間スライドのドラッグ状態（v6.16）
 let busDragState=null;        // バス型接続線の横バス高さ調整ドラッグ状態（v7.00・樹状図/組織図）
 let edgeReconnectState=null;  // エッジ端点の再接続ドラッグ状態（D-5 v4.27）
@@ -7372,6 +7376,8 @@ function renderEdges(){
   //   対象は wps を持つ線（自動経路＋手動直交）だけ。手動支点の曲線とバス経路は対象外
   //   （曲線は smoothPath の三次ベジエで折れ線とずれる／バスは意図的に重なる別の体系）。
   //   端点のシェイプを共有するペアは除外＝ポート付近で接するのを交差と誤認しない。
+  // v8.14: 200本を超えると黙って無効になり「なぜ山が出ないのか分からない」状態だったので一言出す。
+  if(!S.drag && edgeData.length>200 && !_bridgeLimitNoticed){ _bridgeLimitNoticed=true; hint('線が200本を超えるため、交差の飛び越え表示は省略しています'); }
   if(!S.drag && edgeData.length<=200){
     const cand=edgeData.filter(d=>d.wps&&!d.manual&&!d.bus);
     cand.forEach(d=>{ d._xOther=[]; });
@@ -10400,7 +10406,7 @@ function buildSaveHtml(name){
   if(!S.docId) S.docId=newDocId();   // v8.09: 上書き保存で保存先ファイルを照合するための一意ID
   const safe=(name||'ダイアグラム').replace(/[\\/:*?"<>|]/g,'_');
   setTabTitleFromFilename(safe);   // v6.17追補: 保存後のタブ名称＝保存ファイル名。outerHTML化の前に反映＝保存HTMLの<title>にも同名が入る
-  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch,mindReserve:S.mindReserve};   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
+  const st={diagramType:S.diagramType,orientation:S.orientation,lanes:S.lanes,nodes:S.nodes,edges:S.edges,uid:S.uid,diagramName:name,gantt:S.gantt,mindLayout:S.mindLayout,gridOn:S.gridOn,style:S.style,stepNums:S.stepNums,docId:S.docId,mindBranch:S.mindBranch,mindReserve:S.mindReserve,appVer:APP_VER};   // v8.14: 保存した版番号（インポート時に旧版かどうかを判断する）   // v7.00: 方眼グリッド / v8.01: デザインテンプレート・番号バッジも保存
   const SCR='<scr'+'ipt',CSCR='</scr'+'ipt>';
   const stateJson=JSON.stringify(st).replace(new RegExp(CSCR,'gi'),'<\\/script>');
   let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
@@ -11082,6 +11088,22 @@ function extractSavedState(html){
   if(end<0)return null;
   return JSON.parse(rest.slice(0,end));
 }
+// v8.14: 古い版で作られたファイルを読み込んだとき、接続線の「経路の指定」を落として
+//   今の仕組み（自動経路・1回曲げのL字・交差ブリッジ・接続点の自動割り当て）で引き直す。
+//   引き継ぐのはシェイプの配置・大きさ・文字・色・レーンと「どこからどこへ繋がっているか」だけ。
+//   旧版には交差の見た目を整える手段が「支点を打って迂回させる」しか無く、その支点が残っていると
+//   その線はブリッジの対象からも外れる（跨ぐ側にも跨がれる側にもならない）ため、線が途切れて見える。
+//   今の版で保存したファイルでは落とさない＝そこでの手作業は本人の編集内容なので残す。
+function migrateLegacyEdgeRouting(savedVer){
+  if(savedVer===APP_VER) return 0;             // 同じ版＝手を加えない
+  let n=0;
+  S.edges.forEach(ed=>{
+    ['waypoints','orthoWps','midPos','fromPin','toPin'].forEach(k=>{
+      if(ed[k]!=null){ delete ed[k]; n++; }
+    });
+  });
+  return n;
+}
 function importStateFromHtml(html,asked){
   const st=extractSavedState(html);
   if(!st||!Array.isArray(st.nodes)) throw new Error('編集データが見つかりません');
@@ -11102,14 +11124,20 @@ function importStateFromHtml(html,asked){
   S.mindReserve=Array.isArray(st.mindReserve)?st.mindReserve:[];   // v8.11追補: 旧ファイルには無いキー
   S.mindLayout=st.mindLayout||'radial';   // C-1修正(v4.02): init同様にレイアウトモードを復元（インポート時の欠落を是正）
   S.gridOn=st.gridOn!==false;   // v7.00: 方眼グリッド状態を復元（旧ファイルは既定オン）
+  // v8.14: デザインテンプレートと番号バッジの復元が抜けており、インポートしても
+  //   直前に開いていた図の設定が残ってしまっていた（起動時の復元処理には入っていた）。
+  S.style=STYLES[st.style]?st.style:'standard';
+  S.stepNums=!!st.stepNums;
   migrateOrgSections();         // v7.02: 旧2段(sub)→ミニ表へ自動移行（見た目不変）
   ganttMigrateColLabels();      // 微修正(v8.00据置): 旧データのタスク別項目名→列ラベルへ集約
+  const _dropped=migrateLegacyEdgeRouting(st.appVer);   // v8.14: 旧版の経路指定を落として今の仕組みで引き直す
   S.sel=[]; S.conn=null;
   S_diagramName=st.diagramName||'';
   const ni=document.getElementById('diagram-name');
   if(ni)ni.value=S_diagramName;
   applyDiagramType(); lanePanel(); snap(); render();
-  hint(`インポート完了（置き換え）: ${getDT().name} / レーン${S.lanes.length} / シェイプ${S.nodes.length} / 線${S.edges.length}`);
+  hint(`インポート完了（置き換え）: ${getDT().name} / レーン${S.lanes.length} / シェイプ${S.nodes.length} / 線${S.edges.length}`
+       +(_dropped?` ／ 接続線の経路は最新の仕組みで引き直しました`:''));
   markSaved();   // v8.11追補: 読み込んだ内容＝ファイルの内容なので、この時点は未保存ではない
   return true;   // v6.17追補: 取込成功（呼び出し元でタブ名称を更新）
 }
