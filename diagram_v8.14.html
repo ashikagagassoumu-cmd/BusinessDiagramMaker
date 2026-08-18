@@ -443,9 +443,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <button class="tbtn" onclick="showStepMenu(event)" title="おしゃれなステップ図の挿入・番号採番・カラフル配色">① ステップ</button>
   <!-- v8.10: 文字揃えは Word/Excel と同じ「横線の束の端が揃う」絵柄へ（旧 ⯇ ≡ ⯈ は何のボタンか分からなかった）。
        線の色は currentColor＝ボタンの文字色に追従するので、ホバー・選択中の色変化は他のボタンと同じ。 -->
-  <button class="tbtn" onclick="setTextAlign('left')" title="テキストを左揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.33" x2="9.5" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="2" y1="13" x2="9.5" y2="13"/></g></svg></button>
-  <button class="tbtn" onclick="setTextAlign('center')" title="テキストを中央揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4.25" y1="6.33" x2="11.75" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="4.25" y1="13" x2="11.75" y2="13"/></g></svg></button>
-  <button class="tbtn" onclick="setTextAlign('right')" title="テキストを右揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6.5" y1="6.33" x2="14" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="6.5" y1="13" x2="14" y2="13"/></g></svg></button>
+  <button class="tbtn" onmousedown="event.preventDefault()" onclick="setTextAlign('left')" title="テキストを左揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.33" x2="9.5" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="2" y1="13" x2="9.5" y2="13"/></g></svg></button>
+  <button class="tbtn" onmousedown="event.preventDefault()" onclick="setTextAlign('center')" title="テキストを中央揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4.25" y1="6.33" x2="11.75" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="4.25" y1="13" x2="11.75" y2="13"/></g></svg></button>
+  <button class="tbtn" onmousedown="event.preventDefault()" onclick="setTextAlign('right')" title="テキストを右揃え"><svg width="15" height="15" viewBox="0 0 16 16"><g class="algn"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6.5" y1="6.33" x2="14" y2="6.33"/><line x1="2" y1="9.67" x2="14" y2="9.67"/><line x1="6.5" y1="13" x2="14" y2="13"/></g></svg></button>
   <button class="tbtn" id="btn-group" onclick="groupSel()" title="選択した複数シェイプをグループ化 (Ctrl+G)">⧉ グループ化</button>
   <button class="tbtn" id="btn-ungroup" onclick="ungroupSel()" title="グループを解除 (Ctrl+Shift+G)">⧈ 解除</button>
   <button class="tbtn red" onclick="delSel()">✕ 削除</button>
@@ -3112,13 +3112,43 @@ function ungroupSel(){
 // v8.10: 反映先を広げた。従来は「横書きの汎用シェイプ本文」と「付箋のタイトル（縦モード）」
 //   だけに効いていたため、マインドマップ・樹状図・UML・グループ枠などでボタンを押しても
 //   何も起きなかった。下の alignH / alignVCy を各描画へ通して、本文の揃えを共通化する。
+// v8.14: 説明有プロセスやテーブルのように文字欄が複数あるシェイプでは、
+//   「テキストを編集している最中」はその欄だけ、「シェイプを選んでいるだけ」のときは全体を対象にする。
+//   どの欄を編集中かはこれまでどこにも残っていなかった（確定用の関数の中だけにあった）ので、
+//   編集を始めるときに控えておく。
+let _editTarget=null;   // {nid, field:'text'|'note'|number(段の番号)}
+function setEditTarget(nid,field){ _editTarget={nid,field}; }
+function clearEditTarget(){ _editTarget=null; }
+const _alignJa=a=>a==='left'?'左':a==='right'?'右':'中央';
 function setTextAlign(align){
+  // 編集中なら、その欄だけを変える（編集は閉じない＝揃えボタンに preventDefault を付けてある）
+  if(svgEditorActive()&&_editTarget){
+    const n=S.nodes.find(x=>x.id===_editTarget.nid);
+    if(n){
+      const f=_editTarget.field;
+      let label;
+      if(f==='note'){ n.noteAlign=align; label='備考'; }
+      else if(typeof f==='number'&&n.sections&&n.sections[f]){ n.sections[f].align=align; label='この欄'; }
+      else { n.textAlign=align; label='タイトル'; }
+      const inp=document.querySelector('#svg-editor textarea, #svg-editor input');
+      if(inp) inp.style.textAlign=align;   // 打っている最中の見た目も合わせる
+      snap(); render();
+      hint(`${label}を${_alignJa(align)}揃えにしました`);
+      return;
+    }
+  }
   const ids=selWithGroup(S.sel).filter(id=>S.nodes.some(n=>n.id===id));
   if(!ids.length){ hint('テキストを揃えるシェイプを選択してください'); return; }
   let cnt=0;
-  ids.forEach(id=>{ const n=S.nodes.find(x=>x.id===id); if(n){ n.textAlign=align; cnt++; } });
+  ids.forEach(id=>{ const n=S.nodes.find(x=>x.id===id); if(n){
+    // シェイプを選んでいるときはシェイプ全体＝欄ごとの指定も同じ値にそろえる
+    n.textAlign=align;
+    if(n.note!=null||n.type==='note'||n.type==='state_detail') n.noteAlign=align;
+    if(n.sections) n.sections.forEach(sec=>{ sec.align=align; });
+    cnt++;
+  } });
   snap(); render();
-  hint(`${cnt}個のシェイプのテキストを${align==='left'?'左':align==='right'?'右':'中央'}揃えにしました`);
+  hint(`${cnt}個のシェイプのテキストを${_alignJa(align)}揃えにしました`);
 }
 // ── v8.14: 文字サイズ ──
 //   Word/Excel と同じ操作感にそろえた。数値欄への直接入力・▼の一覧・拡大／縮小の3通り。
@@ -8057,9 +8087,10 @@ function renderNodes(){
       const offs=sectionOffsets(n);
       if(tV()){   // v7.00: 組織図は横向きでも横書き（職制一覧表の形）
         // v8.10: 見出し段・副見出し段・一覧行に文字揃えを反映（ミニ表のセルは列の揃えが優先なので対象外）
-        const _sa=alignH(nodeAlign(n),n.x,n.w,8);
         n.sections.forEach((sec,si)=>{
           const secH=sectionSize(sec,n.type==='org_node');
+          // v8.14: 段ごとの揃え。段に指定があればそれ、無ければシェイプ全体の揃えに従う。
+          const _sa=alignH(sec.align||nodeAlign(n),n.x,n.w,8);
           if(sec.style==='header'){
             const stereo=isUmlShape(n.type)?(sec.stereotype==='interface'?'«interface»':(n.abstract?'«abstract»':'')):'';
             if(stereo){
@@ -8106,7 +8137,7 @@ function renderNodes(){
             }
           } else if(sec.rows){
             // v8.10: UMLの属性・操作行は既定が左詰め。揃えを指定したときだけ従う（未指定は従来のまま）
-            const _ra=n.textAlign?_sa:{x:n.x+8,anchor:'start'};
+            const _ra=(sec.align||n.textAlign)?_sa:{x:n.x+8,anchor:'start'};
             sec.rows.forEach((row,ri)=>{
               const t=e('text',{x:_ra.x,y:offs[si]+SECT_PAD+ri*SECT_ROW_H+SECT_ROW_H/2,
                 'text-anchor':_ra.anchor,'dominant-baseline':'middle','font-size':'11',fill:'#374151','pointer-events':'none'});
@@ -8122,9 +8153,10 @@ function renderNodes(){
           ng.appendChild(ha);
         });
       } else {
-        const _sv={al:nodeAlign(n),y0:n.y,h:n.h,pad:8};   // v8.10: 縦書きの揃え（左＝上・右＝下）
         n.sections.forEach((sec,si)=>{
           const secW=sectionSize(sec);
+          // v8.14: 段ごとの揃え（縦書きは左＝上・右＝下）
+          const _sv={al:sec.align||nodeAlign(n),y0:n.y,h:n.h,pad:8};
           if(sec.style==='header'){
             appendVText(ng,sec.text||'',offs[si]+secW/2,n.y+n.h/2,12,{'font-weight':'600'},_sv);
           } else if(sec.style==='sub'){
@@ -8149,15 +8181,17 @@ function renderNodes(){
         if(_al==='left'){ _tx=n.x+8; _anc='start'; } else if(_al==='right'){ _tx=n.x+n.w-8; _anc='end'; }
         const tt=e('text',{x:_tx,y:titleCy,'text-anchor':_anc,'dominant-baseline':'middle','font-size':'12',fill:'#1e293b','pointer-events':'none'});
         tt.textContent=n.text; ng.appendChild(tt);
+        // v8.14: 備考欄にも揃えを反映。既定は従来どおり左詰め（旧ファイル・既存の図の見た目は変わらない）。
+        const _na=alignH(n.noteAlign||'left',n.x,n.w,8);
         if(n.note){
           const nls=wrapText(n.note,n.w-16,10);
           nls.forEach((nl,ni)=>{
-            const nt=e('text',{x:n.x+8,y:divY+8+ni*12,
-              'text-anchor':'start','dominant-baseline':'hanging','font-size':'10',fill:'#475569','pointer-events':'none'});
+            const nt=e('text',{x:_na.x,y:divY+8+ni*12,
+              'text-anchor':_na.anchor,'dominant-baseline':'hanging','font-size':'10',fill:'#475569','pointer-events':'none'});
             nt.textContent=nl; ng.appendChild(nt);
           });
         } else {
-          const ph=e('text',{x:n.x+8,y:divY+8,'text-anchor':'start','dominant-baseline':'hanging',
+          const ph=e('text',{x:_na.x,y:divY+8,'text-anchor':_na.anchor,'dominant-baseline':'hanging',
             'font-size':'10',fill:'#94a3b8','font-style':'italic','pointer-events':'none'});
           ph.textContent=n.type==='state_detail'?'entry / do / exit…':'備考…'; ng.appendChild(ph);
         }
@@ -9743,8 +9777,9 @@ function openSvgEditor(x,y,w,h,initVal,onCommit,placeholder,opts){
     inp.addEventListener('input',()=>{ if(!fo.isConnected)return; opts.onInput(inp.value,fo); });
   }
   let done=false;
-  const commit=()=>{if(done)return;done=true;const v=inp.value;fo.remove();onCommit(v);};
-  const cancel=()=>{if(done)return;done=true;fo.remove();render();};
+  // v8.14: 編集が終わったら「どの欄を編集中か」の控えも消す（文字揃えの対象をシェイプ全体へ戻す）。
+  const commit=()=>{if(done)return;done=true;const v=inp.value;fo.remove();clearEditTarget();onCommit(v);};
+  const cancel=()=>{if(done)return;done=true;fo.remove();clearEditTarget();render();};
   inp.addEventListener('blur',commit);
   inp.addEventListener('keydown',ev=>{
     ev.stopPropagation();
@@ -9769,6 +9804,7 @@ function editText(nid){
   const n=S.nodes.find(n=>n.id===nid);
   if(!n)return;
   S.sel=[nid]; render();
+  setEditTarget(nid,'text');   // v8.14: 文字揃えの対象を「この欄」にする
   const _al=n.textAlign||'center';   // v8.10: 編集欄も同じ揃えで表示
   if((n.type==='note'||n.type==='state_detail')&&!isV()){
     openSvgEditor(n.x,n.y,NOTE_TITLE_H,n.h,n.text,v=>{n.text=v;snap();render();},undefined,{align:_al});
@@ -9789,6 +9825,7 @@ function editText(nid){
 function editNote(nid){
   const n=S.nodes.find(n=>n.id===nid); if(!n)return;
   S.sel=[nid]; render();
+  setEditTarget(nid,'note');   // v8.14: 文字揃えの対象を備考欄だけにする
   const ph=n.type==='state_detail'?'entry / do / exit…':'備考…';
   if(isV()){
     const divY=n.y+NOTE_TITLE_H,noteH=n.h-NOTE_TITLE_H;
@@ -9798,12 +9835,12 @@ function editNote(nid){
     //   編集欄の組版も確定後の描画（10px・行送り12px・折り返し幅 n.w-16）にそろえる。
     openSvgEditor(n.x,divY,n.w,noteH,n.note||'',v=>{
       n.note=v; render(); snap();
-    },ph,{fontPx:10,lineH:12,padX:6,align:'left'});
+    },ph,{fontPx:10,lineH:12,padX:6,align:(n.noteAlign||'left')});
   } else {
     const divX=n.x+NOTE_TITLE_H,noteW=n.w-NOTE_TITLE_H;
     openSvgEditor(divX,n.y,noteW,n.h,n.note||'',v=>{
       n.note=v; render(); snap();
-    },ph,{fontPx:10,lineH:12,padX:6,align:'left'});
+    },ph,{fontPx:10,lineH:12,padX:6,align:(n.noteAlign||'left')});
   }
 }
 function editSection(nid,secIdx){
@@ -9811,15 +9848,18 @@ function editSection(nid,secIdx){
   if(!n||!n.sections||!n.sections[secIdx])return;
   const sec=n.sections[secIdx];
   S.sel=[nid]; render();
+  setEditTarget(nid,secIdx);   // v8.14: 文字揃えの対象をこの段だけにする
   const offs=sectionOffsets(n);
   const _org=n.type==='org_node';
   const secSz=sectionSize(sec,_org);
+  // v8.14: 編集欄の文字寄せも、その段の今の揃えに合わせる（一覧行の既定は左詰め）。
+  const _secAl=sec.align||((sec.rows&&!n.textAlign)?'left':nodeAlign(n));
   if(tV()){   // v7.00: 組織図は横向きでも縦モードの体裁（sectionOffsets と整合）
     if(sec.style==='header'){
-      openSvgEditor(n.x,offs[secIdx],n.w,_org?ORG_HDR_H:SECT_HDR_H,sec.text||'',v=>{sec.text=v;snap();render();});
+      openSvgEditor(n.x,offs[secIdx],n.w,_org?ORG_HDR_H:SECT_HDR_H,sec.text||'',v=>{sec.text=v;snap();render();},undefined,{align:_secAl});
     } else if(sec.style==='sub'){
       // v7.02: 旧「氏名」段（未移行データの保険）＝1行テキスト編集
-      openSvgEditor(n.x,offs[secIdx],n.w,secSz,sec.text||'',v=>{sec.text=v;snap();render();});
+      openSvgEditor(n.x,offs[secIdx],n.w,secSz,sec.text||'',v=>{sec.text=v;snap();render();},undefined,{align:_secAl});
     } else if(sec.style==='table'){
       // v7.02: 行×列ミニ表＝1行に1行・「|」で列区切り（最大3列）。行は自由に追加可。
       // v7.03: 1行でも必ず複数行エディタ（高さ72px以上）＋ Enter＝行追加・枠外クリック＝確定（IME対応）。
@@ -9834,11 +9874,11 @@ function editSection(nid,secIdx){
     } else if(sec.rows){
       openSvgEditor(n.x,offs[secIdx],n.w,secSz,sec.rows.join('\n'),v=>{
         sec.rows=v.split('\n'); if(!sec.rows.length)sec.rows=[''];snap();render();
-      },'1行に1項目');
+      },'1行に1項目',{align:_secAl});
     }
   } else {
     if(sec.style==='header'){
-      openSvgEditor(offs[secIdx],n.y,SECT_HDR_H,n.h,sec.text||'',v=>{sec.text=v;snap();render();});
+      openSvgEditor(offs[secIdx],n.y,SECT_HDR_H,n.h,sec.text||'',v=>{sec.text=v;snap();render();},undefined,{align:_secAl});
     } else if(sec.rows){
       openSvgEditor(offs[secIdx],n.y,secSz,n.h,sec.rows.join('\n'),v=>{
         sec.rows=v.split('\n'); if(!sec.rows.length)sec.rows=[''];snap();render();
