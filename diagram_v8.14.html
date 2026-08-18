@@ -1377,7 +1377,21 @@ function migrateOrgSections(){
 function usesLanes(){return DIAGRAM_TYPES[S.diagramType]?.useLanes!==false}
 function getDT(){return DIAGRAM_TYPES[S.diagramType]||DIAGRAM_TYPES.swimlane}
 // フリー配置シェイプ（スナップなし・レーン制約なし）
-function isFreeShape(type){return type==='doc'||type==='parallelogram'||type==='org_group'||type==='group_box'||type==='lifeline'||type==='activation'||type==='gantt_task'||type==='gantt_milestone'||type==='gantt_summary'||type==='mind_root'||type==='mind_topic'||type==='uml_class'||type==='uml_interface'||type==='step_num'}
+// v8.14: 書類(doc)とデータ(parallelogram)をレーンに属するシェイプに戻した。
+//   フリー配置のままだとレーンの幅を変えたり順番を入れ替えたりしても付いてこず、
+//   プロセスだけが動いて書類・データが取り残されていた。業務フローでは同じ担当の列に
+//   置くものなので、他のシェイプと同じくレーンに属させる。
+function isFreeShape(type){return type==='org_group'||type==='group_box'||type==='lifeline'||type==='activation'||type==='gantt_task'||type==='gantt_milestone'||type==='gantt_summary'||type==='mind_root'||type==='mind_topic'||type==='uml_class'||type==='uml_interface'||type==='step_num'}
+// v8.14: そのシェイプが今どのレーンにいるか。lid が無い・古い（旧バージョンで
+//   フリー配置として保存された書類・データなど）ときは、実際の位置から判定する。
+//   これでレーン幅の変更・並べ替えに、読み込んだ既存の図でも追従する。
+function nodeLaneIdx(n){
+  if(!usesLanes()||!n||n.x==null) return -1;
+  const i=S.lanes.findIndex(l=>l.id===n.lid);
+  if(i>=0) return i;
+  const l=laneAt(isV()?(n.x+n.w/2):(n.y+n.h/2));
+  return l?S.lanes.indexOf(l):-1;
+}
 function isGanttShape(type){return type==='gantt_task'||type==='gantt_milestone'||type==='gantt_summary'}
 function isMindShape(type){return type==='mind_root'||type==='mind_topic'||type==='mind_action'||type==='mind_note'}
 function isUmlShape(type){return type==='uml_class'||type==='uml_interface'}
@@ -2401,18 +2415,25 @@ function reorderLaneInsert(laneId,insertIdx){
   if(fromIdx<0)return;
   // 旧開始位置（交差軸）を退避
   const oldStart={}; S.lanes.forEach(l=>{oldStart[l.id]=laneX(l.id);});
+  // v8.14: 並べ替える前に「どのレーンにいるか」を確定させる。
+  //   位置から判定するので、旧バージョンでフリー配置として保存された書類・データも拾える。
+  //   並べ替えたあとに判定すると、レーンの位置だけ動いて座標は元のままなので誤ったレーンに割り当たる。
+  const laneOf={}; S.nodes.forEach(n=>{ const i=nodeLaneIdx(n); laneOf[n.id]=i>=0?S.lanes[i].id:null; });
   const [moved]=S.lanes.splice(fromIdx,1);
   if(insertIdx>fromIdx)insertIdx--;            // 削除分のインデックス補正
   insertIdx=Math.max(0,Math.min(S.lanes.length,insertIdx));
   S.lanes.splice(insertIdx,0,moved);
   if(fromIdx===insertIdx)return;               // 実質移動なし
   // 各レーン所属の通常ノードを開始位置差分でシフト（crosslaneはnormalizeで追従）
+  // v8.14: どのレーンに属するかは lid だけでなく実際の位置からも判定する。
+  //   旧バージョンでフリー配置として保存された書類・データは lid を持たず、取り残されていた。
   S.lanes.forEach(l=>{
     const delta=laneX(l.id)-oldStart[l.id];
     if(!delta)return;
     S.nodes.forEach(n=>{
-      if(n.type==='crosslane'||n.type==='group_box'||n.lid!==l.id)return;
+      if(n.type==='crosslane'||n.type==='group_box'||laneOf[n.id]!==l.id)return;
       if(isV())n.x+=delta; else n.y+=delta;
+      if(!isFreeShape(n.type)) n.lid=l.id;   // 位置から判定したものは所属を確定させる
     });
   });
   snap(); lanePanel(); render();
@@ -9133,8 +9154,9 @@ document.addEventListener('mousemove',ev=>{
           else n.y=opos+diff;
         }
       });
-      const lx=laneX(lane.id);
-      S.nodes.filter(n=>n.lid===lane.id).forEach(n=>{
+      const lx=laneX(lane.id), _li=S.lanes.indexOf(lane);
+      // v8.14: 幅を変えたレーンの中身は枠内に収める。lid を持たない旧データも位置から判定する。
+      S.nodes.filter(n=>n.type!=='crosslane'&&!isFreeShape(n.type)&&nodeLaneIdx(n)===_li).forEach(n=>{
         if(isV()) n.x=Math.max(lx+2,Math.min(lx+lane.w-n.w-2,n.x));
         else n.y=Math.max(lx+2,Math.min(lx+lane.w-n.h-2,n.y));
       });
@@ -9648,7 +9670,8 @@ function startLaneResize(ev,laneId){
   const laneIdx=S.lanes.indexOf(lane);
   const origNodePos={};
   S.nodes.forEach(n=>{
-    const ni=S.lanes.findIndex(l=>l.id===n.lid);
+    // v8.14: lid が無い（旧バージョンの書類・データ）ものも位置からレーンを判定して追従させる
+    const ni=nodeLaneIdx(n);
     if(ni>laneIdx) origNodePos[n.id]=isV()?n.x:n.y;
   });
   laneResizeState={laneId,startX:pt.x,startY:pt.y,origW:lane.w,origNodePos};
