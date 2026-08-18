@@ -700,6 +700,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <g id="g-grid"></g>
       <g id="g-lifelines"></g>
       <g id="g-guides"></g>
+      <!-- v8.15: レーン境界のドラッグ帯の専用レイヤ。g-edges より下＝境界の当たり判定は
+           線・ラベル・アイコン・経路つまみ・ノードの何よりも優先度が低い（帯は空き場所でだけ掴める） -->
+      <g id="g-lane-bands"></g>
       <g id="g-edges"></g>
       <g id="g-nodes"></g>
       <g id="g-replace-hl" style="pointer-events:none"></g>
@@ -1318,7 +1321,6 @@ let edgeReconnectState=null;  // エッジ端点の再接続ドラッグ状態�
 let _selEdgeEnds=null;        // 選択中エッジの描画端点 {edgeId,from:[x,y],to:[x,y]}（再接続ハンドル用）
 // v8.13追補: レーン境界のドラッグ帯より接続線を優先させるため、描いた線の実経路とハンドル位置を控える。
 //   幾何を二重に持たず「描いたときの座標をそのまま記録する」だけなので、ハンドルが増えても記録を1行足せばよい。
-let _edgeHitGeom={paths:[],handles:[]};
 let _edgeRouteCache={};       // v6.18追補: 自動経路(A*)のキャッシュ {edgeId:{sx,sy,ex,ey,wps,pd}}。ノードドラッグ中、
                               //   無関係な線の再探索を省く（大きな組織図等でドラッグが数fpsまで落ちる問題の対策）
 let _laneChoiceRemoveClose=null;
@@ -5147,7 +5149,7 @@ function renderGantt(){
   calcCanvasSize();
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
-  ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
+  ['g-lanes','g-grid','g-lifelines','g-guides','g-lane-bands','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
   Array.from(document.querySelectorAll('#diagram-svg clipPath')).forEach(el=>{ if((el.id||'').indexOf('gw-clip-')===0) el.remove(); });   // v8.08追補: 段のクリップ定義を作り直す
   if(ganttWrapOn()){
     // v8.08: 段ごとに「軸原点＝段の先頭」へ差し替え、Yは平行移動グループでずらして同じ描画関数を再利用する。
@@ -6567,7 +6569,7 @@ function renderMindmap(){
   calcCanvasSize();
   const svg=document.getElementById('diagram-svg');
   svg.setAttribute('width',SVG_W); svg.setAttribute('height',SVG_H);
-  ['g-lanes','g-grid','g-lifelines','g-guides','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
+  ['g-lanes','g-grid','g-lifelines','g-guides','g-lane-bands','g-edges','g-nodes','g-dividers','g-gantt-left','g-gantt-top','g-gantt-corner'].forEach(id=>{document.getElementById(id).innerHTML='';});
   document.getElementById('g-lanes').appendChild(e('rect',{x:0,y:0,width:SVG_W,height:SVG_H,fill:'#f8fafc','pointer-events':'none'}));
   renderGrid();   // v7.00: 方眼グリッド（マインドマップも自由配置図として対象）
   const hidden=mindHiddenSet();
@@ -7518,7 +7520,6 @@ function polylineMid(P){
 }
 function renderEdges(){
   const g=document.getElementById('g-edges'); g.innerHTML='';
-  _edgeHitGeom={paths:[],handles:[]};   // v8.13追補: レーン境界の帯に穴をあけるための実座標
   _selEdgeEnds=null;   // 再接続ハンドル用に選択中エッジの端点を後で格納
   const portAssign=allocatePorts();
   const busRoutes=orgBusRoutes();   // v7.00: 樹状図/組織図はバス型経路を先に算出（他図種は null）
@@ -7671,7 +7672,6 @@ function renderEdges(){
   // エッジ描画ヘルパー
   function renderOneEdge(dat){
     const{ed,sx,sy,ex,ey,pd,exitSide,entrySide}=dat;
-    if(dat.wps) _edgeHitGeom.paths.push(dat.wps); else if(dat.drawPts) _edgeHitGeom.paths.push(dat.drawPts);
     const isSel=S.sel.includes(ed.id),col=isSel?'#2563eb':'#475569',mk=isSel?'url(#arrB)':'url(#arr)';
     if(isSel){   // 再接続ハンドル用に描画端点を格納（手動経路はポリライン端、自動は連結点）
       const _fp=(dat.manual&&dat.drawPts)?dat.drawPts[0]:[sx,sy];
@@ -7796,7 +7796,6 @@ function renderEdges(){
   // ── 手動ウェイポイントのハンドル（選択中エッジ。D-5 v4.26）──
   function wpAddHandle(ed,ax,ay,insertIdx){
     const h=e('circle',{cx:ax,cy:ay,r:4,fill:'#fff',stroke:'#16a34a','stroke-width':1.5,cursor:'crosshair','pointer-events':'all'});
-    _edgeHitGeom.handles.push([ax,ay]);
     h.addEventListener('mousedown',ev=>{
       ev.stopPropagation();
       const p=svgPt(ev);
@@ -7834,7 +7833,6 @@ function renderEdges(){
       }
       (ed.waypoints||[]).forEach((wp,i)=>{   // 各中継点に移動ハンドル（ダブルクリックで削除）
         const h=e('circle',{cx:wp.x,cy:wp.y,r:5,fill:'#2563eb',stroke:'#fff','stroke-width':1.5,cursor:'move','pointer-events':'all'});
-        _edgeHitGeom.handles.push([wp.x,wp.y]);
         h.addEventListener('mousedown',ev=>{ev.stopPropagation(); waypointDragState={edgeId:ed.id,index:i,moved:false};});
         h.addEventListener('dblclick',ev=>{ev.stopPropagation(); ed.waypoints.splice(i,1); if(!ed.waypoints.length)delete ed.waypoints; snap(); render();});
         g.appendChild(h);
@@ -7862,7 +7860,6 @@ function renderEdges(){
       hit.addEventListener('dblclick',ev=>{ev.stopPropagation(); edgeLabel(ed.id);});   // 下層のラベル編集操作を維持
       hit.addEventListener('contextmenu',ev=>{ev.stopPropagation();ev.preventDefault();S.sel=[ed.id];delSel();});
       g.appendChild(hit);
-      _edgeHitGeom.handles.push([(a[0]+b[0])/2,(a[1]+b[1])/2]);
       const sq=e('rect',{x:(a[0]+b[0])/2-5,y:(a[1]+b[1])/2-5,width:10,height:10,rx:2,fill:'white',stroke:'#2563eb','stroke-width':1.5,cursor:cur,'pointer-events':'all'});
       sq.addEventListener('mousedown',ev=>{ev.stopPropagation(); startSegDrag(ed,dat,i,ev);});
       sq.addEventListener('dblclick',ev=>{ev.stopPropagation(); delete ed.orthoWps; delete ed.midPos; snap(); render();});
@@ -7910,7 +7907,6 @@ function renderEdges(){
     hit.addEventListener('dblclick',ev=>{ev.stopPropagation(); edgeLabel(dat.ed.id);});
     g.appendChild(hit);
     const hx=(seg[0][0]+seg[1][0])/2, hy=(seg[0][1]+seg[1][1])/2;
-    _edgeHitGeom.handles.push([hx,hy]);
     const sq=e('rect',{x:hx-5,y:hy-5,width:10,height:10,rx:2,fill:'white',stroke:'#2563eb','stroke-width':1.5,cursor:cur,'pointer-events':'all'});
     sq.addEventListener('mousedown',ev=>{ev.stopPropagation(); startBusDrag(dat);});
     sq.addEventListener('dblclick',ev=>{ev.stopPropagation();
@@ -9979,59 +9975,28 @@ document.addEventListener('mouseup',()=>{
 let laneResizeState=null;
 let crosslaneResizeState=null;
 
-// v8.13追補: レーン境界のドラッグ帯（幅8px×キャンバス全長の透明 rect）は最前面レイヤ g-dividers に
-//   あるため、境界から±4pxに入った接続線とその編集つまみは絶対に掴めなかった（帯の mousedown が
-//   先頭で stopPropagation する）。線・つまみが乗っている範囲だけ帯に「穴」をあけて通す。
-//   レイヤ順は変えない＝線の当たり判定を g-nodes より前面に出すと、線がノードの上を通る場面で
-//   ノードのクリック・ドラッグを奪ってしまうため（回帰が大きい）。
-//   renderDividers は render() で renderEdges の後に呼ばれるので、控えた座標は当該フレームのもの。
-function laneBandGaps(at,vert){
-  // at=境界の交差軸座標／vert=帯が縦向き（縦モード）。戻り値＝主軸方向の除外区間 [[lo,hi],…]
-  const NEAR=6, PAD_LINE=8, PAD_HANDLE=12, out=[];
-  _edgeHitGeom.handles.forEach(h=>{
-    const cross=vert?h[0]:h[1], main=vert?h[1]:h[0];
-    if(Math.abs(cross-at)<=NEAR+PAD_HANDLE) out.push([main-PAD_HANDLE,main+PAD_HANDLE]);
-  });
-  _edgeHitGeom.paths.forEach(P=>{
-    for(let i=0;i<P.length-1;i++){
-      const a=P[i],b=P[i+1];
-      const dx=Math.abs(b[0]-a[0]), dy=Math.abs(b[1]-a[1]);
-      const segVert=dy>dx;
-      if(segVert!==vert) continue;                      // 境界と平行な区間だけが問題になる
-      const cross=vert?a[0]:a[1];
-      if(Math.abs(cross-at)>NEAR) continue;
-      const m1=vert?a[1]:a[0], m2=vert?b[1]:b[0];
-      out.push([Math.min(m1,m2)-PAD_LINE,Math.max(m1,m2)+PAD_LINE]);
-    }
-  });
-  if(!out.length) return out;
-  out.sort((p,q)=>p[0]-q[0]);
-  const merged=[out[0].slice()];
-  for(let i=1;i<out.length;i++){
-    const last=merged[merged.length-1];
-    if(out[i][0]<=last[1]) last[1]=Math.max(last[1],out[i][1]);
-    else merged.push(out[i].slice());
-  }
-  return merged;
-}
+// v8.13追補→v8.15: レーン境界のドラッグ帯（幅8px×キャンバス全長の透明 rect）。
+//   v8.13追補では最前面 g-dividers に置き、線・経路つまみが乗る範囲だけ帯に「穴」をあけて通していた
+//   （laneBandGaps/_edgeHitGeom）。しかし穴の対象に接続線のラベル・○追加アイコンが漏れており、
+//   境界に被ったアイコンのダブルクリックや経路編集の選択が帯に奪われていた（ユーザー報告 2026-08-18）。
+//   v8.15 で方式を転換＝帯を g-edges より下の専用レイヤ g-lane-bands に置き、
+//   「境界の当たり判定は他の何よりも優先度が低い」を層の順序そのもので保証する。
+//   線・ラベル・アイコン・経路つまみ・ノードが乗っている場所ではそれらが勝ち、帯は空いている
+//   場所でだけ掴める。穴あけ機構は廃止（洩れの再発源になるため）。
+//   ※凡例（マインドマップ）・組織図の操作ボタン・再接続ハンドルは従来どおり最前面 g-dividers に
+//     描くため、g-dividers の毎フレームクリアは引き続きここが担当する。
 function renderDividers(){
-  const g=document.getElementById('g-dividers'); g.innerHTML='';
+  const gd=document.getElementById('g-dividers'); gd.innerHTML='';   // 最前面レイヤのリセット（凡例・操作ボタンの下地）
+  const g=document.getElementById('g-lane-bands'); g.innerHTML='';
   if(!usesLanes())return;
   const V=isV(), mainMax=V?SVG_H:SVG_W, cur=V?'col-resize':'row-resize';
   const addBand=(at,thick,inset,laneId)=>{
-    const gaps=laneBandGaps(at,V);
-    const runs=[]; let p=0;
-    gaps.forEach(gp=>{ if(gp[0]>p) runs.push([p,Math.min(gp[0],mainMax)]); p=Math.max(p,gp[1]); });
-    if(p<mainMax) runs.push([p,mainMax]);
-    runs.forEach(([lo,hi])=>{
-      if(hi-lo<2) return;
-      const hit=V? e('rect',{x:at-inset,y:lo,width:thick,height:hi-lo,fill:'transparent',cursor:cur})
-                 : e('rect',{x:lo,y:at-inset,width:hi-lo,height:thick,fill:'transparent',cursor:cur});
-      hit.addEventListener('mousedown',ev=>startLaneResize(ev,laneId));
-      hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor=cur;});
-      hit.addEventListener('mouseleave',()=>{if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';});
-      g.appendChild(hit);
-    });
+    const hit=V? e('rect',{x:at-inset,y:0,width:thick,height:mainMax,fill:'transparent',cursor:cur})
+               : e('rect',{x:0,y:at-inset,width:mainMax,height:thick,fill:'transparent',cursor:cur});
+    hit.addEventListener('mousedown',ev=>startLaneResize(ev,laneId));
+    hit.addEventListener('mouseenter',()=>{document.getElementById('diagram-svg').style.cursor=cur;});
+    hit.addEventListener('mouseleave',()=>{if(!laneResizeState)document.getElementById('diagram-svg').style.cursor='';});
+    g.appendChild(hit);
   };
   let at=0;
   S.lanes.forEach((l,i)=>{
